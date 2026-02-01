@@ -2,41 +2,74 @@ const { Telegraf, Markup } = require('telegraf');
 const express = require('express');
 
 // --- TOKENNI SHU YERGA QO'YING ---
-const BOT_TOKEN = '8413484705:AAF9j6Q-swDUgsfObKugeNGdWv0mzFr8fm0'; // <--- O'zingiznikini qo'ying
+const BOT_TOKEN = '8413484705:AAF9j6Q-swDUgsfObKugeNGdWv0mzFr8fm0'; 
 const bot = new Telegraf(BOT_TOKEN);
 const app = express();
 
 const PRODUCTS = {
-  capcut: { name: 'CapCut Pro', price: '120,000 so\'m', desc: 'Professional video montaj imkoniyatlari.', rules: 'Login va parol beriladi.' },
-  canva: { name: 'Canva Pro', price: '50,000 so\'m', desc: 'Premium dizayn va shablonlar.', rules: 'Emailingizga taklifnoma yuboriladi.' },
-  gemini: { name: 'Gemini AI Ultra', price: '200,000 so\'m', desc: 'Google-ning eng kuchli AI modeli.', rules: 'Akkountga kirish ruxsati beriladi.' },
-  chatgpt: { name: 'ChatGPT Plus', price: '250,000 so\'m', desc: 'GPT-4o va DALL-E imkoniyatlari.', rules: 'Tayyor akkount beriladi.' },
-  captions: { name: 'Captions Pro', price: '100,000 so\'m', desc: 'AI orqali subtitrlar yaratish.', rules: 'Maxsus havola orqali ulanadi.' },
-  adobe: { name: 'Adobe Creative Cloud', price: '400,000 so\'m', desc: 'Photoshop, Premiere Pro va boshqalar.', rules: 'Sizning shaxsiy Adobe ID-ingizga ulanadi.' },
-  aepr: { name: 'AE / PR', price: '300,000 so\'m', desc: 'After Effects va Premiere Pro paketi.', rules: 'Adobe CC litsenziyasi.' }
+  capcut: { 
+    name: '📱 CAPCUT PRO', 
+    price: '45.000 so‘m', 
+    desc: '📱 *CapCut Pro*\n\n💰 Narxi: 45.000 so‘m\n📆 Obuna muddati: 35 kun\n✅ 30 kun ishlashi kafolatlanadi\n❌ Yillik obuna mavjud emas', 
+    rules: '📱 *CapCut Pro qanday ulanadi?*\n\n🔐 Email + parol orqali ulanadi.\n📱 Faqat 1 ta qurilma uchun (telefon, planshet, Mac yoki PC).\n\n⛔️ Boshqa qurilmalardan kirish taqiqlanadi.\n⚠️ Qoida buzilsa kafolat bekor qilinadi.\n\n⏱ To‘lovdan so‘ng akkaunt 10–15 daqiqa ichida beriladi.' 
+  },
+  canva: { 
+    name: '🟢 CANVA PRO', 
+    price: '120.000 so‘m', 
+    desc: '🟢 *Canva Pro*\n\n💰 Narxi: 120.000 so‘m\n📆 Obuna muddati: 1 yil\n👤 Shaxsiy akkauntingizga ulanadi', 
+    rules: '🟢 *Canva Pro qanday ulanadi?*\n\n📧 Canva hisobingizga ulangan EMAIL manzilni taqdim qilasiz.\n\n🎨 1 yillik Canva Pro obunasi aynan shu akkauntingizga ulanadi.\n\n⚠️ EMAIL noto‘g‘ri berilsa qaytarish imkonsiz.' 
+  },
+  gemini: { 
+    name: '⚡️ GEMINI AI ULTRA', 
+    price: '290.000 so‘m', 
+    desc: '⚡️ *Gemini AI Ultra*\n\n💰 Narxi: 290.000 so‘m\n📆 Obuna muddati: 1 oy\n💳 45.000 kredit (Flow & Whisk)\n🎥 Flow orqali 2000+ video yaratish imkoniyati mavjud', 
+    rules: '⚡️ *Gemini AI qanday ulanadi?*\n\n🔐 Login va parol beriladi.\n👥 O‘z qurilmangizdan yoki jamoadoshlaringiz qurilmalaridan ulanish mumkin.\n\n✅ Obuna butun davr davomida kafolatlanadi.\n⏱ To‘lovdan so‘ng 5–35 daqiqa ichida tayyor bo‘ladi.' 
+  },
+  chatgpt: { 
+    name: '⚡️ CHATGPT PLUS', 
+    price: '110.000 so‘m', 
+    desc: '⚡️ *ChatGPT Plus*\n\n💰 Narxi: 110.000 so‘m\n📆 Obuna muddati: 1 oy\n👤 Hisob raqam shaxsiy bo‘ladi', 
+    rules: '⚡️ *ChatGPT Plus qanday ulanadi?*\n\n🔐 Login va parol beriladi yoki o‘zingizning EMAIL’ingizga ulanadi.\n\n👥 Bir nechta qurilmadan foydalanish mumkin.\n\n⏱ To‘lovdan so‘ng:\n— 5–35 daqiqa (tayyor akkaunt)\n— 1–24 soat (EMAIL orqali ulansa)' 
+  },
+  captions: { 
+    name: '⚡️ CAPTIONS PRO', 
+    price: '55.000 / 300.000 so‘m', 
+    desc: '⚡️ *Captions Pro*\n\n💰 Narxi:\n— 55.000 so‘m (1 oylik)\n— 300.000 so‘m (1 yillik)\n👤 Hisob raqam shaxsiy bo‘ladi', 
+    rules: '⚡️ *Captions Pro qanday ulanadi?*\n\n🔐 App Store login va paroli beriladi.\n📱 Faqat 1 ta qurilmadan foydalanish mumkin.\n\n✅ Obuna butun davr davomida kafolatlanadi.\n⏱ To‘lovdan so‘ng 5–15 daqiqa ichida tayyor bo‘ladi.\n\n⚠️ Qoida buzilsa kafolat to‘xtatiladi.' 
+  },
+  adobe: { 
+    name: '🎨 ADOBE CC', 
+    price: '155.000 so‘m', 
+    desc: '🎨 *Adobe Creative Cloud*\n\n💰 Narxi:\n— 155.000 so‘m (oylik)\n— Yillik obuna: kelishiladi\n📦 20+ ta Adobe ilovalari mavjud', 
+    rules: '🎨 *Adobe Creative Cloud qanday ulanadi?*\n\n🔐 To‘liq shaxsiy akkaunt beriladi.\n📧 Xohlasangiz EMAIL’ingizga ulanadi (1–5 soat ichida).\n\n⏱ Tayyor akkaunt: 5–15 daqiqa.\n✅ Obuna butun davr davomida kafolatlanadi.' 
+  },
+  aepr: { 
+    name: '🎬 AE / PR', 
+    price: '155.000 so‘m', 
+    desc: '🎬 *AE / PR (After Effects & Premiere Pro)*\n\n💰 Narxi:\n— 155.000 so‘m (oylik)\n— Yillik obuna: kelishiladi', 
+    rules: '🎬 *AE / PR qanday ulanadi?*\n\n🔐 To‘liq shaxsiy akkaunt beriladi.\n📧 EMAIL’ingizga ulash mumkin.\n\n⏱ 5–15 daqiqa ichida tayyor bo‘ladi.\n✅ Obuna kafolatlanadi.' 
+  }
 };
 
 const mainMenu = Markup.inlineKeyboard([
-  [Markup.button.callback('CapCut', 'prod:capcut'), Markup.button.callback('Canva Pro', 'prod:canva')],
-  [Markup.button.callback('Gemini AI', 'prod:gemini'), Markup.button.callback('ChatGPT', 'prod:chatgpt')],
-  [Markup.button.callback('Captions', 'prod:captions'), Markup.button.callback('Adobe CC', 'prod:adobe')],
-  [Markup.button.callback('AE / PR', 'prod:aepr')]
-], { columns: 2 });
+  [Markup.button.callback('📱 CapCut Pro', 'prod:capcut'), Markup.button.callback('🟢 Canva Pro', 'prod:canva')],
+  [Markup.button.callback('⚡️ Gemini AI', 'prod:gemini'), Markup.button.callback('⚡️ ChatGPT Plus', 'prod:chatgpt')],
+  [Markup.button.callback('⚡️ Captions Pro', 'prod:captions'), Markup.button.callback('🎨 Adobe CC', 'prod:adobe')],
+  [Markup.button.callback('🎬 AE / PR', 'prod:aepr')]
+]);
 
-// --- BOT LOGIKASI ---
 bot.start((ctx) => {
-  const text = "👋 Xush kelibsiz! Kerakli xizmatni tanlang:";
-  return ctx.reply(text, mainMenu);
+  const welcomeText = "Assalomu alaykum 👋😊\n\nBu bot sizga narxlar va batafsil ma’lumot berish uchun yaratilgan.\n\nKerakli obunani quyidagi ro‘yxatdan tanlashingiz mumkin 👇";
+  return ctx.reply(welcomeText, mainMenu);
 });
 
 bot.action('start', (ctx) => {
-  return ctx.editMessageText("👋 Xizmatni tanlang:", mainMenu).catch(() => {});
+  return ctx.editMessageText("Kerakli obunani quyidagi ro‘yxatdan tanlashingiz mumkin 👇", mainMenu).catch(() => {});
 });
 
 bot.action(/^prod:(.+)$/, (ctx) => {
   const p = PRODUCTS[ctx.match[1]];
-  const text = `🛒 *${p.name}*\n\n📝 ${p.desc}\n💰 Narxi: ${p.price}`;
-  ctx.editMessageText(text, { 
+  ctx.editMessageText(p.desc, { 
     parse_mode: 'Markdown', 
     ...Markup.inlineKeyboard([
       [Markup.button.callback('❓ Qanday ulanadi?', `info:${ctx.match[1]}`)],
@@ -48,7 +81,7 @@ bot.action(/^prod:(.+)$/, (ctx) => {
 
 bot.action(/^info:(.+)$/, (ctx) => {
   const p = PRODUCTS[ctx.match[1]];
-  ctx.editMessageText(`❓ *Ma'lumot:* ${p.rules}`, { 
+  ctx.editMessageText(p.rules, { 
     parse_mode: 'Markdown', 
     ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Orqaga', `prod:${ctx.match[1]}`)]])
   }).catch(() => {});
@@ -56,21 +89,19 @@ bot.action(/^info:(.+)$/, (ctx) => {
 
 bot.action(/^pay:(.+)$/, (ctx) => {
   const p = PRODUCTS[ctx.match[1]];
-  const text = `💳 *To'lov ma'lumotlari*\n\nKarta: \`4067 0700 0282 0160\`\nEga: Toirov R\n\nTo'lovdan so'ng chekni @santyx ga yuboring va "${p.name}" deb yozing.`;
-  ctx.editMessageText(text, { 
+  const payText = `💳 *To‘lov uchun karta ma’lumotlari:*\n\n\`4067 0700 0282 0160\`\n👤 *Egasi:* Toirov R\n\n⚠️ Iltimos, to‘lovdan so‘ng *CHEKNI* tashlashni unutmang.\n\n📩 Chekni botga emas, @santyx ga yuborasiz.\n✍️ Chek bilan birga qaysi obuna kerakligini yozing (*${p.name}*).`;
+  ctx.editMessageText(payText, { 
     parse_mode: 'Markdown', 
     ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Orqaga', `prod:${ctx.match[1]}`)]])
   }).catch(() => {});
 });
 
-// --- RAILWAY UCHUN DOIMIY ISHLASH ---
 const PORT = process.env.PORT || 3000;
-app.get('/', (req, res) => res.send('Bot ishlamoqda...'));
+app.get('/', (req, res) => res.send('Bot is Live!'));
 app.listen(PORT, () => {
-    console.log(`Server ${PORT}-portda yondi`);
-    bot.launch(); // Polling rejimida ishga tushirish
+    console.log(`Working on ${PORT}`);
+    bot.launch();
 });
 
-// Xatoliklarni ushlash (Crashed bo'lmasligi uchun)
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
