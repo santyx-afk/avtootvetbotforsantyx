@@ -2,7 +2,7 @@ const { Telegraf, Markup } = require('telegraf');
 const express = require('express');
 
 // --- SOZLAMALAR ---
-const BOT_TOKEN = 'TOKENNI_SHU_YERGA_YOZING'; // <--- Tokenni shu yerga qo'ying
+const BOT_TOKEN = 8413484705:AAF9j6Q-swDUgsfObKugeNGdWv0mzFr8fm0; // <--- Tokenni shu yerga qo'ying
 const bot = new Telegraf(BOT_TOKEN);
 const app = express();
 
