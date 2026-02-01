@@ -1,19 +1,19 @@
 const { Telegraf, Markup } = require('telegraf');
 const express = require('express');
 
-// --- SOZLAMALAR ---
-const BOT_TOKEN = 8413484705:AAF9j6Q-swDUgsfObKugeNGdWv0mzFr8fm0; // <--- Tokenni shu yerga qo'ying
+// --- TOKENNI SHU YERGA QO'YING ---
+const BOT_TOKEN = '8413484705:AAF9j6Q-swDUgsfObKugeNGdWv0mzFr8fm0'; // <--- O'zingiznikini qo'ying
 const bot = new Telegraf(BOT_TOKEN);
 const app = express();
 
 const PRODUCTS = {
-  capcut: { name: 'CapCut Pro', price: '$10/mo', desc: 'Professional video editing.', rules: 'Login credentials provided.' },
-  canva: { name: 'Canva Pro', price: '$8/mo', desc: 'Premium templates & brand kits.', rules: 'Added via email team invite.' },
-  gemini: { name: 'Gemini AI Ultra', price: '$20/mo', desc: 'Google\'s most capable AI.', rules: 'Shared/Private account.' },
-  chatgpt: { name: 'ChatGPT Plus', price: '$20/mo', desc: 'Access to GPT-4o & DALL-E.', rules: 'Direct account login.' },
-  captions: { name: 'Captions Pro', price: '$12/mo', desc: 'AI talking video captions.', rules: 'Invite link provided.' },
-  adobe: { name: 'Adobe Creative Cloud', price: '$35/mo', desc: 'All 20+ Adobe apps.', rules: 'Applied to your Adobe ID.' },
-  aepr: { name: 'AE / PR', price: '$25/mo', desc: 'After Effects & Premiere Pro.', rules: 'Creative Cloud licenses.' }
+  capcut: { name: 'CapCut Pro', price: '120,000 so\'m', desc: 'Professional video montaj imkoniyatlari.', rules: 'Login va parol beriladi.' },
+  canva: { name: 'Canva Pro', price: '50,000 so\'m', desc: 'Premium dizayn va shablonlar.', rules: 'Emailingizga taklifnoma yuboriladi.' },
+  gemini: { name: 'Gemini AI Ultra', price: '200,000 so\'m', desc: 'Google-ning eng kuchli AI modeli.', rules: 'Akkountga kirish ruxsati beriladi.' },
+  chatgpt: { name: 'ChatGPT Plus', price: '250,000 so\'m', desc: 'GPT-4o va DALL-E imkoniyatlari.', rules: 'Tayyor akkount beriladi.' },
+  captions: { name: 'Captions Pro', price: '100,000 so\'m', desc: 'AI orqali subtitrlar yaratish.', rules: 'Maxsus havola orqali ulanadi.' },
+  adobe: { name: 'Adobe Creative Cloud', price: '400,000 so\'m', desc: 'Photoshop, Premiere Pro va boshqalar.', rules: 'Sizning shaxsiy Adobe ID-ingizga ulanadi.' },
+  aepr: { name: 'AE / PR', price: '300,000 so\'m', desc: 'After Effects va Premiere Pro paketi.', rules: 'Adobe CC litsenziyasi.' }
 };
 
 const mainMenu = Markup.inlineKeyboard([
@@ -21,41 +21,56 @@ const mainMenu = Markup.inlineKeyboard([
   [Markup.button.callback('Gemini AI', 'prod:gemini'), Markup.button.callback('ChatGPT', 'prod:chatgpt')],
   [Markup.button.callback('Captions', 'prod:captions'), Markup.button.callback('Adobe CC', 'prod:adobe')],
   [Markup.button.callback('AE / PR', 'prod:aepr')]
-]);
+], { columns: 2 });
 
-// --- BOT LOGIC ---
+// --- BOT LOGIKASI ---
 bot.start((ctx) => {
-  const msg = "👋 Xush kelibsiz! Kerakli xizmatni tanlang:";
-  return ctx.updateType === 'callback_query' ? ctx.editMessageText(msg, mainMenu) : ctx.reply(msg, mainMenu);
+  const text = "👋 Xush kelibsiz! Kerakli xizmatni tanlang:";
+  return ctx.reply(text, mainMenu);
+});
+
+bot.action('start', (ctx) => {
+  return ctx.editMessageText("👋 Xizmatni tanlang:", mainMenu).catch(() => {});
 });
 
 bot.action(/^prod:(.+)$/, (ctx) => {
   const p = PRODUCTS[ctx.match[1]];
   const text = `🛒 *${p.name}*\n\n📝 ${p.desc}\n💰 Narxi: ${p.price}`;
-  ctx.editMessageText(text, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([
-    [Markup.button.callback('Qanday ulanadi?', `info:${ctx.match[1]}`)],
-    [Markup.button.callback('💳 To\'lov qilish', `pay:${ctx.match[1]}`)],
-    [Markup.button.callback('⬅️ Orqaga', 'start')]
-  ])});
+  ctx.editMessageText(text, { 
+    parse_mode: 'Markdown', 
+    ...Markup.inlineKeyboard([
+      [Markup.button.callback('❓ Qanday ulanadi?', `info:${ctx.match[1]}`)],
+      [Markup.button.callback('💳 To\'lov qilish', `pay:${ctx.match[1]}`)],
+      [Markup.button.callback('⬅️ Orqaga', 'start')]
+    ])
+  }).catch(() => {});
 });
 
 bot.action(/^info:(.+)$/, (ctx) => {
   const p = PRODUCTS[ctx.match[1]];
-  ctx.editMessageText(`❓ *Ma'lumot:* ${p.rules}`, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Orqaga', `prod:${ctx.match[1]}`)]])});
+  ctx.editMessageText(`❓ *Ma'lumot:* ${p.rules}`, { 
+    parse_mode: 'Markdown', 
+    ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Orqaga', `prod:${ctx.match[1]}`)]])
+  }).catch(() => {});
 });
 
 bot.action(/^pay:(.+)$/, (ctx) => {
   const p = PRODUCTS[ctx.match[1]];
   const text = `💳 *To'lov ma'lumotlari*\n\nKarta: \`4067 0700 0282 0160\`\nEga: Toirov R\n\nTo'lovdan so'ng chekni @santyx ga yuboring va "${p.name}" deb yozing.`;
-  ctx.editMessageText(text, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Orqaga', `prod:${ctx.match[1]}`)]])});
+  ctx.editMessageText(text, { 
+    parse_mode: 'Markdown', 
+    ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Orqaga', `prod:${ctx.match[1]}`)]])
+  }).catch(() => {});
 });
 
-bot.action('start', (ctx) => ctx.editMessageText("👋 Xizmatni tanlang:", mainMenu));
-
-// --- RAILWAY UCHUN SERVER ---
+// --- RAILWAY UCHUN DOIMIY ISHLASH ---
 const PORT = process.env.PORT || 3000;
-app.use(express.json());
-// Webhook ishlamasa, pollingga o'tish uchun:
-bot.launch(); 
-app.get('/', (req, res) => res.send('Bot is online!'));
-app.listen(PORT, () => console.log(`Server port: ${PORT}`));
+app.get('/', (req, res) => res.send('Bot ishlamoqda...'));
+app.listen(PORT, () => {
+    console.log(`Server ${PORT}-portda yondi`);
+    bot.launch(); // Polling rejimida ishga tushirish
+});
+
+// Xatoliklarni ushlash (Crashed bo'lmasligi uchun)
+process.once('SIGINT', () => bot.stop('SIGINT'));
+process.once('SIGTERM', () => bot.stop('SIGTERM'));
