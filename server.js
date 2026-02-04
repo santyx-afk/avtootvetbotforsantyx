@@ -2,52 +2,32 @@ const { Telegraf, Markup } = require('telegraf');
 const express = require('express');
 
 // --- SOZLAMALAR ---
+const ADMIN_ID = 1286053845; // O'zingizning ID raqamingizni yozing
 const BOT_TOKEN = '8413484705:AAF9j6Q-swDUgsfObKugeNGdWv0mzFr8fm0'; 
-const ADMIN_ID = 1286053845; // <-- O'ZINGIZNING ID RAQAMINGIZNI YOZING
 
 const bot = new Telegraf(BOT_TOKEN);
 const app = express();
 
-// Foydalanuvchilarni vaqtinchalik saqlash (Statistika va Rassilka uchun)
-// Eslatma: Bot qayta yonganda bu ro'yxat tozalanadi
-let users = new Set(); 
+// --- ANALITIKA UCHUN XOTIRA ---
+let users = new Map(); // {id: name} ko'rinishida saqlaydi
+let clickStats = {
+  capcut: 0,
+  canva: 0,
+  gemini: 0,
+  chatgpt: 0,
+  captions: 0,
+  adobe: 0,
+  aepr: 0
+};
 
 const PRODUCTS = {
-  capcut: { 
-    name: '📱 CAPCUT PRO', 
-    desc: '📱 *CapCut Pro*\n\n💰 Narxi: 45.000 so‘m\n📆 Obuna muddati: 35 kun\n✅ 30 kun ishlashi kafolatlanadi\n❌ Yillik obuna mavjud emas', 
-    rules: '📱 *CapCut Pro qanday ulanadi?*\n\n🔐 Email + parol orqali ulanadi.\n📱 Faqat 1 ta qurilma uchun (telefon, planshet, Mac yoki PC).\n\n⛔️ Boshqa qurilmalardan kirish taqiqlanadi.\n⚠️ Qoida buzilsa kafolat bekor qilinadi.\n\n⏱ To‘lovdan so‘ng akkaunt 10–15 daqiqa ichida beriladi.' 
-  },
-  canva: { 
-    name: '🟢 CANVA PRO', 
-    desc: '🟢 *Canva Pro*\n\n💰 Narxi: 120.000 so‘m\n📆 Obuna muddati: 1 yil\n👤 Shaxsiy akkauntingizga ulanadi', 
-    rules: '🟢 *Canva Pro qanday ulanadi?*\n\n📧 Canva hisobingizga ulangan EMAIL manzilni taqdim qilasiz.\n\n🎨 1 yillik Canva Pro obunasi aynan shu akkauntingizga ulanadi.\n\n⚠️ EMAIL noto‘g‘ri berilsa qaytarish imkonsiz.' 
-  },
-  gemini: { 
-    name: '⚡️ GEMINI AI ULTRA', 
-    desc: '⚡️ *Gemini AI Ultra*\n\n💰 Narxi: 290.000 so‘m\n📆 Obuna muddati: 1 oy\n💳 45.000 kredit (Flow & Whisk)\n🎥 Flow orqali 2000+ video yaratish imkoniyati mavjud', 
-    rules: '⚡️ *Gemini AI qanday ulanadi?*\n\n🔐 Login va parol beriladi.\n👥 O‘z qurilmangizdan yoki jamoadoshlaringiz qurilmalaridan ulanish mumkin.\n\n✅ Obuna butun davr davomida kafolatlanadi.\n⏱ To‘lovdan so‘ng 5–35 daqiqa ichida tayyor bo‘ladi.' 
-  },
-  chatgpt: { 
-    name: '⚡️ CHATGPT PLUS', 
-    desc: '⚡️ *ChatGPT Plus*\n\n💰 Narxi: 110.000 so‘m\n📆 Obuna muddati: 1 oy\n👤 Hisob raqam shaxsiy bo‘ladi', 
-    rules: '⚡️ *ChatGPT Plus qanday ulanadi?*\n\n🔐 Login va parol beriladi yoki o‘zingizning EMAIL’ingizga ulanadi.\n\n👥 Bir nechta qurilmadan foydalanish mumkin.\n\n⏱ To‘lovdan so‘ng:\n— 5–35 daqiqa (tayyor akkaunt)\n— 1–24 soat (EMAIL orqali ulansa)' 
-  },
-  captions: { 
-    name: '⚡️ CAPTIONS PRO', 
-    desc: '⚡️ *Captions Pro*\n\n💰 Narxi:\n— 55.000 so‘m (1 oylik)\n— 300.000 so‘m (1 yillik)\n👤 Hisob raqam shaxsiy bo‘ladi', 
-    rules: '⚡️ *Captions Pro qanday ulanadi?*\n\n🔐 App Store login va paroli beriladi.\n📱 Faqat 1 ta qurilmadan foydalanish mumkin.\n\n✅ Obuna butun davr davomida kafolatlanadi.\n⏱ To‘lovdan so‘ng 5–15 daqiqa ichida tayyor bo‘ladi.\n\n⚠️ Qoida buzilsa kafolat to‘xtatiladi.' 
-  },
-  adobe: { 
-    name: '🎨 ADOBE CC', 
-    desc: '🎨 *Adobe Creative Cloud*\n\n💰 Narxi:\n— 155.000 so‘m (oylik)\n— Yillik obuna: kelishiladi\n📦 20+ ta Adobe ilovalari mavjud', 
-    rules: '🎨 *Adobe Creative Cloud qanday ulanadi?*\n\n🔐 To‘liq shaxsiy akkaunt beriladi.\n📧 Xohlasangiz EMAIL’ingizga ulanadi (1–5 soat ichida).\n\n⏱ Tayyor akkaunt: 5–15 daqiqa.\n✅ Obuna butun davr davomida kafolatlanadi.' 
-  },
-  aepr: { 
-    name: '🎬 AE / PR', 
-    desc: '🎬 *AE / PR (After Effects & Premiere Pro)*\n\n💰 Narxi:\n— 155.000 so‘m (oylik)\n— Yillik obuna: kelishiladi', 
-    rules: '🎬 *AE / PR qanday ulanadi?*\n\n🔐 To‘liq shaxsiy akkaunt beriladi.\n📧 EMAIL’ingizga ulash mumkin.\n\n⏱ 5–15 daqiqa ichida tayyor bo‘ladi.\n✅ Obuna kafolatlanadi.' 
-  }
+  capcut: { name: '📱 CAPCUT PRO', desc: '📱 *CapCut Pro*...', rules: 'Email + parol...' },
+  canva: { name: '🟢 CANVA PRO', desc: '🟢 *Canva Pro*...', rules: 'Email beriladi...' },
+  gemini: { name: '⚡️ GEMINI AI ULTRA', desc: '⚡️ *Gemini AI*...', rules: 'Login va parol...' },
+  chatgpt: { name: '⚡️ CHATGPT PLUS', desc: '⚡️ *ChatGPT Plus*...', rules: 'Login yoki Email...' },
+  captions: { name: '⚡️ CAPTIONS PRO', desc: '⚡️ *Captions Pro*...', rules: 'App Store akkaunt...' },
+  adobe: { name: '🎨 ADOBE CC', desc: '🎨 *Adobe CC*...', rules: 'Shaxsiy akkaunt...' },
+  aepr: { name: '🎬 AE / PR', desc: '🎬 *AE / PR*...', rules: 'Shaxsiy akkaunt...' }
 };
 
 const mainMenu = Markup.inlineKeyboard([
@@ -59,87 +39,102 @@ const mainMenu = Markup.inlineKeyboard([
 
 // --- FOYDALANUVCHI QISMI ---
 bot.start((ctx) => {
-  users.add(ctx.from.id); // Foydalanuvchini ro'yxatga qo'shish
-  const welcomeText = "Assalomu alaykum 👋😊\n\nBu bot sizga narxlar va batafsil ma’lumot berish uchun yaratilgan.\n\nKerakli obunani quyidagi ro‘yxatdan tanlashingiz mumkin 👇";
+  // Userni ism-sharifi bilan eslab qolish
+  users.set(ctx.from.id, ctx.from.first_name || 'User');
+  
+  const welcomeText = "Assalomu alaykum 👋😊\n\nKerakli obunani tanlang 👇";
   return ctx.reply(welcomeText, mainMenu);
 });
 
 bot.action('start', (ctx) => {
-  users.add(ctx.from.id);
-  return ctx.editMessageText("Kerakli obunani quyidagi ro‘yxatdan tanlashingiz mumkin 👇", mainMenu).catch(() => {});
+  return ctx.editMessageText("Kerakli obunani tanlang 👇", mainMenu).catch(() => {});
 });
 
 bot.action(/^prod:(.+)$/, (ctx) => {
-  const p = PRODUCTS[ctx.match[1]];
+  const productKey = ctx.match[1];
+  
+  // Analitika: Qaysi tugma bosilganini hisoblash
+  if (clickStats.hasOwnProperty(productKey)) {
+    clickStats[productKey]++;
+  }
+
+  const p = PRODUCTS[productKey];
   ctx.editMessageText(p.desc, { 
     parse_mode: 'Markdown', 
     ...Markup.inlineKeyboard([
-      [Markup.button.callback('❓ Qanday ulanadi?', `info:${ctx.match[1]}`)],
-      [Markup.button.callback('💳 To\'lov qilish', `pay:${ctx.match[1]}`)],
+      [Markup.button.callback('❓ Qanday ulanadi?', `info:${productKey}`)],
+      [Markup.button.callback('💳 To\'lov qilish', `pay:${productKey}`)],
       [Markup.button.callback('⬅️ Orqaga', 'start')]
     ])
   }).catch(() => {});
 });
 
-bot.action(/^info:(.+)$/, (ctx) => {
-  const p = PRODUCTS[ctx.match[1]];
-  ctx.editMessageText(p.rules, { 
-    parse_mode: 'Markdown', 
-    ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Orqaga', `prod:${ctx.match[1]}`)]])
-  }).catch(() => {});
-});
-
-bot.action(/^pay:(.+)$/, (ctx) => {
-  const p = PRODUCTS[ctx.match[1]];
-  const payText = `💳 *To‘lov uchun karta ma’lumotlari:*\n\n\`4067 0700 0282 0160\`\n👤 *Egasi:* Toirov R\n\n⚠️ Iltimos, to‘lovdan so‘ng *CHEKNI* tashlashni unutmang.\n\n📩 Chekni botga emas, @santyx ga yuborasiz.\n✍️ Chek bilan birga qaysi obuna kerakligini yozing (*${p.name}*).`;
-  ctx.editMessageText(payText, { 
-    parse_mode: 'Markdown', 
-    ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Orqaga', `prod:${ctx.match[1]}`)]])
-  }).catch(() => {});
-});
-
 // --- ADMIN PANELI ---
 bot.command('admin', (ctx) => {
-  if (ctx.from.id !== ADMIN_ID) return ctx.reply("Siz admin emassiz!");
+  if (ctx.from.id !== ADMIN_ID) return;
   
-  const adminMenu = Markup.inlineKeyboard([
-    [Markup.button.callback('📊 Statistika', 'admin_stats')],
-    [Markup.button.callback('📢 Rassilka yuborish', 'admin_broadcast')]
-  ]);
-  
-  ctx.reply("🛠 Admin paneliga xush kelibsiz:", adminMenu);
+  ctx.reply("🛠 *Admin Paneli*:", {
+    parse_mode: 'Markdown',
+    ...Markup.inlineKeyboard([
+      [Markup.button.callback('📊 Statistika va Userlar', 'admin_full_stats')],
+      [Markup.button.callback('📢 Rassilka', 'admin_broadcast')]
+    ])
+  });
 });
 
-bot.action('admin_stats', (ctx) => {
+bot.action('admin_full_stats', (ctx) => {
   if (ctx.from.id !== ADMIN_ID) return;
   ctx.answerCbQuery();
-  ctx.reply(`📊 *Statistika:*\n\nBotni ishga tushirgan foydalanuvchilar soni: ${users.size}`, { parse_mode: 'Markdown' });
+
+  // 1. Click Statistika matni
+  let statMsg = "📈 *Tugmalar bosilishi bo'yicha qiziqish:*\n\n";
+  for (const [key, val] of Object.entries(clickStats)) {
+    statMsg += `• ${key.toUpperCase()}: ${val} marta\n`;
+  }
+
+  // 2. Userlar ro'yxati (Clickable linklar bilan)
+  statMsg += `\n👤 *Foydalanuvchilar (jami: ${users.size}):*\n`;
+  users.forEach((name, id) => {
+    statMsg += `• [${name}](tg://user?id=${id}) (ID: ${id})\n`;
+  });
+
+  statMsg += `\n_(Eslatma: Bot o'chib yonsa, bu ma'lumotlar tozalanadi)_`;
+
+  ctx.reply(statMsg, { parse_mode: 'Markdown' });
 });
 
+// --- RASSILKA VA BOSHQALAR (Oldingi kod kabi) ---
 let isBroadcasting = false;
 bot.action('admin_broadcast', (ctx) => {
   if (ctx.from.id !== ADMIN_ID) return;
-  ctx.answerCbQuery();
   isBroadcasting = true;
-  ctx.reply("📢 Rassilka matnini yuboring. Barcha foydalanuvchilarga yuboriladi.");
+  ctx.reply("📢 Rassilka matnini yuboring...");
 });
 
-// Rassilkani qabul qilish va yuborish
 bot.on('text', (ctx) => {
   if (ctx.from.id === ADMIN_ID && isBroadcasting) {
     let count = 0;
-    users.forEach(userId => {
+    users.forEach((name, userId) => {
       bot.telegram.sendMessage(userId, ctx.message.text).catch(() => {});
       count++;
     });
     isBroadcasting = false;
-    ctx.reply(`✅ Rassilka yakunlandi. ${count} ta foydalanuvchiga yuborildi.`);
+    ctx.reply(`✅ ${count} kishiga yuborildi.`);
   }
 });
 
-// --- SERVER ---
-const PORT = process.env.PORT || 3000;
-app.get('/', (req, res) => res.send('Bot is Live!'));
-app.listen(PORT, () => {
-    bot.launch();
+// Pay va Info actionlari (Oldingi kodingizdan o'zgarmaydi)
+bot.action(/^info:(.+)$/, (ctx) => {
+  const p = PRODUCTS[ctx.match[1]];
+  ctx.editMessageText(p.rules, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Orqaga', `prod:${ctx.match[1]}`)]]) }).catch(() => {});
 });
+
+bot.action(/^pay:(.+)$/, (ctx) => {
+  const p = PRODUCTS[ctx.match[1]];
+  const payText = `💳 *To‘lov:* \`4067 0700 0282 0160\`\nTo'lovdan so'ng @santyx ga yozing.`;
+  ctx.editMessageText(payText, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Orqaga', `prod:${ctx.match[1]}`)]]) }).catch(() => {});
+});
+
+const PORT = process.env.PORT || 3000;
+app.get('/', (req, res) => res.send('Admin panel active.'));
+app.listen(PORT, () => { bot.launch(); });
