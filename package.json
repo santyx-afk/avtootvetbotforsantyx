@@ -1,0 +1,13 @@
+{
+  "name": "avtootvetbotforsantyx",
+  "version": "1.0.0",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "check": "node --check bot.js && node --check server.js && node --check netlify/functions/telegram-webhook.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "telegraf": "^4.16.3"
+  }
+}
