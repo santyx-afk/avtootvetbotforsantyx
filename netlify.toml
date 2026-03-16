@@ -1,7 +1,12 @@
+[functions]
+  node_bundler = "esbuild"
+  external_node_modules = ["telegraf"]
+
 [build]
   functions = "netlify/functions"
+  command = "echo Building functions"
 
 [[redirects]]
   from = "/"
-  to = "/.netlify/functions/health"
+  to = ".netlify/functions/health"
   status = 200
