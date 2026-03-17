@@ -1,7 +1,7 @@
 const { Telegraf, Markup } = require('telegraf');
 
-const ADMIN_ID = Number(process.env.ADMIN_ID || 1286053845);
-const BOT_TOKEN = process.env.BOT_TOKEN;
+const ADMIN_ID = 1286053845;
+const BOT_TOKEN = '8413484705:AAFUKTYcnnur-VJkHPjCn2AxRVHcMqNpwpM';
 
 if (!BOT_TOKEN) {
   throw new Error('BOT_TOKEN environment variable is required');
