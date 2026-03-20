@@ -1,12 +1,17 @@
+[build]
+  command = "echo 'Static admin + functions ready'"
+  publish = "admin"
+  functions = "netlify/functions"
+
 [functions]
   node_bundler = "esbuild"
-  external_node_modules = ["telegraf"]
-
-[build]
-  functions = "netlify/functions"
-  command = "echo Building functions"
 
 [[redirects]]
-  from = "/"
-  to = ".netlify/functions/health"
+  from = "/admin"
+  to = "/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
   status = 200
