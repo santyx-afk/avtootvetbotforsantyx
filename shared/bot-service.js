@@ -4,11 +4,15 @@ const {
   fetchPlansByCategory,
   fetchPlan,
   fetchCategory,
+  createOrder,
+  getOrderById,
+  updateOrderStatus,
   upsertUser,
   saveUserState,
   fetchUserState,
   trackEvent,
   insertReceiptSubmission,
+  setUserAwaitingReceipt,
 } = require('./db');
 const {
   inlineKeyboard,
@@ -25,6 +29,10 @@ const {
   howItWorksText,
   paymentText,
   receiptForwardCaption,
+  receiptAcceptedText,
+  noActiveOrderForReceiptText,
+  genericOrderErrorText,
+  paymentInstructionsWithOrderText,
 } = require('./messages');
 
 function navButtons(includeMain = true) {
@@ -32,6 +40,29 @@ function navButtons(includeMain = true) {
   if (includeMain) row.push({ text: '🏠 Bosh menyu', callback_data: 'nav:home' });
   row.push({ text: '⬅️ Orqaga', callback_data: 'nav:back' });
   return [row];
+}
+
+function resolveAdminChatId(settings) {
+  const fromSettings = settings?.admin_telegram_id;
+  const fromIds = (process.env.ADMIN_TELEGRAM_IDS || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)[0];
+  return fromSettings || process.env.ADMIN_CHAT_ID || process.env.ADMIN_TELEGRAM_ID || fromIds || null;
+}
+
+function resolveAdminChatIds(settings) {
+  const ids = [];
+  if (settings?.admin_telegram_id) ids.push(String(settings.admin_telegram_id));
+  if (process.env.ADMIN_CHAT_ID) ids.push(String(process.env.ADMIN_CHAT_ID));
+  if (process.env.ADMIN_TELEGRAM_ID) ids.push(String(process.env.ADMIN_TELEGRAM_ID));
+  const multi = (process.env.ADMIN_TELEGRAM_IDS || '').split(',').map((item) => item.trim()).filter(Boolean);
+  ids.push(...multi);
+  return [...new Set(ids)];
+}
+
+function formatAmount(amount, currency = 'UZS') {
+  return `${new Intl.NumberFormat('uz-UZ').format(Number(amount || 0))} ${currency}`;
 }
 
 async function showCategories({ supabase, chatId, messageId, telegramId, asEdit = false }) {
@@ -98,6 +129,7 @@ async function showPlanOrVariants({ supabase, chatId, messageId, telegramId, pla
 
   const keyboard = inlineKeyboard([
     [{ text: 'ℹ️ Qanday ulanadi', callback_data: `how:${plan.id}` }],
+    [{ text: '🛒 Sotib olish', callback_data: `buy:${plan.id}` }],
     [{ text: '💳 To‘lov qilish', callback_data: `pay:${plan.id}` }],
     [{ text: '⬅️ Orqaga', callback_data: plan.parentPlanId ? `plan:${plan.parentPlanId}` : `category:${plan.categoryId}` }],
   ]);
@@ -133,31 +165,79 @@ async function showHowItWorks({ supabase, chatId, messageId, telegramId, planId 
 async function showPayment({ supabase, chatId, messageId, telegramId, planId }) {
   const [plan, settings] = await Promise.all([fetchPlan(supabase, planId), fetchSettings(supabase)]);
   if (!plan) return;
-  await editMessage(chatId, messageId, paymentText(plan, settings), inlineKeyboard([
-    [{ text: '📨 Seller bilan bog‘lanish', url: settings?.support_link?.startsWith('http') ? settings.support_link : `https://t.me/${String(settings?.support_link || '@support').replace('@', '')}` }],
+  await upsertUser(supabase, { id: telegramId });
+  const order = await createOrder(supabase, {
+    user_telegram_id: String(telegramId),
+    plan_id: plan.id,
+    amount: plan.price,
+    status: 'pending_payment',
+    delivery_status: 'waiting_approval',
+    payment_method: 'card_transfer',
+  });
+  const paymentMessage = paymentInstructionsWithOrderText({
+    order: { orderNumber: order.order_number },
+    plan,
+    settings,
+    fallback: {
+      cardNumber: process.env.PAYMENT_CARD_NUMBER,
+      cardOwner: process.env.PAYMENT_CARD_OWNER,
+      instructions: process.env.PAYMENT_INSTRUCTIONS,
+      support: process.env.SUPPORT_USERNAME,
+    },
+  });
+  await editMessage(chatId, messageId, paymentMessage, inlineKeyboard([
+    [{ text: '📨 Seller bilan bog‘lanish', url: settings?.support_link?.startsWith('http') ? settings.support_link : `https://t.me/${String(settings?.support_link || process.env.SUPPORT_USERNAME || '@support').replace('@', '')}` }],
     [{ text: '⬅️ Orqaga', callback_data: `plan:${plan.id}` }],
   ]));
   await saveUserState(supabase, telegramId, {
     screen: 'payment',
     categoryId: plan.categoryId,
     planId: plan.id,
+    selected_plan_id: plan.id,
+    current_order_id: order.id,
+    awaiting_receipt: true,
+    previous_action: 'payment_opened',
     previous: { screen: 'plan-detail', categoryId: plan.categoryId, planId: plan.id },
   });
-  await trackEvent(supabase, { eventType: 'payment_opened', telegramId, categoryId: plan.categoryId, planId: plan.id });
+  await setUserAwaitingReceipt(supabase, telegramId, {
+    current_order_id: order.id,
+    selected_plan_id: plan.id,
+    previous_action: 'payment_opened',
+  });
+  await trackEvent(supabase, {
+    eventType: 'payment_opened',
+    telegramId,
+    categoryId: plan.categoryId,
+    planId: plan.id,
+    metadata: { orderId: order.id, orderNumber: order.order_number },
+  });
 }
 
 async function handleReceipt({ supabase, message }) {
   if (!message?.from?.id || !(message.photo || message.document || message.text)) return;
+  if (message.text && message.text.startsWith('/')) return;
   const state = await fetchUserState(supabase, message.from.id);
-  if (!state?.planId) return;
+  const orderId = state?.current_order_id;
+  if (!state?.awaiting_receipt || !orderId) {
+    await sendMessage(message.chat.id, noActiveOrderForReceiptText(), null);
+    return;
+  }
+  const order = await getOrderById(supabase, orderId);
+  if (!order || order.status !== 'pending_payment') {
+    await sendMessage(message.chat.id, noActiveOrderForReceiptText(), null);
+    return;
+  }
 
   const [settings, category, plan] = await Promise.all([
     fetchSettings(supabase),
-    fetchCategory(supabase, state.categoryId),
-    fetchPlan(supabase, state.planId),
+    fetchCategory(supabase, state.categoryId || order.category_id),
+    fetchPlan(supabase, state.planId || order.plan_id),
   ]);
-  const adminChatId = settings?.admin_telegram_id || process.env.ADMIN_TELEGRAM_ID;
-  if (!adminChatId) return;
+  const adminChatIds = resolveAdminChatIds(settings);
+  if (!adminChatIds.length) {
+    await sendMessage(message.chat.id, genericOrderErrorText(), null);
+    return;
+  }
 
   const caption = receiptForwardCaption({
     fullName: [message.from.first_name, message.from.last_name].filter(Boolean).join(' '),
@@ -168,7 +248,11 @@ async function handleReceipt({ supabase, message }) {
     timestamp: new Date(message.date * 1000 || Date.now()).toISOString(),
   });
 
-  await copyMessage(adminChatId, message.chat.id, message.message_id, caption);
+  const receiptFileId = message.photo?.[message.photo.length - 1]?.file_id || message.document?.file_id || null;
+  const receiptFileType = message.photo ? 'photo' : message.document ? 'document' : 'text';
+  for (const adminChatId of adminChatIds) {
+    await copyMessage(adminChatId, message.chat.id, message.message_id, caption);
+  }
   await trackEvent(supabase, {
     eventType: 'receipt_sent',
     telegramId: message.from.id,
@@ -176,14 +260,46 @@ async function handleReceipt({ supabase, message }) {
     planId: state.planId,
     metadata: { messageId: message.message_id },
   });
-  await insertReceiptSubmission(supabase, {
+  const receiptRow = await insertReceiptSubmission(supabase, {
     telegram_id: String(message.from.id),
     category_id: state.categoryId,
     plan_id: state.planId,
+    order_id: order.id,
     telegram_message_id: String(message.message_id),
     payload: message,
   });
-  await sendMessage(message.chat.id, 'Chekingiz qabul qilindi ✅\nAdmin tekshiruvdan so‘ng sizga javob beradi.', null);
+  const updatedOrder = await updateOrderStatus(supabase, order.id, 'payment_uploaded', {
+    receipt_submission_id: receiptRow?.id || null,
+    receipt_file_id: receiptFileId,
+    receipt_file_type: receiptFileType,
+    receipt_uploaded_at: new Date().toISOString(),
+  });
+  await saveUserState(supabase, message.from.id, {
+    ...state,
+    awaiting_receipt: false,
+    previous_action: 'receipt_uploaded',
+  });
+
+  const adminSummary = [
+    '<b>Yangi buyurtma cheki</b>',
+    `Buyurtma: <code>${updatedOrder?.order_number || order.order_number}</code>`,
+    `User ID: <code>${message.from.id}</code>`,
+    `Username: ${message.from.username ? `@${message.from.username}` : '-'}`,
+    `Ism: ${[message.from.first_name, message.from.last_name].filter(Boolean).join(' ') || '-'}`,
+    `Reja: ${plan?.name || '-'}`,
+    `Summa: ${formatAmount(updatedOrder?.amount || order.amount, plan?.currency || 'UZS')}`,
+    `Chek turi: ${receiptFileType}`,
+    `Holat: ${updatedOrder?.status || order.status}`,
+  ].join('\n');
+  const moderationButtons = inlineKeyboard([[
+    { text: '✅ Tasdiqlash', callback_data: `ord_ap:${order.id}` },
+    { text: '❌ Rad etish', callback_data: `ord_rej:${order.id}` },
+  ]]);
+  for (const adminChatId of adminChatIds) {
+    await sendMessage(adminChatId, adminSummary, moderationButtons);
+  }
+
+  await sendMessage(message.chat.id, 'Chekingiz qabul qilindi. To‘lov admin tomonidan tekshiriladi. Natija bo‘yicha sizga xabar beramiz.', null);
 }
 
 async function handleCallback({ supabase, callbackQuery }) {
@@ -205,8 +321,25 @@ async function handleCallback({ supabase, callbackQuery }) {
         await showHowItWorks({ supabase, chatId, messageId, telegramId, planId: payload });
         break;
       case 'pay':
+      case 'buy':
         await showPayment({ supabase, chatId, messageId, telegramId, planId: payload });
         break;
+      case 'ord_ap': {
+        const order = await updateOrderStatus(supabase, payload, 'approved');
+        await answerCallbackQuery(callbackQuery.id, 'Buyurtma tasdiqlandi');
+        if (order?.user_telegram_id) {
+          await sendMessage(order.user_telegram_id, `Buyurtmangiz tasdiqlandi ✅\nBuyurtma: ${order.order_number}`, null);
+        }
+        return;
+      }
+      case 'ord_rej': {
+        const order = await updateOrderStatus(supabase, payload, 'rejected');
+        await answerCallbackQuery(callbackQuery.id, 'Buyurtma rad etildi');
+        if (order?.user_telegram_id) {
+          await sendMessage(order.user_telegram_id, `Buyurtmangiz rad etildi ❌\nBuyurtma: ${order.order_number}`, null);
+        }
+        return;
+      }
       case 'nav':
         if (payload === 'home' || payload === 'back') {
           const state = await fetchUserState(supabase, telegramId);
