@@ -51,6 +51,7 @@ exports.handler = async (event) => {
 
     return { statusCode: 405, body: 'Method not allowed' };
   } catch (error) {
-    return { statusCode: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ok: false, error: error.message }) };
+    console.error('admin-data error', error);
+    return { statusCode: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ok: false, error: 'Server xatosi' }) };
   }
 };

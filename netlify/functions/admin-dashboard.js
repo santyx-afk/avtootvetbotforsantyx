@@ -81,6 +81,7 @@ exports.handler = async (event) => {
       }),
     };
   } catch (error) {
-    return { statusCode: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ok: false, error: error.message }) };
+    console.error('admin-dashboard error', error);
+    return { statusCode: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ok: false, error: 'Server xatosi' }) };
   }
 };

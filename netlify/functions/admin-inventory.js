@@ -24,10 +24,13 @@ exports.handler = async (event) => {
         return json(200, { ok: true, item });
       }
       const type = payload.type === 'account' ? 'auto_account' : payload.type;
-      if (!['auto_account', 'license_key', 'instruction'].includes(type)) return json(400, { ok: false, error: 'type noto‘g‘ri' });
+      if (!['auto_account', 'license_key'].includes(type)) return json(400, { ok: false, error: 'type noto‘g‘ri' });
+      if (!payload.plan_id) return json(400, { ok: false, error: 'plan_id talab qilinadi' });
+      if (type === 'auto_account' && (!payload.login || !payload.password)) return json(400, { ok: false, error: 'account uchun login va parol talab qilinadi' });
+      if (type === 'license_key' && !payload.license_key) return json(400, { ok: false, error: 'license_key talab qilinadi' });
       const row = await createInventoryItem(supabase, {
         plan_id: payload.plan_id,
-        type: type === 'instruction' ? 'license_key' : type,
+        type,
         title: payload.title || null,
         login: payload.login || null,
         password_encrypted: payload.password ? encryptText(payload.password) : null,
