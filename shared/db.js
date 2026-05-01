@@ -288,6 +288,56 @@ async function updateOrderStatus(client, orderId, status, extra = {}) {
   return data?.[0] || null;
 }
 
+function isAdminTelegramId(telegramId) {
+  const id = String(telegramId || '').trim();
+  if (!id) return false;
+  const admins = (process.env.ADMIN_TELEGRAM_IDS || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+  if (process.env.ADMIN_CHAT_ID) admins.push(String(process.env.ADMIN_CHAT_ID).trim());
+  return new Set(admins).has(id);
+}
+
+async function approveOrder(client, orderId) {
+  const current = await getOrderById(client, orderId);
+  if (!current) return { ok: false, reason: 'not_found' };
+  if (['approved', 'rejected', 'completed', 'cancelled'].includes(current.status)) return { ok: false, reason: 'already_processed', order: current };
+  if (!['payment_uploaded', 'checking'].includes(current.status)) return { ok: false, reason: 'invalid_status', order: current };
+
+  const now = new Date().toISOString();
+  const { data } = await request(client, 'orders', {
+    method: 'PATCH',
+    query: toQuery({ id: `eq.${orderId}`, status: `in.(payment_uploaded,checking)` }),
+    headers: { Prefer: 'return=representation' },
+    body: { status: 'approved', approved_at: now, updated_at: now },
+  });
+  if (!data?.[0]) {
+    const latest = await getOrderById(client, orderId);
+    return { ok: false, reason: 'already_processed', order: latest };
+  }
+  return { ok: true, order: data[0] };
+}
+
+async function rejectOrder(client, orderId) {
+  const current = await getOrderById(client, orderId);
+  if (!current) return { ok: false, reason: 'not_found' };
+  if (['approved', 'rejected', 'completed', 'cancelled'].includes(current.status)) return { ok: false, reason: 'already_processed', order: current };
+
+  const now = new Date().toISOString();
+  const { data } = await request(client, 'orders', {
+    method: 'PATCH',
+    query: toQuery({ id: `eq.${orderId}`, status: `not.in.(approved,rejected,completed,cancelled)` }),
+    headers: { Prefer: 'return=representation' },
+    body: { status: 'rejected', rejected_at: now, delivery_status: 'failed', updated_at: now },
+  });
+  if (!data?.[0]) {
+    const latest = await getOrderById(client, orderId);
+    return { ok: false, reason: 'already_processed', order: latest };
+  }
+  return { ok: true, order: data[0] };
+}
+
 async function listOrdersByStatus(client, status, limit = 50) {
   const { data } = await request(client, 'orders', {
     query: toQuery({ select: '*', status: `eq.${status}`, order: 'created_at.desc', limit }),
@@ -357,4 +407,7 @@ module.exports = {
   getOrdersByUser,
   setUserAwaitingReceipt,
   clearUserAwaitingReceipt,
+  approveOrder,
+  rejectOrder,
+  isAdminTelegramId,
 };

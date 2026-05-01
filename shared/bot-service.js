@@ -7,6 +7,9 @@ const {
   createOrder,
   getOrderById,
   updateOrderStatus,
+  approveOrder,
+  rejectOrder,
+  isAdminTelegramId,
   upsertUser,
   saveUserState,
   fetchUserState,
@@ -63,6 +66,10 @@ function resolveAdminChatIds(settings) {
 
 function formatAmount(amount, currency = 'UZS') {
   return `${new Intl.NumberFormat('uz-UZ').format(Number(amount || 0))} ${currency}`;
+}
+
+function isSafeOrderId(orderId) {
+  return /^[a-f0-9-]{16,64}$/i.test(String(orderId || ''));
 }
 
 async function showCategories({ supabase, chatId, messageId, telegramId, asEdit = false }) {
@@ -325,18 +332,86 @@ async function handleCallback({ supabase, callbackQuery }) {
         await showPayment({ supabase, chatId, messageId, telegramId, planId: payload });
         break;
       case 'ord_ap': {
-        const order = await updateOrderStatus(supabase, payload, 'approved');
-        await answerCallbackQuery(callbackQuery.id, 'Buyurtma tasdiqlandi');
+        if (!isAdminTelegramId(telegramId)) {
+          await answerCallbackQuery(callbackQuery.id, 'Sizda bu amal uchun ruxsat yo‘q.');
+          return;
+        }
+        if (!isSafeOrderId(payload)) {
+          await answerCallbackQuery(callbackQuery.id, 'Buyurtma ID xato.');
+          return;
+        }
+        const result = await approveOrder(supabase, payload);
+        if (!result.ok) {
+          if (result.reason === 'not_found') {
+            await answerCallbackQuery(callbackQuery.id, 'Buyurtma topilmadi.');
+          } else if (result.reason === 'already_processed') {
+            await answerCallbackQuery(callbackQuery.id, 'Bu buyurtma allaqachon qayta ishlangan.');
+          } else {
+            await answerCallbackQuery(callbackQuery.id, 'Buyurtma holati mos emas.');
+          }
+          return;
+        }
+        const order = result.order;
+        await trackEvent(supabase, { eventType: 'order_approved', telegramId, planId: order.plan_id, metadata: { orderId: order.id } });
+        let userNotifyFailed = false;
         if (order?.user_telegram_id) {
-          await sendMessage(order.user_telegram_id, `Buyurtmangiz tasdiqlandi ✅\nBuyurtma: ${order.order_number}`, null);
+          try {
+            await sendMessage(order.user_telegram_id, 'To‘lovingiz tasdiqlandi. Obunangiz ulanish jarayonida.', null);
+          } catch (error) {
+            userNotifyFailed = true;
+            console.error('User notify fail on approve', error);
+          }
+        }
+        if (chatId && messageId) {
+          const text = `${callbackQuery.message?.text || 'Buyurtma'}\n\n✅ YAKUNIY HOLAT: TASDIQLANDI`;
+          await editMessage(chatId, messageId, text);
+        }
+        if (userNotifyFailed) {
+          await answerCallbackQuery(callbackQuery.id, 'Buyurtma tasdiqlandi, lekin foydalanuvchiga xabar yuborilmadi.');
+        } else {
+          await answerCallbackQuery(callbackQuery.id, 'Buyurtma tasdiqlandi.');
         }
         return;
       }
       case 'ord_rej': {
-        const order = await updateOrderStatus(supabase, payload, 'rejected');
-        await answerCallbackQuery(callbackQuery.id, 'Buyurtma rad etildi');
+        if (!isAdminTelegramId(telegramId)) {
+          await answerCallbackQuery(callbackQuery.id, 'Sizda bu amal uchun ruxsat yo‘q.');
+          return;
+        }
+        if (!isSafeOrderId(payload)) {
+          await answerCallbackQuery(callbackQuery.id, 'Buyurtma ID xato.');
+          return;
+        }
+        const result = await rejectOrder(supabase, payload);
+        if (!result.ok) {
+          if (result.reason === 'not_found') {
+            await answerCallbackQuery(callbackQuery.id, 'Buyurtma topilmadi.');
+          } else if (result.reason === 'already_processed') {
+            await answerCallbackQuery(callbackQuery.id, 'Bu buyurtma allaqachon qayta ishlangan.');
+          } else {
+            await answerCallbackQuery(callbackQuery.id, 'Buyurtma holati mos emas.');
+          }
+          return;
+        }
+        const order = result.order;
+        await trackEvent(supabase, { eventType: 'order_rejected', telegramId, planId: order.plan_id, metadata: { orderId: order.id } });
+        let userNotifyFailed = false;
         if (order?.user_telegram_id) {
-          await sendMessage(order.user_telegram_id, `Buyurtmangiz rad etildi ❌\nBuyurtma: ${order.order_number}`, null);
+          try {
+            await sendMessage(order.user_telegram_id, 'Chekingiz rad etildi. Iltimos, to‘lov ma’lumotlarini tekshirib, qayta urinib ko‘ring yoki admin bilan bog‘laning.', null);
+          } catch (error) {
+            userNotifyFailed = true;
+            console.error('User notify fail on reject', error);
+          }
+        }
+        if (chatId && messageId) {
+          const text = `${callbackQuery.message?.text || 'Buyurtma'}\n\n❌ YAKUNIY HOLAT: RAD ETILDI`;
+          await editMessage(chatId, messageId, text);
+        }
+        if (userNotifyFailed) {
+          await answerCallbackQuery(callbackQuery.id, 'Buyurtma rad etildi, lekin foydalanuvchiga xabar yuborilmadi.');
+        } else {
+          await answerCallbackQuery(callbackQuery.id, 'Buyurtma rad etildi.');
         }
         return;
       }
