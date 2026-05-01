@@ -14,6 +14,8 @@
           <button data-view="dashboard" class="nav-link active">Dashboard</button>
           <button data-view="categories" class="nav-link">Kategoriyalar</button>
           <button data-view="plans" class="nav-link">Rejalar</button>
+          <button data-view="orders" class="nav-link">Buyurtmalar</button>
+          <button data-view="inventory" class="nav-link">Inventory</button>
           <button data-view="settings" class="nav-link">Sozlamalar</button>
         </nav>
         <button id="logoutButton" class="ghost danger">Chiqish</button>
@@ -85,17 +87,65 @@
                 <label>Button label<input id="planButtonLabel" /></label>
                 <label>Narx<input id="planPrice" type="number" required /></label>
                 <label>Valyuta<input id="planCurrency" value="UZS" required /></label>
+                <label>Eski narx<input id="planOldPrice" type="number" /></label>
+                <label>Ommabop<input id="planIsPopular" type="checkbox" /></label>
+                <label>Taglar (vergul bilan)<input id="planTags" /></label>
+                <label>Yetkazish turi
+                  <select id="planDeliveryType">
+                    <option value="manual">manual</option>
+                    <option value="auto_account">auto_account</option>
+                    <option value="license_key">license_key</option>
+                    <option value="instruction_only">instruction_only</option>
+                  </select>
+                </label>
                 <label>Muddat<input id="planDuration" /></label>
                 <label>Tartib<input id="planSortOrder" type="number" value="1" /></label>
                 <label class="full">Kafolat<textarea id="planWarrantyText" rows="2"></textarea></label>
                 <label class="full">Qisqa tavsif<textarea id="planDescription" rows="3"></textarea></label>
                 <label class="full">Qanday ulanadi<textarea id="planHowItWorksText" rows="4"></textarea></label>
                 <label class="full">To‘lov yo‘riqnomasi<textarea id="planPaymentInstructions" rows="4"></textarea></label>
+                <label class="full">Delivery instructions<textarea id="planDeliveryInstructions" rows="4"></textarea></label>
                 <label><input id="planIsActive" type="checkbox" checked /> Faol</label>
                 <div class="actions full">
                   <button type="submit">Saqlash</button>
                   <button type="button" id="planReset" class="ghost">Bekor qilish</button>
                 </div>
+              </form>
+            </div>
+          </section>
+
+          <section id="ordersView" class="view" hidden>
+            <div class="toolbar">
+              <h2>Buyurtmalar</h2>
+              <select id="orderStatusFilter">
+                <option value="">Barchasi</option>
+                <option>pending_payment</option><option>payment_uploaded</option><option>approved</option><option>waiting_stock</option><option>completed</option><option>rejected</option>
+              </select>
+              <button id="reloadOrdersButton">Yangilash</button>
+            </div>
+            <div id="ordersList" class="table-card"></div>
+          </section>
+
+          <section id="inventoryView" class="view" hidden>
+            <div class="toolbar"><h2>Inventory</h2></div>
+            <div class="card form-card">
+              <form id="inventoryFilterForm" class="grid-form">
+                <label>Reja<select id="inventoryPlanId"></select></label>
+                <div class="actions"><button type="submit">Ko‘rish</button></div>
+              </form>
+              <div id="inventoryCounts"></div>
+              <div id="inventoryList" class="table-card"></div>
+            </div>
+            <div class="card form-card">
+              <h3>Inventory qo‘shish</h3>
+              <form id="inventoryForm" class="grid-form">
+                <label>Reja<select id="inventoryPlanIdCreate"></select></label>
+                <label>Turi<select id="inventoryType"><option value="account">account</option><option value="license_key">license_key</option><option value="instruction">instruction</option></select></label>
+                <label>Login<input id="inventoryLogin" /></label>
+                <label>Parol<input id="inventoryPassword" /></label>
+                <label>Litsenziya kaliti<input id="inventoryLicenseKey" /></label>
+                <label class="full">Izoh<textarea id="inventoryNotes"></textarea></label>
+                <div class="actions full"><button type="submit">Saqlash</button></div>
               </form>
             </div>
           </section>

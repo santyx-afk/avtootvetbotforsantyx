@@ -34,6 +34,30 @@ async function request(client, table, { method = 'GET', query = '', body, header
   };
 }
 
+async function rpcRequest(client, fnName, body = {}) {
+  const url = `${client.url}/rest/v1/rpc/${fnName}`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      apikey: client.key,
+      Authorization: `Bearer ${client.key}`,
+      'Content-Type': 'application/json',
+      Prefer: 'return=representation',
+    },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) throw new Error(await response.text());
+  const text = await response.text();
+  return text ? JSON.parse(text) : null;
+}
+
+function toQuery(params = {}) {
+  return Object.entries(params)
+    .filter(([, value]) => value !== undefined && value !== null && value !== '')
+    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`)
+    .join('&');
+}
+
 function mapCategory(row) {
   return {
     id: row.id,
@@ -60,6 +84,8 @@ function mapPlan(row) {
     description: row.description,
     howItWorksText: row.how_it_works_text,
     paymentInstructions: row.payment_instructions,
+    deliveryType: row.delivery_type,
+    deliveryInstructions: row.delivery_instructions,
     rulesText: row.rules_text || '',
     isActive: row.is_active,
     sortOrder: row.sort_order,
@@ -87,12 +113,12 @@ async function fetchPlansByCategory(client, categoryId, parentPlanId = null) {
 }
 
 async function fetchPlan(client, planId) {
-  const { data } = await request(client, 'plans', { query: `select=*&id=eq.${planId}` });
+  const { data } = await request(client, 'plans', { query: toQuery({ select: '*', id: `eq.${planId}` }) });
   return data?.[0] ? mapPlan(data[0]) : null;
 }
 
 async function fetchCategory(client, categoryId) {
-  const { data } = await request(client, 'categories', { query: `select=*&id=eq.${categoryId}` });
+  const { data } = await request(client, 'categories', { query: toQuery({ select: '*', id: `eq.${categoryId}` }) });
   return data?.[0] ? mapCategory(data[0]) : null;
 }
 
@@ -125,7 +151,7 @@ async function saveUserState(client, telegramId, state) {
 }
 
 async function fetchUserState(client, telegramId) {
-  const { data } = await request(client, 'user_states', { query: `select=state&telegram_id=eq.${telegramId}` });
+  const { data } = await request(client, 'user_states', { query: toQuery({ select: 'state', telegram_id: `eq.${telegramId}` }) });
   return data?.[0]?.state || {};
 }
 
@@ -143,7 +169,12 @@ async function trackEvent(client, event) {
 }
 
 async function insertReceiptSubmission(client, item) {
-  return request(client, 'receipt_submissions', { method: 'POST', body: item });
+  const { data } = await request(client, 'receipt_submissions', {
+    method: 'POST',
+    headers: { Prefer: 'return=representation' },
+    body: item,
+  });
+  return data?.[0] || null;
 }
 
 async function listTable(client, table) {
@@ -180,13 +211,262 @@ async function countRows(client, table, filter = '') {
 }
 
 async function listRecentEvents(client, limit = 20) {
-  const { data } = await request(client, 'analytics_events', { query: `select=*&order=created_at.desc&limit=${limit}` });
+  const { data } = await request(client, 'analytics_events', { query: toQuery({ select: '*', order: 'created_at.desc', limit }) });
   return data || [];
 }
 
 async function listEventsByType(client, eventType, key) {
-  const { data } = await request(client, 'analytics_events', { query: `select=${key}&event_type=eq.${eventType}` });
+  const { data } = await request(client, 'analytics_events', { query: toQuery({ select: key, event_type: `eq.${eventType}` }) });
   return data || [];
+}
+
+function generateOrderNumber() {
+  const stamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
+  const rand = Math.random().toString(36).slice(2, 8).toUpperCase();
+  return `ORD-${stamp}-${rand}`;
+}
+
+async function createOrder(client, order) {
+  const payload = {
+    order_number: order.order_number || generateOrderNumber(),
+    user_id: order.user_id || null,
+    user_telegram_id: String(order.user_telegram_id),
+    plan_id: order.plan_id || null,
+    amount: Number(order.amount || 0),
+    status: order.status || 'pending_payment',
+    payment_method: order.payment_method || null,
+    delivery_status: order.delivery_status || 'waiting_approval',
+    inventory_item_id: order.inventory_item_id || null,
+    admin_comment: order.admin_comment || null,
+  };
+  const { data } = await request(client, 'orders', {
+    method: 'POST',
+    headers: { Prefer: 'return=representation' },
+    body: payload,
+  });
+  return data?.[0] || null;
+}
+
+async function getOrderById(client, orderId) {
+  const { data } = await request(client, 'orders', {
+    query: toQuery({ select: '*', id: `eq.${orderId}`, limit: 1 }),
+  });
+  return data?.[0] || null;
+}
+
+async function getOrderByNumber(client, orderNumber) {
+  const { data } = await request(client, 'orders', {
+    query: toQuery({ select: '*', order_number: `eq.${orderNumber}`, limit: 1 }),
+  });
+  return data?.[0] || null;
+}
+
+async function getLatestPendingOrderForUser(client, telegramId) {
+  const { data } = await request(client, 'orders', {
+    query: toQuery({
+      select: '*',
+      user_telegram_id: `eq.${telegramId}`,
+      status: 'in.(pending_payment,payment_uploaded,checking)',
+      order: 'created_at.desc',
+      limit: 1,
+    }),
+  });
+  return data?.[0] || null;
+}
+
+async function attachReceiptToOrder(client, orderId, receipt) {
+  const patch = {
+    receipt_submission_id: receipt.receipt_submission_id || null,
+    receipt_file_id: receipt.receipt_file_id || null,
+    receipt_file_type: receipt.receipt_file_type || null,
+    status: receipt.status || 'payment_uploaded',
+    receipt_uploaded_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  const { data } = await request(client, 'orders', {
+    method: 'PATCH',
+    query: toQuery({ id: `eq.${orderId}` }),
+    headers: { Prefer: 'return=representation' },
+    body: patch,
+  });
+  return data?.[0] || null;
+}
+
+async function updateOrderStatus(client, orderId, status, extra = {}) {
+  const now = new Date().toISOString();
+  const patch = { status, updated_at: now, ...extra };
+  if (status === 'approved') patch.approved_at = extra.approved_at || now;
+  if (status === 'rejected') patch.rejected_at = extra.rejected_at || now;
+  if (status === 'completed') patch.completed_at = extra.completed_at || now;
+  const { data } = await request(client, 'orders', {
+    method: 'PATCH',
+    query: toQuery({ id: `eq.${orderId}` }),
+    headers: { Prefer: 'return=representation' },
+    body: patch,
+  });
+  return data?.[0] || null;
+}
+
+function isAdminTelegramId(telegramId) {
+  const id = String(telegramId || '').trim();
+  if (!id) return false;
+  const admins = (process.env.ADMIN_TELEGRAM_IDS || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+  if (process.env.ADMIN_CHAT_ID) admins.push(String(process.env.ADMIN_CHAT_ID).trim());
+  return new Set(admins).has(id);
+}
+
+async function approveOrder(client, orderId) {
+  const current = await getOrderById(client, orderId);
+  if (!current) return { ok: false, reason: 'not_found' };
+  if (['approved', 'rejected', 'completed', 'cancelled'].includes(current.status)) return { ok: false, reason: 'already_processed', order: current };
+  if (!['payment_uploaded', 'checking'].includes(current.status)) return { ok: false, reason: 'invalid_status', order: current };
+
+  const now = new Date().toISOString();
+  const { data } = await request(client, 'orders', {
+    method: 'PATCH',
+    query: toQuery({ id: `eq.${orderId}`, status: `in.(payment_uploaded,checking)` }),
+    headers: { Prefer: 'return=representation' },
+    body: { status: 'approved', approved_at: now, updated_at: now },
+  });
+  if (!data?.[0]) {
+    const latest = await getOrderById(client, orderId);
+    return { ok: false, reason: 'already_processed', order: latest };
+  }
+  return { ok: true, order: data[0] };
+}
+
+async function rejectOrder(client, orderId) {
+  const current = await getOrderById(client, orderId);
+  if (!current) return { ok: false, reason: 'not_found' };
+  if (['approved', 'rejected', 'completed', 'cancelled'].includes(current.status)) return { ok: false, reason: 'already_processed', order: current };
+
+  const now = new Date().toISOString();
+  const { data } = await request(client, 'orders', {
+    method: 'PATCH',
+    query: toQuery({ id: `eq.${orderId}`, status: `not.in.(approved,rejected,completed,cancelled)` }),
+    headers: { Prefer: 'return=representation' },
+    body: { status: 'rejected', rejected_at: now, delivery_status: 'failed', updated_at: now },
+  });
+  if (!data?.[0]) {
+    const latest = await getOrderById(client, orderId);
+    return { ok: false, reason: 'already_processed', order: latest };
+  }
+  return { ok: true, order: data[0] };
+}
+
+async function listOrdersByStatus(client, status, limit = 50) {
+  const { data } = await request(client, 'orders', {
+    query: toQuery({ select: '*', status: `eq.${status}`, order: 'created_at.desc', limit }),
+  });
+  return data || [];
+}
+
+async function getOrdersByUser(client, telegramId, limit = 20) {
+  const { data } = await request(client, 'orders', {
+    query: toQuery({ select: '*', user_telegram_id: `eq.${telegramId}`, order: 'created_at.desc', limit }),
+  });
+  return data || [];
+}
+
+async function createInventoryItem(client, item) {
+  const { data } = await request(client, 'inventory_items', {
+    method: 'POST',
+    headers: { Prefer: 'return=representation' },
+    body: item,
+  });
+  return data?.[0] || null;
+}
+
+function maskInventory(row = {}) {
+  return {
+    ...row,
+    login: row.login ? `${String(row.login).slice(0, 2)}***` : null,
+    password_encrypted: row.password_encrypted ? '***' : null,
+    license_key_encrypted: row.license_key_encrypted ? '***' : null,
+    extra_data_encrypted: row.extra_data_encrypted ? '***' : null,
+  };
+}
+
+async function listInventoryByPlan(client, planId) {
+  const { data } = await request(client, 'inventory_items', {
+    query: toQuery({ select: '*', plan_id: `eq.${planId}`, order: 'created_at.asc' }),
+  });
+  return (data || []).map(maskInventory);
+}
+
+async function getInventoryCountsByPlan(client, planId) {
+  const { data } = await request(client, 'inventory_items', {
+    query: toQuery({ select: 'status', plan_id: `eq.${planId}` }),
+  });
+  return (data || []).reduce((acc, row) => {
+    acc[row.status] = (acc[row.status] || 0) + 1;
+    return acc;
+  }, {});
+}
+
+async function claimInventoryItemForOrder(client, planId, orderId, userTelegramId) {
+  const rows = await rpcRequest(client, 'claim_inventory_item', {
+    p_plan_id: planId,
+    p_order_id: orderId,
+    p_user_telegram_id: String(userTelegramId),
+  });
+  return rows?.[0] || null;
+}
+
+async function markInventoryDelivered(client, inventoryItemId, status = 'delivered') {
+  const now = new Date().toISOString();
+  const { data } = await request(client, 'inventory_items', {
+    method: 'PATCH',
+    query: toQuery({ id: `eq.${inventoryItemId}` }),
+    headers: { Prefer: 'return=representation' },
+    body: { status, delivered_at: now, sold_at: status === 'sold' ? now : null },
+  });
+  return data?.[0] || null;
+}
+
+async function createDeliveryLog(client, item) {
+  const { data } = await request(client, 'delivery_logs', {
+    method: 'POST',
+    headers: { Prefer: 'return=representation' },
+    body: item,
+  });
+  return data?.[0] || null;
+}
+
+async function getWaitingStockOrders(client, limit = 50) {
+  const { data } = await request(client, 'orders', {
+    query: toQuery({ select: '*', status: 'eq.approved', delivery_status: 'eq.waiting_stock', order: 'created_at.asc', limit }),
+  });
+  return data || [];
+}
+
+async function retryDeliveryForOrder(client, orderId) {
+  return getOrderById(client, orderId);
+}
+
+async function setUserAwaitingReceipt(client, telegramId, patchState = {}) {
+  const current = await fetchUserState(client, telegramId);
+  const next = {
+    ...current,
+    awaiting_receipt: true,
+    ...patchState,
+  };
+  await saveUserState(client, telegramId, next);
+  return next;
+}
+
+async function clearUserAwaitingReceipt(client, telegramId) {
+  const current = await fetchUserState(client, telegramId);
+  const next = {
+    ...current,
+    awaiting_receipt: false,
+    current_order_id: null,
+  };
+  await saveUserState(client, telegramId, next);
+  return next;
 }
 
 module.exports = {
@@ -211,4 +491,26 @@ module.exports = {
   listEventsByType,
   mapCategory,
   mapPlan,
+  toQuery,
+  createOrder,
+  getOrderById,
+  getOrderByNumber,
+  getLatestPendingOrderForUser,
+  attachReceiptToOrder,
+  updateOrderStatus,
+  listOrdersByStatus,
+  getOrdersByUser,
+  setUserAwaitingReceipt,
+  clearUserAwaitingReceipt,
+  approveOrder,
+  rejectOrder,
+  isAdminTelegramId,
+  createInventoryItem,
+  listInventoryByPlan,
+  getInventoryCountsByPlan,
+  claimInventoryItemForOrder,
+  markInventoryDelivered,
+  createDeliveryLog,
+  getWaitingStockOrders,
+  retryDeliveryForOrder,
 };

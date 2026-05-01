@@ -13,6 +13,9 @@ function createSession() {
 function isValidSession(token) {
   if (!token || !token.includes('.')) return false;
   const [payload, signature] = token.split('.');
+  const ttlMs = Number(process.env.ADMIN_SESSION_TTL_MS || 1000 * 60 * 60 * 12);
+  const ts = Number(payload);
+  if (!Number.isFinite(ts) || Date.now() - ts > ttlMs) return false;
   return sign(payload) === signature;
 }
 
