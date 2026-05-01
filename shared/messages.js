@@ -84,13 +84,21 @@ function paymentInstructionsWithOrderText({ order, plan, settings, fallback = {}
   const cardNumber = settings?.seller_card_number || fallback.cardNumber || 'Kiritilmagan';
   const cardOwner = settings?.seller_display_name || fallback.cardOwner || 'Kiritilmagan';
   const instructions = plan?.paymentInstructions || settings?.contact_text || fallback.instructions || 'To‘lov qilib, chekni yuboring.';
+  const support = settings?.support_link || fallback.support || '@support';
   return [
-    `Buyurtma: <code>${escapeHtml(order?.orderNumber || '-')}</code>`,
+    'Buyurtmangiz yaratildi.',
+    '',
+    `Buyurtma raqami: <code>${escapeHtml(order?.orderNumber || '-')}</code>`,
     `<b>${escapeHtml(plan?.name || 'Obuna')}</b>`,
+    `To‘lov summasi: <b>${escapeHtml(formatPrice(plan?.price, plan?.currency || 'UZS'))}</b>`,
+    '',
     `Karta: <code>${escapeHtml(cardNumber)}</code>`,
-    `Qabul qiluvchi: <b>${escapeHtml(cardOwner)}</b>`,
+    `Karta egasi: <b>${escapeHtml(cardOwner)}</b>`,
     '',
     escapeHtml(instructions),
+    '',
+    `Yordam: ${escapeHtml(support)}`,
+    'To‘lov qilgandan so‘ng chek rasmini yoki PDF faylni shu chatga yuboring.',
   ].join('\n');
 }
 

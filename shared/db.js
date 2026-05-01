@@ -150,7 +150,12 @@ async function trackEvent(client, event) {
 }
 
 async function insertReceiptSubmission(client, item) {
-  return request(client, 'receipt_submissions', { method: 'POST', body: item });
+  const { data } = await request(client, 'receipt_submissions', {
+    method: 'POST',
+    headers: { Prefer: 'return=representation' },
+    body: item,
+  });
+  return data?.[0] || null;
 }
 
 async function listTable(client, table) {
