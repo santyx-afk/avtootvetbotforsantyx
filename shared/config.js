@@ -14,4 +14,5 @@ function assertEnv(names = requiredVars) {
 module.exports = {
   getEnv,
   assertEnv,
+  requiredVars,
 };

@@ -1,9 +1,11 @@
-const state = { categories: [], plans: [], settings: null };
+const state = { categories: [], plans: [], settings: null, orders: [], inventory: [] };
 
 const views = {
   dashboard: document.getElementById('dashboardView'),
   categories: document.getElementById('categoriesView'),
   plans: document.getElementById('plansView'),
+  orders: document.getElementById('ordersView'),
+  inventory: document.getElementById('inventoryView'),
   settings: document.getElementById('settingsView'),
 };
 
@@ -30,6 +32,9 @@ function renderStats(stats) {
     ['Jami foydalanuvchi', stats.totalUsers],
     ['Jami kliklar', stats.totalClicks],
     ['To‘lov sahifasi ochilishi', stats.totalPaymentOpens],
+    ['Bugungi tushum', Number(stats.revenueToday || 0).toLocaleString('uz-UZ')],
+    ['Haftalik tushum', Number(stats.revenueWeek || 0).toLocaleString('uz-UZ')],
+    ['Oylik tushum', Number(stats.revenueMonth || 0).toLocaleString('uz-UZ')],
   ];
   document.getElementById('statsCards').innerHTML = cards.map(([label, value]) => `<div class="card"><h3>${label}</h3><strong>${value}</strong></div>`).join('');
   document.getElementById('topCategories').innerHTML = stats.mostViewedCategories.map((item) => `<li>${item.name}: ${item.total}</li>`).join('') || '<li>Ma’lumot yo‘q</li>';
@@ -70,6 +75,8 @@ function renderPlans() {
     </tr>`).join('')}</tbody></table>`;
   const parentSelect = document.getElementById('planParentPlanId');
   parentSelect.innerHTML = `<option value="">Yo‘q</option>${state.plans.filter((item) => !item.parent_plan_id).map((item) => `<option value="${item.id}">${item.name}</option>`).join('')}`;
+  document.getElementById('inventoryPlanId').innerHTML = state.plans.map((item) => `<option value="${item.id}">${item.name}</option>`).join('');
+  document.getElementById('inventoryPlanIdCreate').innerHTML = state.plans.map((item) => `<option value="${item.id}">${item.name}</option>`).join('');
 }
 
 function fillCategoryForm(item = {}) {
@@ -91,12 +98,17 @@ function fillPlanForm(item = {}) {
   document.getElementById('planButtonLabel').value = item.button_label || '';
   document.getElementById('planPrice').value = item.price || '';
   document.getElementById('planCurrency').value = item.currency || 'UZS';
+  document.getElementById('planOldPrice').value = item.old_price || '';
+  document.getElementById('planIsPopular').checked = item.is_popular ?? false;
+  document.getElementById('planTags').value = Array.isArray(item.tags) ? item.tags.join(',') : '';
+  document.getElementById('planDeliveryType').value = item.delivery_type || 'manual';
   document.getElementById('planDuration').value = item.duration || '';
   document.getElementById('planSortOrder').value = item.sort_order || 1;
   document.getElementById('planWarrantyText').value = item.warranty_text || '';
   document.getElementById('planDescription').value = item.description || '';
   document.getElementById('planHowItWorksText').value = item.how_it_works_text || '';
   document.getElementById('planPaymentInstructions').value = item.payment_instructions || '';
+  document.getElementById('planDeliveryInstructions').value = item.delivery_instructions || '';
   document.getElementById('planIsActive').checked = item.is_active ?? true;
   document.getElementById('planFormTitle').textContent = item.id ? 'Rejani tahrirlash' : 'Reja qo‘shish';
 }
@@ -111,6 +123,35 @@ async function loadData() {
   state.plans = data.plans;
   renderCategories();
   renderPlans();
+  await loadOrders();
+  await loadInventory();
+}
+
+async function loadOrders() {
+  const status = document.getElementById('orderStatusFilter')?.value || '';
+  const data = await api(`admin-orders${status ? `?status=${encodeURIComponent(status)}` : ''}`);
+  state.orders = data.orders || [];
+  const root = document.getElementById('ordersList');
+  root.innerHTML = `<table><thead><tr><th>№</th><th>User</th><th>Reja</th><th>Summa</th><th>Status</th><th>Delivery</th><th>Vaqt</th><th>Amal</th></tr></thead><tbody>${state.orders.map((o) => `
+  <tr><td>${o.order_number}</td><td>${o.user_telegram_id}</td><td>${o.plan_name || '-'}</td><td>${Number(o.amount || 0).toLocaleString('uz-UZ')}</td><td>${o.status}</td><td>${o.delivery_status || '-'}</td><td>${new Date(o.created_at).toLocaleString('uz-UZ')}</td>
+  <td>
+    <button class="ghost order-action" data-action="approve" data-id="${o.id}">Approve</button>
+    <button class="ghost danger order-action" data-action="reject" data-id="${o.id}">Reject</button>
+    <button class="ghost order-action" data-action="retry_delivery" data-id="${o.id}">Retry</button>
+    <button class="ghost order-action" data-action="complete" data-id="${o.id}">Complete</button>
+  </td></tr>`).join('')}</tbody></table>`;
+}
+
+async function loadInventory() {
+  const planId = document.getElementById('inventoryPlanId')?.value;
+  if (!planId) return;
+  const data = await api(`admin-inventory?plan_id=${encodeURIComponent(planId)}`);
+  state.inventory = data.items || [];
+  const c = data.counts || {};
+  document.getElementById('inventoryCounts').innerHTML = `available:${c.available || 0}, reserved:${c.reserved || 0}, delivered:${c.delivered || 0}, sold:${c.sold || 0}, disabled:${c.disabled || 0}`;
+  document.getElementById('inventoryList').innerHTML = `<table><thead><tr><th>Type</th><th>Login</th><th>Password</th><th>Key</th><th>Status</th><th></th></tr></thead><tbody>${state.inventory.map((i) => `<tr>
+  <td>${i.type}</td><td>${i.login || '-'}</td><td>${i.password_encrypted || '-'}</td><td>${i.license_key_encrypted || '-'}</td><td>${i.status}</td>
+  <td><button class="ghost danger inv-disable" data-id="${i.id}">Disable</button></td></tr>`).join('')}</tbody></table>`;
 }
 
 async function loadSettings() {
@@ -216,6 +257,10 @@ document.getElementById('planForm').addEventListener('submit', async (event) => 
     name: document.getElementById('planName').value,
     button_label: document.getElementById('planButtonLabel').value,
     price: Number(document.getElementById('planPrice').value || 0),
+    old_price: document.getElementById('planOldPrice').value ? Number(document.getElementById('planOldPrice').value) : null,
+    is_popular: document.getElementById('planIsPopular').checked,
+    tags: document.getElementById('planTags').value ? document.getElementById('planTags').value.split(',').map((t) => t.trim()).filter(Boolean) : [],
+    delivery_type: document.getElementById('planDeliveryType').value,
     currency: document.getElementById('planCurrency').value,
     duration: document.getElementById('planDuration').value,
     sort_order: Number(document.getElementById('planSortOrder').value || 1),
@@ -223,6 +268,7 @@ document.getElementById('planForm').addEventListener('submit', async (event) => 
     description: document.getElementById('planDescription').value,
     how_it_works_text: document.getElementById('planHowItWorksText').value,
     payment_instructions: document.getElementById('planPaymentInstructions').value,
+    delivery_instructions: document.getElementById('planDeliveryInstructions').value,
     is_active: document.getElementById('planIsActive').checked,
   };
   await api('admin-data', { method: item.id ? 'PUT' : 'POST', body: JSON.stringify({ type: 'plan', item }) });
@@ -248,4 +294,38 @@ document.getElementById('settingsForm').addEventListener('submit', async (event)
 
 initApp().catch((error) => {
   document.getElementById('loginError').textContent = error.message;
+});
+
+document.getElementById('reloadOrdersButton')?.addEventListener('click', () => loadOrders().catch((e) => alert(e.message)));
+document.getElementById('orderStatusFilter')?.addEventListener('change', () => loadOrders().catch((e) => alert(e.message)));
+document.getElementById('ordersList')?.addEventListener('click', async (event) => {
+  const btn = event.target.closest('.order-action');
+  if (!btn) return;
+  await api('admin-orders', { method: 'POST', body: JSON.stringify({ action: btn.dataset.action, orderId: btn.dataset.id }) });
+  await loadOrders();
+  await loadDashboard();
+});
+document.getElementById('inventoryFilterForm')?.addEventListener('submit', async (event) => { event.preventDefault(); await loadInventory(); });
+document.getElementById('inventoryForm')?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  await api('admin-inventory', {
+    method: 'POST',
+    body: JSON.stringify({
+      plan_id: document.getElementById('inventoryPlanIdCreate').value,
+      type: document.getElementById('inventoryType').value,
+      login: document.getElementById('inventoryLogin').value || null,
+      password: document.getElementById('inventoryPassword').value || null,
+      license_key: document.getElementById('inventoryLicenseKey').value || null,
+      notes: document.getElementById('inventoryNotes').value || null,
+    }),
+  });
+  document.getElementById('inventoryPassword').value = '';
+  document.getElementById('inventoryLicenseKey').value = '';
+  await loadInventory();
+});
+document.getElementById('inventoryList')?.addEventListener('click', async (event) => {
+  const btn = event.target.closest('.inv-disable');
+  if (!btn) return;
+  await api('admin-inventory', { method: 'POST', body: JSON.stringify({ action: 'disable', id: btn.dataset.id }) });
+  await loadInventory();
 });
