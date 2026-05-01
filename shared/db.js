@@ -34,6 +34,13 @@ async function request(client, table, { method = 'GET', query = '', body, header
   };
 }
 
+function toQuery(params = {}) {
+  return Object.entries(params)
+    .filter(([, value]) => value !== undefined && value !== null && value !== '')
+    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`)
+    .join('&');
+}
+
 function mapCategory(row) {
   return {
     id: row.id,
@@ -87,12 +94,12 @@ async function fetchPlansByCategory(client, categoryId, parentPlanId = null) {
 }
 
 async function fetchPlan(client, planId) {
-  const { data } = await request(client, 'plans', { query: `select=*&id=eq.${planId}` });
+  const { data } = await request(client, 'plans', { query: toQuery({ select: '*', id: `eq.${planId}` }) });
   return data?.[0] ? mapPlan(data[0]) : null;
 }
 
 async function fetchCategory(client, categoryId) {
-  const { data } = await request(client, 'categories', { query: `select=*&id=eq.${categoryId}` });
+  const { data } = await request(client, 'categories', { query: toQuery({ select: '*', id: `eq.${categoryId}` }) });
   return data?.[0] ? mapCategory(data[0]) : null;
 }
 
@@ -125,7 +132,7 @@ async function saveUserState(client, telegramId, state) {
 }
 
 async function fetchUserState(client, telegramId) {
-  const { data } = await request(client, 'user_states', { query: `select=state&telegram_id=eq.${telegramId}` });
+  const { data } = await request(client, 'user_states', { query: toQuery({ select: 'state', telegram_id: `eq.${telegramId}` }) });
   return data?.[0]?.state || {};
 }
 
@@ -180,13 +187,136 @@ async function countRows(client, table, filter = '') {
 }
 
 async function listRecentEvents(client, limit = 20) {
-  const { data } = await request(client, 'analytics_events', { query: `select=*&order=created_at.desc&limit=${limit}` });
+  const { data } = await request(client, 'analytics_events', { query: toQuery({ select: '*', order: 'created_at.desc', limit }) });
   return data || [];
 }
 
 async function listEventsByType(client, eventType, key) {
-  const { data } = await request(client, 'analytics_events', { query: `select=${key}&event_type=eq.${eventType}` });
+  const { data } = await request(client, 'analytics_events', { query: toQuery({ select: key, event_type: `eq.${eventType}` }) });
   return data || [];
+}
+
+function generateOrderNumber() {
+  const stamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
+  const rand = Math.random().toString(36).slice(2, 8).toUpperCase();
+  return `ORD-${stamp}-${rand}`;
+}
+
+async function createOrder(client, order) {
+  const payload = {
+    order_number: order.order_number || generateOrderNumber(),
+    user_id: order.user_id || null,
+    user_telegram_id: String(order.user_telegram_id),
+    plan_id: order.plan_id || null,
+    amount: Number(order.amount || 0),
+    status: order.status || 'pending_payment',
+    payment_method: order.payment_method || null,
+    delivery_status: order.delivery_status || 'waiting_approval',
+    inventory_item_id: order.inventory_item_id || null,
+    admin_comment: order.admin_comment || null,
+  };
+  const { data } = await request(client, 'orders', {
+    method: 'POST',
+    headers: { Prefer: 'return=representation' },
+    body: payload,
+  });
+  return data?.[0] || null;
+}
+
+async function getOrderById(client, orderId) {
+  const { data } = await request(client, 'orders', {
+    query: toQuery({ select: '*', id: `eq.${orderId}`, limit: 1 }),
+  });
+  return data?.[0] || null;
+}
+
+async function getOrderByNumber(client, orderNumber) {
+  const { data } = await request(client, 'orders', {
+    query: toQuery({ select: '*', order_number: `eq.${orderNumber}`, limit: 1 }),
+  });
+  return data?.[0] || null;
+}
+
+async function getLatestPendingOrderForUser(client, telegramId) {
+  const { data } = await request(client, 'orders', {
+    query: toQuery({
+      select: '*',
+      user_telegram_id: `eq.${telegramId}`,
+      status: 'in.(pending_payment,payment_uploaded,checking)',
+      order: 'created_at.desc',
+      limit: 1,
+    }),
+  });
+  return data?.[0] || null;
+}
+
+async function attachReceiptToOrder(client, orderId, receipt) {
+  const patch = {
+    receipt_submission_id: receipt.receipt_submission_id || null,
+    receipt_file_id: receipt.receipt_file_id || null,
+    receipt_file_type: receipt.receipt_file_type || null,
+    status: receipt.status || 'payment_uploaded',
+    receipt_uploaded_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  const { data } = await request(client, 'orders', {
+    method: 'PATCH',
+    query: toQuery({ id: `eq.${orderId}` }),
+    headers: { Prefer: 'return=representation' },
+    body: patch,
+  });
+  return data?.[0] || null;
+}
+
+async function updateOrderStatus(client, orderId, status, extra = {}) {
+  const now = new Date().toISOString();
+  const patch = { status, updated_at: now, ...extra };
+  if (status === 'approved') patch.approved_at = extra.approved_at || now;
+  if (status === 'rejected') patch.rejected_at = extra.rejected_at || now;
+  if (status === 'completed') patch.completed_at = extra.completed_at || now;
+  const { data } = await request(client, 'orders', {
+    method: 'PATCH',
+    query: toQuery({ id: `eq.${orderId}` }),
+    headers: { Prefer: 'return=representation' },
+    body: patch,
+  });
+  return data?.[0] || null;
+}
+
+async function listOrdersByStatus(client, status, limit = 50) {
+  const { data } = await request(client, 'orders', {
+    query: toQuery({ select: '*', status: `eq.${status}`, order: 'created_at.desc', limit }),
+  });
+  return data || [];
+}
+
+async function getOrdersByUser(client, telegramId, limit = 20) {
+  const { data } = await request(client, 'orders', {
+    query: toQuery({ select: '*', user_telegram_id: `eq.${telegramId}`, order: 'created_at.desc', limit }),
+  });
+  return data || [];
+}
+
+async function setUserAwaitingReceipt(client, telegramId, patchState = {}) {
+  const current = await fetchUserState(client, telegramId);
+  const next = {
+    ...current,
+    awaiting_receipt: true,
+    ...patchState,
+  };
+  await saveUserState(client, telegramId, next);
+  return next;
+}
+
+async function clearUserAwaitingReceipt(client, telegramId) {
+  const current = await fetchUserState(client, telegramId);
+  const next = {
+    ...current,
+    awaiting_receipt: false,
+    current_order_id: null,
+  };
+  await saveUserState(client, telegramId, next);
+  return next;
 }
 
 module.exports = {
@@ -211,4 +341,15 @@ module.exports = {
   listEventsByType,
   mapCategory,
   mapPlan,
+  toQuery,
+  createOrder,
+  getOrderById,
+  getOrderByNumber,
+  getLatestPendingOrderForUser,
+  attachReceiptToOrder,
+  updateOrderStatus,
+  listOrdersByStatus,
+  getOrdersByUser,
+  setUserAwaitingReceipt,
+  clearUserAwaitingReceipt,
 };

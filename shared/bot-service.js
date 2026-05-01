@@ -9,6 +9,7 @@ const {
   fetchUserState,
   trackEvent,
   insertReceiptSubmission,
+  setUserAwaitingReceipt,
 } = require('./db');
 const {
   inlineKeyboard,
@@ -25,6 +26,7 @@ const {
   howItWorksText,
   paymentText,
   receiptForwardCaption,
+  receiptAcceptedText,
 } = require('./messages');
 
 function navButtons(includeMain = true) {
@@ -32,6 +34,15 @@ function navButtons(includeMain = true) {
   if (includeMain) row.push({ text: '🏠 Bosh menyu', callback_data: 'nav:home' });
   row.push({ text: '⬅️ Orqaga', callback_data: 'nav:back' });
   return [row];
+}
+
+function resolveAdminChatId(settings) {
+  const fromSettings = settings?.admin_telegram_id;
+  const fromIds = (process.env.ADMIN_TELEGRAM_IDS || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)[0];
+  return fromSettings || process.env.ADMIN_CHAT_ID || process.env.ADMIN_TELEGRAM_ID || fromIds || null;
 }
 
 async function showCategories({ supabase, chatId, messageId, telegramId, asEdit = false }) {
@@ -141,7 +152,14 @@ async function showPayment({ supabase, chatId, messageId, telegramId, planId }) 
     screen: 'payment',
     categoryId: plan.categoryId,
     planId: plan.id,
+    selected_plan_id: plan.id,
+    awaiting_receipt: true,
+    previous_action: 'payment_opened',
     previous: { screen: 'plan-detail', categoryId: plan.categoryId, planId: plan.id },
+  });
+  await setUserAwaitingReceipt(supabase, telegramId, {
+    selected_plan_id: plan.id,
+    previous_action: 'payment_opened',
   });
   await trackEvent(supabase, { eventType: 'payment_opened', telegramId, categoryId: plan.categoryId, planId: plan.id });
 }
@@ -156,7 +174,7 @@ async function handleReceipt({ supabase, message }) {
     fetchCategory(supabase, state.categoryId),
     fetchPlan(supabase, state.planId),
   ]);
-  const adminChatId = settings?.admin_telegram_id || process.env.ADMIN_TELEGRAM_ID;
+  const adminChatId = resolveAdminChatId(settings);
   if (!adminChatId) return;
 
   const caption = receiptForwardCaption({
@@ -183,7 +201,7 @@ async function handleReceipt({ supabase, message }) {
     telegram_message_id: String(message.message_id),
     payload: message,
   });
-  await sendMessage(message.chat.id, 'Chekingiz qabul qilindi ✅\nAdmin tekshiruvdan so‘ng sizga javob beradi.', null);
+  await sendMessage(message.chat.id, receiptAcceptedText(), null);
 }
 
 async function handleCallback({ supabase, callbackQuery }) {
