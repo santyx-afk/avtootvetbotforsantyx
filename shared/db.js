@@ -34,6 +34,23 @@ async function request(client, table, { method = 'GET', query = '', body, header
   };
 }
 
+async function rpcRequest(client, fnName, body = {}) {
+  const url = `${client.url}/rest/v1/rpc/${fnName}`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      apikey: client.key,
+      Authorization: `Bearer ${client.key}`,
+      'Content-Type': 'application/json',
+      Prefer: 'return=representation',
+    },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) throw new Error(await response.text());
+  const text = await response.text();
+  return text ? JSON.parse(text) : null;
+}
+
 function toQuery(params = {}) {
   return Object.entries(params)
     .filter(([, value]) => value !== undefined && value !== null && value !== '')
@@ -67,6 +84,8 @@ function mapPlan(row) {
     description: row.description,
     howItWorksText: row.how_it_works_text,
     paymentInstructions: row.payment_instructions,
+    deliveryType: row.delivery_type,
+    deliveryInstructions: row.delivery_instructions,
     rulesText: row.rules_text || '',
     isActive: row.is_active,
     sortOrder: row.sort_order,
@@ -352,6 +371,82 @@ async function getOrdersByUser(client, telegramId, limit = 20) {
   return data || [];
 }
 
+async function createInventoryItem(client, item) {
+  const { data } = await request(client, 'inventory_items', {
+    method: 'POST',
+    headers: { Prefer: 'return=representation' },
+    body: item,
+  });
+  return data?.[0] || null;
+}
+
+function maskInventory(row = {}) {
+  return {
+    ...row,
+    login: row.login ? `${String(row.login).slice(0, 2)}***` : null,
+    password_encrypted: row.password_encrypted ? '***' : null,
+    license_key_encrypted: row.license_key_encrypted ? '***' : null,
+    extra_data_encrypted: row.extra_data_encrypted ? '***' : null,
+  };
+}
+
+async function listInventoryByPlan(client, planId) {
+  const { data } = await request(client, 'inventory_items', {
+    query: toQuery({ select: '*', plan_id: `eq.${planId}`, order: 'created_at.asc' }),
+  });
+  return (data || []).map(maskInventory);
+}
+
+async function getInventoryCountsByPlan(client, planId) {
+  const { data } = await request(client, 'inventory_items', {
+    query: toQuery({ select: 'status', plan_id: `eq.${planId}` }),
+  });
+  return (data || []).reduce((acc, row) => {
+    acc[row.status] = (acc[row.status] || 0) + 1;
+    return acc;
+  }, {});
+}
+
+async function claimInventoryItemForOrder(client, planId, orderId, userTelegramId) {
+  const rows = await rpcRequest(client, 'claim_inventory_item', {
+    p_plan_id: planId,
+    p_order_id: orderId,
+    p_user_telegram_id: String(userTelegramId),
+  });
+  return rows?.[0] || null;
+}
+
+async function markInventoryDelivered(client, inventoryItemId, status = 'delivered') {
+  const now = new Date().toISOString();
+  const { data } = await request(client, 'inventory_items', {
+    method: 'PATCH',
+    query: toQuery({ id: `eq.${inventoryItemId}` }),
+    headers: { Prefer: 'return=representation' },
+    body: { status, delivered_at: now, sold_at: status === 'sold' ? now : null },
+  });
+  return data?.[0] || null;
+}
+
+async function createDeliveryLog(client, item) {
+  const { data } = await request(client, 'delivery_logs', {
+    method: 'POST',
+    headers: { Prefer: 'return=representation' },
+    body: item,
+  });
+  return data?.[0] || null;
+}
+
+async function getWaitingStockOrders(client, limit = 50) {
+  const { data } = await request(client, 'orders', {
+    query: toQuery({ select: '*', status: 'eq.approved', delivery_status: 'eq.waiting_stock', order: 'created_at.asc', limit }),
+  });
+  return data || [];
+}
+
+async function retryDeliveryForOrder(client, orderId) {
+  return getOrderById(client, orderId);
+}
+
 async function setUserAwaitingReceipt(client, telegramId, patchState = {}) {
   const current = await fetchUserState(client, telegramId);
   const next = {
@@ -410,4 +505,12 @@ module.exports = {
   approveOrder,
   rejectOrder,
   isAdminTelegramId,
+  createInventoryItem,
+  listInventoryByPlan,
+  getInventoryCountsByPlan,
+  claimInventoryItemForOrder,
+  markInventoryDelivered,
+  createDeliveryLog,
+  getWaitingStockOrders,
+  retryDeliveryForOrder,
 };

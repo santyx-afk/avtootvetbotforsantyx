@@ -143,3 +143,68 @@ alter table receipt_submissions add column if not exists order_id uuid reference
 create index if not exists idx_orders_user_telegram_id on orders(user_telegram_id);
 create index if not exists idx_orders_status on orders(status);
 create index if not exists idx_orders_plan_id on orders(plan_id);
+
+create table if not exists inventory_items (
+  id uuid primary key default gen_random_uuid(),
+  plan_id uuid not null references plans(id) on delete cascade,
+  type text not null check (type in ('auto_account', 'license_key')),
+  title text,
+  login text,
+  password_encrypted text,
+  license_key_encrypted text,
+  extra_data_encrypted text,
+  status text not null default 'available' check (status in ('available', 'reserved', 'delivered', 'sold', 'disabled')),
+  assigned_order_id uuid references orders(id) on delete set null,
+  assigned_user_telegram_id text,
+  created_at timestamptz not null default now(),
+  reserved_at timestamptz,
+  delivered_at timestamptz,
+  sold_at timestamptz,
+  notes text
+);
+
+create table if not exists delivery_logs (
+  id bigint generated always as identity primary key,
+  order_id uuid references orders(id) on delete set null,
+  user_telegram_id text,
+  plan_id uuid references plans(id) on delete set null,
+  inventory_item_id uuid references inventory_items(id) on delete set null,
+  delivery_type text,
+  delivered_at timestamptz,
+  admin_telegram_id text,
+  status text not null,
+  error_message text,
+  created_at timestamptz not null default now()
+);
+
+create or replace function claim_inventory_item(p_plan_id uuid, p_order_id uuid, p_user_telegram_id text)
+returns setof inventory_items
+language plpgsql
+as $$
+declare
+  v_item inventory_items;
+begin
+  select *
+    into v_item
+    from inventory_items
+   where plan_id = p_plan_id
+     and status = 'available'
+   order by created_at asc
+   for update skip locked
+   limit 1;
+
+  if not found then
+    return;
+  end if;
+
+  update inventory_items
+     set status = 'reserved',
+         assigned_order_id = p_order_id,
+         assigned_user_telegram_id = p_user_telegram_id,
+         reserved_at = now()
+   where id = v_item.id
+   returning * into v_item;
+
+  return next v_item;
+end;
+$$;
