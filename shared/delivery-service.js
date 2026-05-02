@@ -2,6 +2,14 @@ const { fetchPlan, updateOrderStatus, claimInventoryItemForOrder, markInventoryD
 const { sendMessage } = require('./telegram');
 const { decryptText } = require('./encryption');
 
+function mapTelegramSendError(error) {
+  const msg = String(error?.message || '');
+  if (/blocked by the user/i.test(msg) || /user is deactivated/i.test(msg)) return 'User botni ochmagan yoki bloklagan';
+  if (/chat not found/i.test(msg)) return 'Chat topilmadi';
+  if (/forbidden/i.test(msg) || /not enough rights/i.test(msg)) return 'Bot tomonidan yozishga ruxsat yo‘q';
+  return 'Userga xabar yuborib bo‘lmadi';
+}
+
 async function processApprovedDelivery({ supabase, order, adminTelegramId = 'web_admin' }) {
   if (!order) return { ok: false, code: 'ORDER_NOT_FOUND', message: 'Buyurtma topilmadi' };
   if (order.delivery_status === 'delivered' || order.inventory_item_id) return { ok: true, code: 'ALREADY_DELIVERED', message: 'Buyurtma oldin yetkazilgan' };
@@ -47,8 +55,10 @@ async function processApprovedDelivery({ supabase, order, adminTelegramId = 'web
       await sendMessage(userChatId, `To‘lovingiz tasdiqlandi.\n\nObuna: ${plan.name}\nBuyurtma: #${order.order_number}\n\nAktivatsiya kodi:\n${key || '-'}\n\nQo‘llanma:\n${plan.deliveryInstructions || '-'}`, null);
     }
   } catch (error) {
+    console.error('Delivery send/decrypt error', error);
+    const userError = mapTelegramSendError(error);
     await createDeliveryLog(supabase, { order_id: order.id, user_telegram_id: userChatId, plan_id: plan.id, inventory_item_id: item.id, delivery_type: deliveryType, admin_telegram_id: String(adminTelegramId), status: 'error', error_message: 'decrypt_or_send_failed' });
-    return { ok: false, code: 'DELIVERY_SEND_FAILED', message: 'Ma’lumotni yuborishda xatolik' };
+    return { ok: false, code: 'DELIVERY_SEND_FAILED', message: userError, admin_message: `${userError}. Userga yozib bo‘lmadi. Login/parolni qo‘lda yuboring.` };
   }
 
   await markInventoryDelivered(supabase, item.id, 'sold');

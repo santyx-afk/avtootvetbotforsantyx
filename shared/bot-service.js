@@ -372,7 +372,7 @@ async function handleCallback({ supabase, callbackQuery }) {
         } else if (deliveryResult?.message === 'waiting_stock') {
           await sendMessage(chatId, 'Zaxirada bu obuna uchun ma’lumot qolmagan. Iltimos, inventory qo‘shing yoki qo‘lda yetkazib bering.', null);
         } else if (deliveryResult && !deliveryResult.ok) {
-          await sendMessage(chatId, `Avto-yetkazib berish xatosi: ${deliveryResult.message}`, null);
+          await sendMessage(chatId, `Avto-yetkazib berish xatosi: ${deliveryResult.admin_message || deliveryResult.message}`, null);
         }
         if (userNotifyFailed) {
           await answerCallbackQuery(callbackQuery.id, 'Buyurtma tasdiqlandi, lekin foydalanuvchiga xabar yuborilmadi.');
