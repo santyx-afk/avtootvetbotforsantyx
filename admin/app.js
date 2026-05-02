@@ -301,7 +301,9 @@ document.getElementById('orderStatusFilter')?.addEventListener('change', () => l
 document.getElementById('ordersList')?.addEventListener('click', async (event) => {
   const btn = event.target.closest('.order-action');
   if (!btn) return;
-  await api('admin-orders', { method: 'POST', body: JSON.stringify({ action: btn.dataset.action, orderId: btn.dataset.id }) });
+  const res = await api('admin-orders', { method: 'POST', body: JSON.stringify({ action: btn.dataset.action, orderId: btn.dataset.id }) });
+  if (res?.delivery?.message) alert(`Delivery: ${res.delivery.message}`);
+  if (!res?.ok && res?.error) alert(res.error);
   await loadOrders();
   await loadDashboard();
 });

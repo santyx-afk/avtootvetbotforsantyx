@@ -10,9 +10,6 @@ const {
   approveOrder,
   rejectOrder,
   isAdminTelegramId,
-  claimInventoryItemForOrder,
-  markInventoryDelivered,
-  createDeliveryLog,
   upsertUser,
   saveUserState,
   fetchUserState,
@@ -40,7 +37,7 @@ const {
   genericOrderErrorText,
   paymentInstructionsWithOrderText,
 } = require('./messages');
-const { decryptText } = require('./encryption');
+const { processApprovedDelivery } = require('./delivery-service');
 
 function navButtons(includeMain = true) {
   const row = [];
@@ -76,97 +73,6 @@ function isSafeOrderId(orderId) {
   return /^[a-f0-9-]{16,64}$/i.test(String(orderId || ''));
 }
 
-async function processApprovedDelivery({ supabase, order, adminTelegramId }) {
-  if (order.delivery_status === 'delivered' || order.inventory_item_id) return { ok: true, message: 'already_delivered' };
-  const plan = await fetchPlan(supabase, order.plan_id || order.planId);
-  const deliveryType = plan?.deliveryType || 'manual';
-  const userChatId = order.user_telegram_id;
-
-  if (deliveryType === 'manual') {
-    await updateOrderStatus(supabase, order.id, 'approved', { delivery_status: 'manual_required' });
-    await createDeliveryLog(supabase, {
-      order_id: order.id, user_telegram_id: userChatId, plan_id: plan?.id, delivery_type: deliveryType,
-      admin_telegram_id: String(adminTelegramId), status: 'manual_required',
-    });
-    await sendMessage(userChatId, 'To‘lovingiz tasdiqlandi. Obunangiz admin tomonidan qo‘lda ulanadi.', null);
-    return { ok: true, message: 'manual_required' };
-  }
-
-  if (deliveryType === 'instruction_only') {
-    const instruction = plan?.deliveryInstructions || 'Yo‘riqnoma admin tomonidan yuboriladi.';
-    await sendMessage(userChatId, `To‘lovingiz tasdiqlandi.\n\n${instruction}`, null);
-    await updateOrderStatus(supabase, order.id, 'completed', { delivery_status: 'delivered', delivered_at: new Date().toISOString(), completed_at: new Date().toISOString() });
-    await createDeliveryLog(supabase, {
-      order_id: order.id, user_telegram_id: userChatId, plan_id: plan?.id, delivery_type: deliveryType,
-      admin_telegram_id: String(adminTelegramId), status: 'delivered', delivered_at: new Date().toISOString(),
-    });
-    return { ok: true, message: 'instruction_delivered' };
-  }
-
-  if (!process.env.INVENTORY_ENCRYPTION_KEY) {
-    await createDeliveryLog(supabase, {
-      order_id: order.id, user_telegram_id: userChatId, plan_id: plan?.id, delivery_type: deliveryType,
-      admin_telegram_id: String(adminTelegramId), status: 'error', error_message: 'INVENTORY_ENCRYPTION_KEY missing',
-    });
-    return { ok: false, message: 'INVENTORY_ENCRYPTION_KEY o‘rnatilmagan' };
-  }
-
-  const item = await claimInventoryItemForOrder(supabase, plan.id, order.id, userChatId);
-  if (!item) {
-    await updateOrderStatus(supabase, order.id, 'approved', { delivery_status: 'waiting_stock' });
-    await sendMessage(userChatId, 'To‘lovingiz tasdiqlandi. Obunangiz ulanish jarayonida. Tez orada ma’lumot yuboriladi.', null);
-    await createDeliveryLog(supabase, {
-      order_id: order.id, user_telegram_id: userChatId, plan_id: plan?.id, delivery_type: deliveryType,
-      admin_telegram_id: String(adminTelegramId), status: 'waiting_stock',
-    });
-    return { ok: true, message: 'waiting_stock' };
-  }
-
-  if (deliveryType === 'auto_account') {
-    const password = decryptText(item.password_encrypted);
-    const text = [
-      'To‘lovingiz tasdiqlandi.',
-      '',
-      `Obuna: ${plan?.name || '-'}`,
-      `Buyurtma: #${order.order_number}`,
-      '',
-      'Kirish ma’lumotlari:',
-      `Login: ${item.login || '-'}`,
-      `Parol: ${password || '-'}`,
-      '',
-      'Muhim: ma’lumotlarni hech kimga yubormang. Muammo bo‘lsa, admin bilan bog‘laning.',
-    ].join('\n');
-    await sendMessage(userChatId, text, null);
-  } else if (deliveryType === 'license_key') {
-    const licenseKey = decryptText(item.license_key_encrypted);
-    const text = [
-      'To‘lovingiz tasdiqlandi.',
-      '',
-      `Obuna: ${plan?.name || '-'}`,
-      `Buyurtma: #${order.order_number}`,
-      '',
-      'Aktivatsiya kodi:',
-      `${licenseKey || '-'}`,
-      '',
-      'Qo‘llanma:',
-      `${plan?.deliveryInstructions || '-'}`,
-    ].join('\n');
-    await sendMessage(userChatId, text, null);
-  }
-
-  await markInventoryDelivered(supabase, item.id, 'sold');
-  await updateOrderStatus(supabase, order.id, 'completed', {
-    inventory_item_id: item.id,
-    delivery_status: 'delivered',
-    delivered_at: new Date().toISOString(),
-    completed_at: new Date().toISOString(),
-  });
-  await createDeliveryLog(supabase, {
-    order_id: order.id, user_telegram_id: userChatId, plan_id: plan?.id, inventory_item_id: item.id, delivery_type: deliveryType,
-    admin_telegram_id: String(adminTelegramId), status: 'delivered', delivered_at: new Date().toISOString(),
-  });
-  return { ok: true, message: 'delivered' };
-}
 
 async function showCategories({ supabase, chatId, messageId, telegramId, asEdit = false }) {
   const settings = await fetchSettings(supabase);
