@@ -84,6 +84,7 @@ function mapPlan(row) {
     description: row.description,
     howItWorksText: row.how_it_works_text,
     paymentInstructions: row.payment_instructions,
+    delivery_type: row.delivery_type,
     deliveryType: row.delivery_type,
     deliveryInstructions: row.delivery_instructions,
     rulesText: row.rules_text || '',

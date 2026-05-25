@@ -1,4 +1,11 @@
-const { fetchPlan, updateOrderStatus, claimInventoryItemForOrder, markInventoryDelivered, createDeliveryLog, createSubscriptionFromOrder } = require('./db');
+const {
+  fetchPlan,
+  updateOrderStatus,
+  claimInventoryItemForOrder,
+  markInventoryDelivered,
+  createDeliveryLog,
+  createSubscriptionFromOrder,
+} = require('./db');
 const { sendMessage } = require('./telegram');
 const { decryptText } = require('./encryption');
 
@@ -7,26 +14,63 @@ function mapTelegramSendError(error) {
   if (/blocked by the user/i.test(msg) || /user is deactivated/i.test(msg)) return 'User botni ochmagan yoki bloklagan';
   if (/chat not found/i.test(msg)) return 'Chat topilmadi';
   if (/forbidden/i.test(msg) || /not enough rights/i.test(msg)) return 'Bot tomonidan yozishga ruxsat yo‘q';
-  return 'Userga xabar yuborib bo‘lmadi';
+  return msg || 'Userga xabar yuborib bo‘lmadi';
+}
+
+function parseExtraData(raw) {
+  if (!raw) return {};
+  try {
+    return typeof raw === 'string' ? JSON.parse(raw) : raw;
+  } catch {
+    return {};
+  }
+}
+
+function resolveAutoAccount(item = {}) {
+  const extra = parseExtraData(item.extra_data || item.extra_data_encrypted_plain || item.extra_data_json);
+  const login = item.login || extra.email || extra.login || extra.username || null;
+  const password = item.password || extra.password || extra.pass || null;
+  return { login, password };
+}
+
+function resolveLicenseKey(item = {}) {
+  const extra = parseExtraData(item.extra_data || item.extra_data_encrypted_plain || item.extra_data_json);
+  return item.license_key || item.key || extra.key || extra.license_key || null;
+}
+
+async function safeSendMessage(chatId, text, ctx = {}) {
+  try {
+    const result = await sendMessage(chatId, text, null);
+    console.log('Delivery sendMessage success', { chatId: String(chatId), messageId: result?.message_id, ...ctx });
+    return { ok: true, result };
+  } catch (error) {
+    console.error('Delivery sendMessage failed', { chatId: String(chatId), error: error?.message, stack: error?.stack, ...ctx });
+    return { ok: false, error };
+  }
 }
 
 async function processApprovedDelivery({ supabase, order, adminTelegramId = 'web_admin' }) {
   if (!order) return { ok: false, code: 'ORDER_NOT_FOUND', message: 'Buyurtma topilmadi' };
   if (order.delivery_status === 'delivered' || order.inventory_item_id) return { ok: true, code: 'ALREADY_DELIVERED', message: 'Buyurtma oldin yetkazilgan' };
+
   const plan = await fetchPlan(supabase, order.plan_id || order.planId);
   if (!plan) return { ok: false, code: 'PLAN_NOT_FOUND', message: 'Reja topilmadi' };
-  const deliveryType = plan.deliveryType || 'manual';
+
+  const deliveryType = plan.delivery_type || 'manual';
   const userChatId = order.user_telegram_id;
+  console.log('Approve flow start', { orderId: order.id, orderNumber: order.order_number, status: order.status, deliveryType, userChatId: String(userChatId) });
 
   if (deliveryType === 'manual') {
     await updateOrderStatus(supabase, order.id, 'approved', { delivery_status: 'manual_required' });
     await createDeliveryLog(supabase, { order_id: order.id, user_telegram_id: userChatId, plan_id: plan.id, delivery_type: deliveryType, admin_telegram_id: String(adminTelegramId), status: 'manual_required' });
-    await sendMessage(userChatId, 'To‘lovingiz tasdiqlandi. Obunangiz admin tomonidan qo‘lda ulanadi.', null);
+    const sent = await safeSendMessage(userChatId, 'To‘lovingiz tasdiqlandi. Obunangiz admin tomonidan qo‘lda ulanadi.', { orderId: order.id, deliveryType });
+    if (!sent.ok) return { ok: false, code: 'DELIVERY_SEND_FAILED', message: mapTelegramSendError(sent.error) };
     return { ok: true, code: 'MANUAL_REQUIRED', message: 'Qo‘lda yetkazib berish kerak' };
   }
 
   if (deliveryType === 'instruction_only') {
-    await sendMessage(userChatId, `To‘lovingiz tasdiqlandi.\n\n${plan.deliveryInstructions || 'Yo‘riqnoma admin tomonidan yuboriladi.'}`, null);
+    const sent = await safeSendMessage(userChatId, `To‘lovingiz tasdiqlandi.\n\n${plan.deliveryInstructions || 'Yo‘riqnoma admin tomonidan yuboriladi.'}`, { orderId: order.id, deliveryType });
+    if (!sent.ok) return { ok: false, code: 'DELIVERY_SEND_FAILED', message: mapTelegramSendError(sent.error) };
     await updateOrderStatus(supabase, order.id, 'completed', { delivery_status: 'delivered', delivered_at: new Date().toISOString(), completed_at: new Date().toISOString() });
     await createDeliveryLog(supabase, { order_id: order.id, user_telegram_id: userChatId, plan_id: plan.id, delivery_type: deliveryType, admin_telegram_id: String(adminTelegramId), status: 'delivered', delivered_at: new Date().toISOString() });
     await createSubscriptionFromOrder(supabase, order, plan);
@@ -39,26 +83,38 @@ async function processApprovedDelivery({ supabase, order, adminTelegramId = 'web
   }
 
   const item = await claimInventoryItemForOrder(supabase, plan.id, order.id, userChatId);
+  console.log('Selected inventory item', { orderId: order.id, deliveryType, itemId: item?.id, itemType: item?.type, login: item?.login || null });
   if (!item) {
     await updateOrderStatus(supabase, order.id, 'approved', { delivery_status: 'waiting_stock' });
-    await sendMessage(userChatId, 'To‘lovingiz tasdiqlandi. Obunangiz ulanish jarayonida. Tez orada ma’lumot yuboriladi.', null);
+    const sent = await safeSendMessage(userChatId, 'To‘lovingiz tasdiqlandi. Obunangiz ulanish jarayonida. Tez orada ma’lumot yuboriladi.', { orderId: order.id, deliveryType, noStock: true });
     await createDeliveryLog(supabase, { order_id: order.id, user_telegram_id: userChatId, plan_id: plan.id, delivery_type: deliveryType, admin_telegram_id: String(adminTelegramId), status: 'waiting_stock' });
+    if (!sent.ok) return { ok: false, code: 'DELIVERY_SEND_FAILED', message: mapTelegramSendError(sent.error) };
     return { ok: false, code: 'NO_STOCK', message: 'Zaxira tugagan' };
   }
 
   try {
     if (deliveryType === 'auto_account') {
-      const password = decryptText(item.password_encrypted);
-      await sendMessage(userChatId, `To‘lovingiz tasdiqlandi.\n\nObuna: ${plan.name}\nBuyurtma: #${order.order_number}\n\nKirish ma’lumotlari:\nLogin: ${item.login || '-'}\nParol: ${password || '-'}\n\nMuhim: ma’lumotlarni hech kimga yubormang.`, null);
+      const fallback = resolveAutoAccount(item);
+      const password = item.password_encrypted ? decryptText(item.password_encrypted) : fallback.password;
+      const login = fallback.login;
+      if (!login || !password) {
+        throw new Error('Inventory account format noto‘g‘ri: login/email/username va password topilmadi');
+      }
+      const sent = await safeSendMessage(userChatId, `To‘lovingiz tasdiqlandi.\n\nObuna: ${plan.name}\nBuyurtma: #${order.order_number}\n\nKirish ma’lumotlari:\nLogin: ${login}\nParol: ${password}\n\nMuhim: ma’lumotlarni hech kimga yubormang.`, { orderId: order.id, deliveryType });
+      if (!sent.ok) throw sent.error;
     } else if (deliveryType === 'license_key') {
-      const key = decryptText(item.license_key_encrypted);
-      await sendMessage(userChatId, `To‘lovingiz tasdiqlandi.\n\nObuna: ${plan.name}\nBuyurtma: #${order.order_number}\n\nAktivatsiya kodi:\n${key || '-'}\n\nQo‘llanma:\n${plan.deliveryInstructions || '-'}`, null);
+      const key = item.license_key_encrypted ? decryptText(item.license_key_encrypted) : resolveLicenseKey(item);
+      if (!key) throw new Error('Inventory key format noto‘g‘ri: key/license_key topilmadi');
+      const sent = await safeSendMessage(userChatId, `To‘lovingiz tasdiqlandi.\n\nObuna: ${plan.name}\nBuyurtma: #${order.order_number}\n\nAktivatsiya kodi:\n${key}\n\nQo‘llanma:\n${plan.deliveryInstructions || '-'}`, { orderId: order.id, deliveryType });
+      if (!sent.ok) throw sent.error;
     }
   } catch (error) {
-    console.error('Delivery send/decrypt error', error);
+    console.error('Delivery send/decrypt error', { orderId: order.id, error: error?.message, stack: error?.stack });
     const userError = mapTelegramSendError(error);
-    await createDeliveryLog(supabase, { order_id: order.id, user_telegram_id: userChatId, plan_id: plan.id, inventory_item_id: item.id, delivery_type: deliveryType, admin_telegram_id: String(adminTelegramId), status: 'error', error_message: 'decrypt_or_send_failed' });
-    return { ok: false, code: 'DELIVERY_SEND_FAILED', message: userError, admin_message: `${userError}. Userga yozib bo‘lmadi. Login/parolni qo‘lda yuboring.` };
+    await createDeliveryLog(supabase, { order_id: order.id, user_telegram_id: userChatId, plan_id: plan.id, inventory_item_id: item.id, delivery_type: deliveryType, admin_telegram_id: String(adminTelegramId), status: 'error', error_message: String(error?.message || 'decrypt_or_send_failed') });
+    await markInventoryDelivered(supabase, item.id, 'available');
+    await updateOrderStatus(supabase, order.id, 'approved', { inventory_item_id: null, delivery_status: 'waiting_approval' });
+    return { ok: false, code: 'DELIVERY_SEND_FAILED', message: userError, admin_message: `${userError}. Userga yozib bo‘lmadi. Inventory qaytarildi.` };
   }
 
   await markInventoryDelivered(supabase, item.id, 'sold');
