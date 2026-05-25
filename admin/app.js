@@ -132,14 +132,17 @@ async function loadOrders() {
   const data = await api(`admin-orders${status ? `?status=${encodeURIComponent(status)}` : ''}`);
   state.orders = data.orders || [];
   const root = document.getElementById('ordersList');
-  root.innerHTML = `<table><thead><tr><th>№</th><th>User</th><th>Reja</th><th>Summa</th><th>Status</th><th>Delivery</th><th>Vaqt</th><th>Amal</th></tr></thead><tbody>${state.orders.map((o) => `
+  root.innerHTML = `<table><thead><tr><th>№</th><th>User</th><th>Reja</th><th>Summa</th><th>Status</th><th>Delivery</th><th>Vaqt</th><th>Amal</th></tr></thead><tbody>${state.orders.map((o) => {
+  const canApprove = ['payment_uploaded', 'checking'].includes(o.status);
+  const isProcessed = ['approved', 'rejected', 'completed', 'cancelled'].includes(o.status);
+  return `
   <tr><td>${o.order_number}</td><td>${o.user_telegram_id}</td><td>${o.plan_name || '-'}</td><td>${Number(o.amount || 0).toLocaleString('uz-UZ')}</td><td>${o.status}</td><td>${o.delivery_status || '-'}</td><td>${new Date(o.created_at).toLocaleString('uz-UZ')}</td>
   <td>
-    <button class="ghost order-action" data-action="approve" data-id="${o.id}">Approve</button>
-    <button class="ghost danger order-action" data-action="reject" data-id="${o.id}">Reject</button>
+    <button class="ghost order-action" data-action="approve" data-id="${o.id}" ${canApprove ? '' : 'disabled'}>Approve</button>
+    <button class="ghost danger order-action" data-action="reject" data-id="${o.id}" ${isProcessed ? 'disabled' : ''}>Reject</button>
     <button class="ghost order-action" data-action="retry_delivery" data-id="${o.id}">Retry</button>
     <button class="ghost order-action" data-action="complete" data-id="${o.id}">Complete</button>
-  </td></tr>`).join('')}</tbody></table>`;
+  </td></tr>`;}).join('')}</tbody></table>`;
 }
 
 async function loadInventory() {
