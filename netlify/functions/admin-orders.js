@@ -37,11 +37,28 @@ exports.handler = async (event) => {
       if (!orderId || !action) return json(400, { ok: false, error: 'orderId va action talab qilinadi' });
       if (action === 'approve') {
         const approved = await approveOrder(supabase, orderId);
-        if (!approved.ok) return json(200, approved);
+        if (!approved.ok) {
+          const messages = {
+            not_found: 'Buyurtma topilmadi',
+            already_processed: 'Buyurtma allaqachon ko’rib chiqilgan',
+            invalid_status: 'Approve faqat payment_uploaded yoki checking statusdagi buyurtmaga ishlaydi',
+          };
+          return json(400, { ...approved, error: messages[approved.reason] || 'Approve bajarilmadi' });
+        }
         const delivery = await processApprovedDelivery({ supabase, order: approved.order, adminTelegramId: 'web_admin' });
         return json(200, { ...approved, delivery });
       }
-      if (action === 'reject') return json(200, await rejectOrder(supabase, orderId));
+      if (action === 'reject') {
+        const rejected = await rejectOrder(supabase, orderId);
+        if (!rejected.ok) {
+          const messages = {
+            not_found: 'Buyurtma topilmadi',
+            already_processed: 'Buyurtma allaqachon ko’rib chiqilgan',
+          };
+          return json(400, { ...rejected, error: messages[rejected.reason] || 'Reject bajarilmadi' });
+        }
+        return json(200, rejected);
+      }
       if (action === 'retry_delivery') {
         const order = await retryDeliveryForOrder(supabase, orderId);
         if (!order) return json(404, { ok: false, error: 'Buyurtma topilmadi' });
