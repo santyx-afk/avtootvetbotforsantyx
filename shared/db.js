@@ -470,6 +470,45 @@ async function clearUserAwaitingReceipt(client, telegramId) {
   return next;
 }
 
+// ✅ TUZATILDI: Bu funksiya avval yo'q edi, shuning uchun bot ishlamay qolardi
+async function createSubscriptionFromOrder(client, order, plan) {
+  try {
+    if (!order || !plan) return null;
+    const now = new Date();
+    const durationDays = plan.duration ? parseDurationToDays(plan.duration) : 30;
+    const expiresAt = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000).toISOString();
+    const { data } = await request(client, 'subscriptions', {
+      method: 'POST',
+      headers: { Prefer: 'return=representation,resolution=merge-duplicates', 'on_conflict': 'order_id' },
+      body: {
+        order_id: order.id,
+        user_telegram_id: String(order.user_telegram_id),
+        plan_id: order.plan_id || null,
+        plan_name: plan.name || null,
+        status: 'active',
+        started_at: now.toISOString(),
+        expires_at: expiresAt,
+        created_at: now.toISOString(),
+      },
+    });
+    return data?.[0] || null;
+  } catch (error) {
+    // Subscriptions jadvali bo'lmasa ham bot ishlaveradi
+    console.warn('createSubscriptionFromOrder warning (ignored):', error?.message);
+    return null;
+  }
+}
+
+function parseDurationToDays(duration = '') {
+  const str = String(duration).toLowerCase();
+  const num = parseInt(str, 10) || 30;
+  if (str.includes('yil') || str.includes('year')) return num * 365;
+  if (str.includes('oy') || str.includes('month')) return num * 30;
+  if (str.includes('hafta') || str.includes('week')) return num * 7;
+  if (str.includes('kun') || str.includes('day')) return num;
+  return 30;
+}
+
 module.exports = {
   getAdminClient,
   request,
@@ -514,4 +553,5 @@ module.exports = {
   createDeliveryLog,
   getWaitingStockOrders,
   retryDeliveryForOrder,
+  createSubscriptionFromOrder,
 };
