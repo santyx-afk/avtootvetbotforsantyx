@@ -367,9 +367,9 @@ async function handleCallback({ supabase, callbackQuery }) {
           const text = `${callbackQuery.message?.text || 'Buyurtma'}\n\n✅ YAKUNIY HOLAT: TASDIQLANDI`;
           await editMessage(chatId, messageId, text);
         }
-        if (deliveryResult?.message === 'manual_required') {
+        if (deliveryResult?.code === 'MANUAL_REQUIRED') {
           await sendMessage(chatId, 'Bu buyurtma qo‘lda yetkazib berilishi kerak.', null);
-        } else if (deliveryResult?.message === 'waiting_stock') {
+        } else if (deliveryResult?.code === 'NO_STOCK') {
           await sendMessage(chatId, 'Zaxirada bu obuna uchun ma’lumot qolmagan. Iltimos, inventory qo‘shing yoki qo‘lda yetkazib bering.', null);
         } else if (deliveryResult && !deliveryResult.ok) {
           await sendMessage(chatId, `Avto-yetkazib berish xatosi: ${deliveryResult.admin_message || deliveryResult.message}`, null);

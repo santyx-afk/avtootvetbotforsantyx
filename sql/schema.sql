@@ -120,7 +120,7 @@ create table if not exists orders (
     'delivered',
     'failed'
   )),
-  inventory_item_id text,
+  inventory_item_id uuid references inventory_items(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   receipt_uploaded_at timestamptz,

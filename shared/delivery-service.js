@@ -53,7 +53,7 @@ async function processApprovedDelivery({ supabase, order, adminTelegramId = 'web
   if (!order) return { ok: false, code: 'ORDER_NOT_FOUND', message: 'Buyurtma topilmadi' };
   if (order.delivery_status === 'delivered' || order.inventory_item_id) return { ok: true, code: 'ALREADY_DELIVERED', message: 'Buyurtma oldin yetkazilgan' };
 
-  const plan = await fetchPlan(supabase, order.plan_id || order.planId);
+  const plan = await fetchPlan(supabase, order.plan_id);
   if (!plan) return { ok: false, code: 'PLAN_NOT_FOUND', message: 'Reja topilmadi' };
 
   const deliveryType = plan.delivery_type || 'manual';
