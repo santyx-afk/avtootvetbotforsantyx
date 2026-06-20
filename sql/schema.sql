@@ -208,3 +208,36 @@ begin
   return next v_item;
 end;
 $$;
+
+create or replace function claim_inventory_item_by_type(p_plan_id uuid, p_order_id uuid, p_user_telegram_id text, p_type text)
+returns setof inventory_items
+language plpgsql
+as $$
+declare
+  v_item inventory_items;
+begin
+  select *
+    into v_item
+    from inventory_items
+   where plan_id = p_plan_id
+     and type = p_type
+     and status = 'available'
+   order by created_at asc
+   for update skip locked
+   limit 1;
+
+  if not found then
+    return;
+  end if;
+
+  update inventory_items
+     set status = 'reserved',
+         assigned_order_id = p_order_id,
+         assigned_user_telegram_id = p_user_telegram_id,
+         reserved_at = now()
+   where id = v_item.id
+   returning * into v_item;
+
+  return next v_item;
+end;
+$$;
