@@ -408,7 +408,21 @@ async function getInventoryCountsByPlan(client, planId) {
   }, {});
 }
 
-async function claimInventoryItemForOrder(client, planId, orderId, userTelegramId) {
+async function claimInventoryItemForOrder(client, planId, orderId, userTelegramId, type = null) {
+  if (type) {
+    try {
+      const rows = await rpcRequest(client, 'claim_inventory_item_by_type', {
+        p_plan_id: planId,
+        p_order_id: orderId,
+        p_user_telegram_id: String(userTelegramId),
+        p_type: type,
+      });
+      return rows?.[0] || null;
+    } catch (error) {
+      console.warn('claim_inventory_item_by_type unavailable, falling back to legacy claim_inventory_item:', error?.message);
+    }
+  }
+
   const rows = await rpcRequest(client, 'claim_inventory_item', {
     p_plan_id: planId,
     p_order_id: orderId,
