@@ -7,7 +7,7 @@ async function telegramRequest(method, payload) {
   const response = await fetch(`${API_BASE}/bot${token}/${method}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(cleanPayload(payload)),
   });
 
   const data = await response.json();
@@ -17,8 +17,30 @@ async function telegramRequest(method, payload) {
   return data.result;
 }
 
+function cleanPayload(payload = {}) {
+  return Object.fromEntries(
+    Object.entries(payload).filter(([, value]) => value !== undefined && value !== null),
+  );
+}
+
 function inlineKeyboard(rows) {
   return { inline_keyboard: rows };
+}
+
+function normalizeReplyMarkup(replyMarkup) {
+  if (replyMarkup === undefined || replyMarkup === null || replyMarkup === '') return undefined;
+
+  if (typeof replyMarkup === 'string') {
+    try {
+      const parsed = JSON.parse(replyMarkup);
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  if (typeof replyMarkup === 'object' && !Array.isArray(replyMarkup)) return replyMarkup;
+  return undefined;
 }
 
 function answerCallbackQuery(callbackQueryId, text) {
@@ -34,7 +56,7 @@ function sendMessage(chatId, text, replyMarkup) {
     chat_id: chatId,
     text,
     parse_mode: 'HTML',
-    reply_markup: replyMarkup,
+    reply_markup: normalizeReplyMarkup(replyMarkup),
     disable_web_page_preview: true,
   });
 }
@@ -45,7 +67,7 @@ function editMessage(chatId, messageId, text, replyMarkup) {
     message_id: messageId,
     text,
     parse_mode: 'HTML',
-    reply_markup: replyMarkup,
+    reply_markup: normalizeReplyMarkup(replyMarkup),
     disable_web_page_preview: true,
   });
 }
@@ -84,4 +106,6 @@ module.exports = {
   forwardMessage,
   copyMessage,
   setWebhook,
+  normalizeReplyMarkup,
+  cleanPayload,
 };

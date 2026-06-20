@@ -26,16 +26,48 @@ function parseExtraData(raw) {
   }
 }
 
+function decryptOptional(value) {
+  return value ? decryptText(value) : null;
+}
+
+function parseInventoryExtraData(item = {}) {
+  const encryptedExtra = decryptOptional(item.extra_data_encrypted);
+  return parseExtraData(
+    item.extra_data
+      || item.extra_data_plain
+      || item.extra_data_encrypted_plain
+      || item.extra_data_json
+      || encryptedExtra,
+  );
+}
+
+function firstValue(...values) {
+  return values.find((value) => value !== undefined && value !== null && String(value).trim() !== '') || null;
+}
+
 function resolveAutoAccount(item = {}) {
-  const extra = parseExtraData(item.extra_data || item.extra_data_encrypted_plain || item.extra_data_json);
-  const login = item.login || extra.email || extra.login || extra.username || null;
-  const password = item.password || extra.password || extra.pass || null;
+  const extra = parseInventoryExtraData(item);
+  const login = firstValue(item.login, item.email, item.username, extra.login, extra.email, extra.username);
+  const password = firstValue(
+    item.password,
+    item.password_encrypted ? decryptText(item.password_encrypted) : null,
+    extra.password,
+    extra.pass,
+    extra.password_encrypted ? decryptText(extra.password_encrypted) : null,
+  );
   return { login, password };
 }
 
 function resolveLicenseKey(item = {}) {
-  const extra = parseExtraData(item.extra_data || item.extra_data_encrypted_plain || item.extra_data_json);
-  return item.license_key || item.key || extra.key || extra.license_key || null;
+  const extra = parseInventoryExtraData(item);
+  return firstValue(
+    item.license_key,
+    item.key,
+    item.license_key_encrypted ? decryptText(item.license_key_encrypted) : null,
+    extra.key,
+    extra.license_key,
+    extra.license_key_encrypted ? decryptText(extra.license_key_encrypted) : null,
+  );
 }
 
 async function safeSendMessage(chatId, text, ctx = {}) {
@@ -82,7 +114,7 @@ async function processApprovedDelivery({ supabase, order, adminTelegramId = 'web
     return { ok: false, code: 'MISSING_ENCRYPTION_KEY', message: 'INVENTORY_ENCRYPTION_KEY o‘rnatilmagan' };
   }
 
-  const item = await claimInventoryItemForOrder(supabase, plan.id, order.id, userChatId);
+  const item = await claimInventoryItemForOrder(supabase, plan.id, order.id, userChatId, deliveryType);
   console.log('Selected inventory item', { orderId: order.id, deliveryType, itemId: item?.id, itemType: item?.type, login: item?.login || null });
   if (!item) {
     await updateOrderStatus(supabase, order.id, 'approved', { delivery_status: 'waiting_stock' });
@@ -93,17 +125,19 @@ async function processApprovedDelivery({ supabase, order, adminTelegramId = 'web
   }
 
   try {
+    if (item.type && item.type !== deliveryType) {
+      throw new Error(`Inventory type mismatch: expected ${deliveryType}, got ${item.type}`);
+    }
+
     if (deliveryType === 'auto_account') {
-      const fallback = resolveAutoAccount(item);
-      const password = item.password_encrypted ? decryptText(item.password_encrypted) : fallback.password;
-      const login = fallback.login;
+      const { login, password } = resolveAutoAccount(item);
       if (!login || !password) {
         throw new Error('Inventory account format noto‘g‘ri: login/email/username va password topilmadi');
       }
       const sent = await safeSendMessage(userChatId, `To‘lovingiz tasdiqlandi.\n\nObuna: ${plan.name}\nBuyurtma: #${order.order_number}\n\nKirish ma’lumotlari:\nLogin: ${login}\nParol: ${password}\n\nMuhim: ma’lumotlarni hech kimga yubormang.`, { orderId: order.id, deliveryType });
       if (!sent.ok) throw sent.error;
     } else if (deliveryType === 'license_key') {
-      const key = item.license_key_encrypted ? decryptText(item.license_key_encrypted) : resolveLicenseKey(item);
+      const key = resolveLicenseKey(item);
       if (!key) throw new Error('Inventory key format noto‘g‘ri: key/license_key topilmadi');
       const sent = await safeSendMessage(userChatId, `To‘lovingiz tasdiqlandi.\n\nObuna: ${plan.name}\nBuyurtma: #${order.order_number}\n\nAktivatsiya kodi:\n${key}\n\nQo‘llanma:\n${plan.deliveryInstructions || '-'}`, { orderId: order.id, deliveryType });
       if (!sent.ok) throw sent.error;
@@ -124,4 +158,4 @@ async function processApprovedDelivery({ supabase, order, adminTelegramId = 'web
   return { ok: true, code: 'DELIVERED', message: 'Yetkazildi' };
 }
 
-module.exports = { processApprovedDelivery };
+module.exports = { processApprovedDelivery, resolveAutoAccount, resolveLicenseKey };
