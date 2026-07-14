@@ -234,6 +234,10 @@ async function createOrder(client, order) {
     user_telegram_id: String(order.user_telegram_id),
     plan_id: order.plan_id || null,
     amount: Number(order.amount || 0),
+    base_price: order.base_price === undefined ? Number(order.amount || 0) : Number(order.base_price || 0),
+    unique_price: order.unique_price === undefined ? null : Number(order.unique_price || 0),
+    expires_at: order.expires_at || null,
+    payment_source: order.payment_source || null,
     status: order.status || 'pending_payment',
     payment_method: order.payment_method || null,
     delivery_status: order.delivery_status || 'waiting_approval',
@@ -247,6 +251,69 @@ async function createOrder(client, order) {
   });
   return data?.[0] || null;
 }
+
+async function createCartItem(client, item) {
+  const { data } = await request(client, 'cart_items', {
+    method: 'POST',
+    query: 'on_conflict=user_telegram_id,plan_id',
+    headers: { Prefer: 'return=representation,resolution=merge-duplicates' },
+    body: { user_telegram_id: String(item.user_telegram_id), plan_id: item.plan_id, quantity: Math.max(1, Number(item.quantity || 1)), updated_at: new Date().toISOString() },
+  });
+  return data?.[0] || null;
+}
+
+async function listCartItems(client, telegramId) {
+  const { data } = await request(client, 'cart_items', { query: toQuery({ select: '*,plans(*)', user_telegram_id: `eq.${telegramId}`, order: 'created_at.asc' }) });
+  return (data || []).map((row) => ({ ...row, plan: row.plans ? mapPlan(row.plans) : null }));
+}
+
+async function updateCartItemQuantity(client, id, quantity) {
+  const { data } = await request(client, 'cart_items', { method: 'PATCH', query: toQuery({ id: `eq.${id}` }), headers: { Prefer: 'return=representation' }, body: { quantity: Math.max(1, Number(quantity || 1)), updated_at: new Date().toISOString() } });
+  return data?.[0] || null;
+}
+
+async function removeCartItem(client, id) { return request(client, 'cart_items', { method: 'DELETE', query: toQuery({ id: `eq.${id}` }) }); }
+async function clearCart(client, telegramId) { return request(client, 'cart_items', { method: 'DELETE', query: toQuery({ user_telegram_id: `eq.${telegramId}` }) }); }
+
+async function generateUniquePrice(client, basePrice) {
+  const base = Math.floor(Number(basePrice || 0));
+  const { data } = await request(client, 'orders', { query: 'select=unique_price&status=eq.pending_payment&unique_price=not.is.null' });
+  const reserved = new Set((data || []).map((row) => Number(row.unique_price)));
+  const start = Math.floor(Math.random() * 999) + 1;
+  for (let i = 0; i < 999; i += 1) {
+    const candidate = base + (((start + i - 1) % 999) + 1);
+    if (!reserved.has(candidate)) return candidate;
+  }
+  throw new Error('No unique payment suffix available');
+}
+
+async function createCheckoutOrder(client, { user_telegram_id, items, expiresMinutes = Number(process.env.PAYMENT_EXPIRES_MINUTES || 45) }) {
+  const basePrice = items.reduce((sum, item) => sum + Number(item.plan?.price || item.price || 0) * Number(item.quantity || 1), 0);
+  const uniquePrice = await generateUniquePrice(client, basePrice);
+  const expiresAt = new Date(Date.now() + expiresMinutes * 60 * 1000).toISOString();
+  const order = await createOrder(client, { user_telegram_id, plan_id: items[0]?.plan_id || items[0]?.plan?.id || null, amount: uniquePrice, base_price: basePrice, unique_price: uniquePrice, expires_at: expiresAt, status: 'pending_payment', delivery_status: 'waiting_approval', payment_method: 'humo_card_bot', payment_source: 'humo_card_bot' });
+  for (const item of items) {
+    const unit = Number(item.plan?.price || item.price || 0);
+    await request(client, 'order_items', { method: 'POST', body: { order_id: order.id, user_telegram_id: String(user_telegram_id), plan_id: item.plan_id || item.plan?.id, quantity: Number(item.quantity || 1), unit_price: unit, total_price: unit * Number(item.quantity || 1) } });
+  }
+  return order;
+}
+
+async function findWaitingOrderByUniquePrice(client, amount) {
+  const { data } = await request(client, 'orders', { query: toQuery({ select: '*', unique_price: `eq.${amount}`, status: 'eq.pending_payment', order: 'created_at.asc', limit: 1 }) });
+  return data?.[0] || null;
+}
+
+async function markOrderPaidFromPayment(client, orderId, extra = {}) {
+  const now = new Date().toISOString();
+  const { data } = await request(client, 'orders', { method: 'PATCH', query: toQuery({ id: `eq.${orderId}`, status: 'eq.pending_payment' }), headers: { Prefer: 'return=representation' }, body: { status: 'approved', paid_at: now, approved_at: now, payment_source: extra.payment_source || 'humo_card_bot', payment_message_id: extra.payment_message_id || null, updated_at: now } });
+  return data?.[0] || null;
+}
+
+async function insertPaymentLog(client, item) { const { data } = await request(client, 'payment_logs', { method: 'POST', headers: { Prefer: 'return=representation' }, body: item }); return data?.[0] || null; }
+async function insertProcessedPaymentMessage(client, item) { const { data } = await request(client, 'processed_payment_messages', { method: 'POST', query: 'on_conflict=source,message_key', headers: { Prefer: 'return=representation,resolution=ignore-duplicates' }, body: item }); return data?.[0] || null; }
+async function getOrderItems(client, orderId) { const { data } = await request(client, 'order_items', { query: toQuery({ select: '*,plans(*)', order_id: `eq.${orderId}`, order: 'created_at.asc' }) }); return (data || []).map((row) => ({ ...row, plan: row.plans ? mapPlan(row.plans) : null })); }
+async function expirePendingOrders(client) { const now = new Date().toISOString(); return request(client, 'orders', { method: 'PATCH', query: `status=eq.pending_payment&expires_at=lt.${encodeURIComponent(now)}`, body: { status: 'cancelled', updated_at: now, admin_comment: 'Payment timeout' } }); }
 
 async function getOrderById(client, orderId) {
   const { data } = await request(client, 'orders', {
@@ -547,6 +614,18 @@ module.exports = {
   mapPlan,
   toQuery,
   createOrder,
+  createCartItem,
+  listCartItems,
+  updateCartItemQuantity,
+  removeCartItem,
+  clearCart,
+  createCheckoutOrder,
+  findWaitingOrderByUniquePrice,
+  markOrderPaidFromPayment,
+  insertPaymentLog,
+  insertProcessedPaymentMessage,
+  getOrderItems,
+  expirePendingOrders,
   getOrderById,
   getOrderByNumber,
   getLatestPendingOrderForUser,

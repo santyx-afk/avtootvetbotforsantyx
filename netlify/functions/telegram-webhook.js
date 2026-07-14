@@ -1,5 +1,6 @@
 const { getAdminClient } = require('../../shared/db');
 const { handleStart, handleCallback, handleReceipt } = require('../../shared/bot-service');
+const { handleHumoPaymentNotification } = require('../../shared/humo-payment-service');
 
 exports.handler = async (event) => {
   const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
@@ -25,7 +26,8 @@ exports.handler = async (event) => {
     } else if (update.callback_query) {
       await handleCallback({ supabase, callbackQuery: update.callback_query });
     } else if (update.message) {
-      await handleReceipt({ supabase, message: update.message });
+      const payment = await handleHumoPaymentNotification({ supabase, message: update.message });
+      if (!payment.handled) await handleReceipt({ supabase, message: update.message });
     }
   } catch (error) {
     console.error('Webhook handler error', error);

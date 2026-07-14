@@ -102,6 +102,52 @@ function paymentInstructionsWithOrderText({ order, plan, settings, fallback = {}
   ].join('\n');
 }
 
+
+function cartText(items = []) {
+  if (!items.length) return '🛒 Savatchangiz bo‘sh.';
+  const lines = ['🛒 <b>Savatchangiz</b>', ''];
+  let total = 0;
+  for (const item of items) {
+    const qty = Number(item.quantity || 1);
+    const price = Number(item.plan?.price || item.unit_price || 0) * qty;
+    total += price;
+    lines.push(`<b>${escapeHtml(item.plan?.name || 'Mahsulot')}</b>${qty > 1 ? ` x ${qty}` : ''}`);
+    lines.push(escapeHtml(formatPrice(price, item.plan?.currency || 'UZS')));
+    lines.push('');
+  }
+  lines.push('----------------');
+  lines.push('');
+  lines.push(`Jami: <b>${escapeHtml(formatPrice(total, 'UZS'))}</b>`);
+  return lines.join('\n');
+}
+
+function autoPaymentInstructionsText({ order, items = [], settings, fallback = {} }) {
+  const cardNumber = settings?.seller_card_number || fallback.cardNumber || 'Kiritilmagan';
+  const cardOwner = settings?.seller_display_name || fallback.cardOwner || 'Kiritilmagan';
+  const support = settings?.support_link || fallback.support || '@support';
+  const expires = order?.expires_at ? new Date(order.expires_at).toLocaleString('uz-UZ', { timeZone: 'Asia/Tashkent' }) : '-';
+  return [
+    'Buyurtmangiz yaratildi.',
+    '',
+    `Buyurtma raqami: <code>${escapeHtml(order?.order_number || order?.orderNumber || '-')}</code>`,
+    ...items.map((item) => `• ${escapeHtml(item.plan?.name || 'Mahsulot')} x ${Number(item.quantity || 1)}`),
+    '',
+    'To‘lov summasi:',
+    `<b>${escapeHtml(formatPrice(order?.unique_price || order?.amount || 0, 'UZS'))}</b>`,
+    '',
+    '⚠️ <b>Muhim!</b>',
+    'Faqat aynan shu summani yuboring.',
+    `${escapeHtml(formatPrice(order?.base_price || 0, 'UZS'))} yuborsangiz tizim to‘lovni avtomatik aniqlay olmaydi.`,
+    'Bunday holatda akkaunt avtomatik berilmaydi.',
+    'Admin bilan bog‘lanishingiz kerak bo‘ladi.',
+    '',
+    `Karta: <code>${escapeHtml(cardNumber)}</code>`,
+    `Karta egasi: <b>${escapeHtml(cardOwner)}</b>`,
+    `Muddat: ${escapeHtml(expires)}`,
+    `Yordam: ${escapeHtml(support)}`,
+  ].join('\n');
+}
+
 function receiptAcceptedText(order) {
   return [
     'Chekingiz qabul qilindi ✅',
@@ -130,6 +176,8 @@ module.exports = {
   receiptForwardCaption,
   orderCreatedText,
   paymentInstructionsWithOrderText,
+  cartText,
+  autoPaymentInstructionsText,
   receiptAcceptedText,
   noActiveOrderForReceiptText,
   genericOrderErrorText,
