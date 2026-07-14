@@ -5,8 +5,9 @@
   "type": "commonjs",
   "scripts": {
     "dev": "netlify dev",
-    "check": "node --check netlify/functions/telegram-webhook.js && node --check netlify/functions/set-webhook.js && node --check netlify/functions/admin-login.js && node --check netlify/functions/admin-session.js && node --check netlify/functions/admin-data.js && node --check netlify/functions/admin-settings.js && node --check netlify/functions/admin-dashboard.js && node --check netlify/functions/admin-logout.js && node --check shared/telegram.js && node --check shared/db.js && node --check shared/bot-service.js && node --check shared/delivery-service.js && node --check shared/auth.js",
-    "seed:demo": "node scripts/seed-demo.js"
+    "check": "node --check netlify/functions/telegram-webhook.js && node --check netlify/functions/maintenance.js && node --check netlify/functions/set-webhook.js && node --check netlify/functions/admin-login.js && node --check netlify/functions/admin-session.js && node --check netlify/functions/admin-data.js && node --check netlify/functions/admin-settings.js && node --check netlify/functions/admin-dashboard.js && node --check netlify/functions/admin-logout.js && node --check shared/telegram.js && node --check shared/db.js && node --check shared/bot-service.js && node --check shared/delivery-service.js && node --check shared/maintenance-service.js && node --check shared/retry-policy.js && node --check shared/humo-payment-service.js && node --check shared/auth.js",
+    "seed:demo": "node scripts/seed-demo.js",
+    "test": "node --test"
   },
   "dependencies": {},
   "devDependencies": {}

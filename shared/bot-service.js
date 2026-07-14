@@ -5,6 +5,17 @@ const {
   fetchPlan,
   fetchCategory,
   createOrder,
+  createCartItem,
+  listCartItems,
+  updateCartItemQuantity,
+  removeCartItem,
+  clearCart,
+  createCheckoutOrder,
+  expirePendingOrders,
+  reserveInventoryForOrder,
+  createAuditLog,
+  validatePromoCode,
+  getUserBalance,
   getOrderById,
   updateOrderStatus,
   approveOrder,
@@ -36,6 +47,10 @@ const {
   noActiveOrderForReceiptText,
   genericOrderErrorText,
   paymentInstructionsWithOrderText,
+  cartText,
+  autoPaymentInstructionsText,
+  balanceText,
+  referralText,
 } = require('./messages');
 const { processApprovedDelivery } = require('./delivery-service');
 
@@ -138,8 +153,8 @@ async function showPlanOrVariants({ supabase, chatId, messageId, telegramId, pla
 
   const keyboard = inlineKeyboard([
     [{ text: 'ℹ️ Qanday ulanadi', callback_data: `how:${plan.id}` }],
-    [{ text: '🛒 Sotib olish', callback_data: `buy:${plan.id}` }],
-    [{ text: '💳 To‘lov qilish', callback_data: `pay:${plan.id}` }],
+    [{ text: '🛒 Savatchaga qo‘shish', callback_data: `cart_add:${plan.id}` }],
+    [{ text: '🛒 Savatchaga o‘tish', callback_data: 'cart_view:open' }],
     [{ text: '⬅️ Orqaga', callback_data: plan.parentPlanId ? `plan:${plan.parentPlanId}` : `category:${plan.categoryId}` }],
   ]);
   await editMessage(chatId, messageId, planDetailText(plan), keyboard);
@@ -169,6 +184,62 @@ async function showHowItWorks({ supabase, chatId, messageId, telegramId, planId 
     previous: { screen: 'plan-detail', categoryId: plan.categoryId, planId: plan.id },
   });
   await trackEvent(supabase, { eventType: 'how_it_works_opened', telegramId, categoryId: plan.categoryId, planId: plan.id });
+}
+
+
+async function showCart({ supabase, chatId, messageId, telegramId, asEdit = true }) {
+  const items = await listCartItems(supabase, telegramId);
+  const rows = items.flatMap((item) => ([
+    [{ text: `➖ ${item.plan?.name || 'Mahsulot'}`, callback_data: `cart_dec:${item.id}` }, { text: `❌`, callback_data: `cart_rm:${item.id}` }],
+  ]));
+  rows.push([{ text: '💳 To‘lov qilish', callback_data: 'checkout:cart' }]);
+  rows.push([{ text: '🛍 Yana mahsulot qo‘shish', callback_data: 'nav:home' }, { text: '🗑 Tozalash', callback_data: 'cart_clear:all' }]);
+  const text = cartText(items);
+  if (asEdit && messageId) await editMessage(chatId, messageId, text, inlineKeyboard(rows));
+  else await sendMessage(chatId, text, inlineKeyboard(rows));
+}
+
+async function addPlanToCart({ supabase, chatId, messageId, telegramId, planId }) {
+  const plan = await fetchPlan(supabase, planId);
+  if (!plan || !plan.isActive) return;
+  await upsertUser(supabase, { id: telegramId });
+  await createCartItem(supabase, { user_telegram_id: telegramId, plan_id: plan.id, quantity: 1 });
+  await editMessage(chatId, messageId, `✅ <b>${plan.name}</b> savatchaga qo‘shildi.`, inlineKeyboard([
+    [{ text: '🛒 Savatchaga o‘tish', callback_data: 'cart_view:open' }],
+    [{ text: '🛍 Davom etish', callback_data: `category:${plan.categoryId}` }],
+  ]));
+}
+
+async function checkoutCart({ supabase, chatId, messageId, telegramId }) {
+  const expiredOrders = await expirePendingOrders(supabase);
+  for (const expired of expiredOrders) {
+    if (expired?.user_telegram_id) {
+      try {
+        await sendMessage(expired.user_telegram_id, `Buyurtma #${expired.order_number} muddati tugadi. To‘lov summasi va zaxira bo‘shatildi.`, null);
+      } catch (error) {
+        console.warn('Expire notify failed:', error?.message);
+      }
+    }
+  }
+  const [items, settings] = await Promise.all([listCartItems(supabase, telegramId), fetchSettings(supabase)]);
+  if (!items.length) {
+    await editMessage(chatId, messageId, 'Savatchangiz bo‘sh.', inlineKeyboard([[{ text: '🏠 Bosh menyu', callback_data: 'nav:home' }]]));
+    return;
+  }
+  const state = await fetchUserState(supabase, telegramId);
+  const basePrice = items.reduce((sum, item) => sum + Number(item.plan?.price || 0) * Number(item.quantity || 1), 0);
+  const promoResult = state?.promo_code ? await validatePromoCode(supabase, state.promo_code, basePrice) : null;
+  const order = await createCheckoutOrder(supabase, { user_telegram_id: telegramId, items, promo: promoResult?.ok ? promoResult.promo : null });
+  await createAuditLog(supabase, { order_id: order.id, user_telegram_id: telegramId, action: 'order_created', status: order.status, metadata: { basePrice, uniquePrice: order.unique_price } });
+  const reserved = await reserveInventoryForOrder(supabase, order.id);
+  await createAuditLog(supabase, { order_id: order.id, user_telegram_id: telegramId, action: 'payment_waiting', status: order.status, metadata: { reservedInventory: reserved.length } });
+  await clearCart(supabase, telegramId);
+  await editMessage(chatId, messageId, autoPaymentInstructionsText({ order, items, settings, fallback: { cardNumber: process.env.PAYMENT_CARD_NUMBER, cardOwner: process.env.PAYMENT_CARD_OWNER, support: process.env.SUPPORT_USERNAME } }), inlineKeyboard([
+    [{ text: '📋 Kartani nusxalash', copy_text: { text: settings?.seller_card_number || process.env.PAYMENT_CARD_NUMBER || '' } }],
+    [{ text: '📨 Admin bilan bog‘lanish', url: settings?.support_link?.startsWith('http') ? settings.support_link : `https://t.me/${String(settings?.support_link || process.env.SUPPORT_USERNAME || '@support').replace('@', '')}` }],
+    [{ text: '🏠 Bosh menyu', callback_data: 'nav:home' }],
+  ]));
+  await saveUserState(supabase, telegramId, { screen: 'payment', current_order_id: order.id, awaiting_receipt: false, previous: { screen: 'categories' } });
 }
 
 async function showPayment({ supabase, chatId, messageId, telegramId, planId }) {
@@ -232,7 +303,7 @@ async function handleReceipt({ supabase, message }) {
     return;
   }
   const order = await getOrderById(supabase, orderId);
-  if (!order || order.status !== 'pending_payment') {
+  if (!order || !['pending_payment', 'waiting_payment'].includes(order.status)) {
     await sendMessage(message.chat.id, noActiveOrderForReceiptText(), null);
     return;
   }
@@ -329,9 +400,42 @@ async function handleCallback({ supabase, callbackQuery }) {
       case 'how':
         await showHowItWorks({ supabase, chatId, messageId, telegramId, planId: payload });
         break;
-      case 'pay':
       case 'buy':
-        await showPayment({ supabase, chatId, messageId, telegramId, planId: payload });
+      case 'cart_add':
+        await addPlanToCart({ supabase, chatId, messageId, telegramId, planId: payload });
+        break;
+      case 'cart_view':
+        await showCart({ supabase, chatId, messageId, telegramId });
+        break;
+      case 'cart_rm':
+        await removeCartItem(supabase, payload);
+        await showCart({ supabase, chatId, messageId, telegramId });
+        break;
+      case 'cart_dec': {
+        await removeCartItem(supabase, payload);
+        await showCart({ supabase, chatId, messageId, telegramId });
+        break;
+      }
+      case 'cart_clear':
+        await clearCart(supabase, telegramId);
+        await showCart({ supabase, chatId, messageId, telegramId });
+        break;
+      case 'checkout':
+        await checkoutCart({ supabase, chatId, messageId, telegramId });
+        break;
+      case 'promo':
+        await saveUserState(supabase, telegramId, { ...(await fetchUserState(supabase, telegramId)), awaiting_promo: true });
+        await sendMessage(chatId, 'Promo kodni yuboring:', null);
+        break;
+      case 'admin':
+        if (isAdminTelegramId(telegramId)) {
+          await sendMessage(chatId, '<b>Admin panel</b>\n\nOrders • Inventory • Payments • Users • Promo Codes • Referral System • Statistics • Broadcast Messages • Settings', null);
+        }
+        break;
+      case 'pay':
+        await addPlanToCart({ supabase, chatId, messageId, telegramId, planId: payload });
+        break;
+      case 'noop':
         break;
       case 'ord_ap': {
         if (!isAdminTelegramId(telegramId)) {
@@ -449,8 +553,45 @@ async function handleCallback({ supabase, callbackQuery }) {
   }
 }
 
+
+async function handleTextCommand({ supabase, message }) {
+  const text = String(message.text || '').trim();
+  const state = await fetchUserState(supabase, message.from.id);
+  if (state?.awaiting_promo && text && !text.startsWith('/')) {
+    const items = await listCartItems(supabase, message.from.id);
+    const basePrice = items.reduce((sum, item) => sum + Number(item.plan?.price || 0) * Number(item.quantity || 1), 0);
+    const result = await validatePromoCode(supabase, text, basePrice);
+    if (!result.ok) {
+      await sendMessage(message.chat.id, 'Promo kod yaroqsiz yoki muddati tugagan.', null);
+      return true;
+    }
+    await saveUserState(supabase, message.from.id, { ...state, awaiting_promo: false, promo_code: result.promo.code });
+    await sendMessage(message.chat.id, `Promo kod qabul qilindi. Chegirma: ${formatAmount(result.discount, 'UZS')}`, null);
+    return true;
+  }
+  if (text === '/balance') {
+    const wallet = await getUserBalance(supabase, message.from.id);
+    await sendMessage(message.chat.id, balanceText(wallet), null);
+    return true;
+  }
+  if (text === '/referral' || text === '/ref') {
+    const botUsername = process.env.BOT_USERNAME || 'santyxnarxbot';
+    await sendMessage(message.chat.id, referralText({ telegramId: message.from.id, botUsername }), null);
+    return true;
+  }
+  if (text === '/admin' && isAdminTelegramId(message.from.id)) {
+    await sendMessage(message.chat.id, '<b>Telegram admin panel</b>\n\n/orders - Orders\n/payments - Payments\n/inventory - Inventory\n/users - Users\n/promos - Promo Codes\n/referrals - Referral System\n/stats - Statistics\n/broadcast - Broadcast Messages\n/settings - Settings', null);
+    return true;
+  }
+  return false;
+}
+
 async function handleStart({ supabase, message }) {
   await upsertUser(supabase, message.from);
+  const ref = String(message.text || '').match(/^\/start\s+ref_(\d+)/);
+  if (ref && ref[1] !== String(message.from.id)) {
+    await createAuditLog(supabase, { user_telegram_id: message.from.id, action: 'referral_registered', status: 'created', metadata: { referrer: ref[1] } });
+  }
   await trackEvent(supabase, { eventType: 'start_used', telegramId: message.from.id });
   await showCategories({ supabase, chatId: message.chat.id, telegramId: message.from.id, asEdit: false });
 }
@@ -459,4 +600,5 @@ module.exports = {
   handleStart,
   handleCallback,
   handleReceipt,
+  handleTextCommand,
 };
