@@ -415,3 +415,161 @@ select
 from orders o
 left join order_items oi on oi.order_id = o.id
 group by o.id;
+
+-- Production hardening: transactional payment confirmation, retry queue, scheduler metrics
+create table if not exists delivery_retry_queue (
+  id bigint generated always as identity primary key,
+  order_id uuid not null references orders(id) on delete cascade,
+  reason text not null,
+  status text not null default 'pending' check (status in ('pending', 'completed', 'failed')),
+  retry_count integer not null default 0,
+  next_retry_at timestamptz not null default now(),
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  completed_at timestamptz,
+  unique(order_id)
+);
+create index if not exists idx_delivery_retry_due on delivery_retry_queue(status, next_retry_at);
+
+create table if not exists monitoring_snapshots (
+  id integer primary key default 1,
+  orders_today integer not null default 0,
+  revenue_today numeric(12,2) not null default 0,
+  retries_today integer not null default 0,
+  failed_deliveries integer not null default 0,
+  updated_at timestamptz not null default now()
+);
+
+create or replace function confirm_payment_notification(
+  p_amount numeric,
+  p_source text,
+  p_message_key text,
+  p_payload jsonb default '{}'::jsonb
+)
+returns table(status text, order_id uuid, order_number text, order_row jsonb)
+language plpgsql
+as $$
+declare
+  v_order orders;
+begin
+  -- Runs as a single PostgreSQL transaction. Any exception rolls back the processed-message insert and order update.
+  insert into processed_payment_messages(source, message_key, amount, raw_payload)
+  values (p_source, p_message_key, p_amount, p_payload)
+  on conflict(source, message_key) do nothing;
+
+  if not found then
+    status := 'duplicate';
+    order_id := null;
+    order_number := null;
+    order_row := null;
+    return next;
+    return;
+  end if;
+
+  select * into v_order
+    from orders
+   where unique_price = p_amount
+     and status in ('waiting_payment', 'pending_payment')
+   order by created_at asc
+   for update skip locked
+   limit 1;
+
+  if not found then
+    insert into payment_logs(source, message_key, amount, raw_payload, status)
+    values (p_source, p_message_key, p_amount, p_payload, 'no_waiting_order');
+    status := 'no_match';
+    order_id := null;
+    order_number := null;
+    order_row := null;
+    return next;
+    return;
+  end if;
+
+  update orders
+     set status = 'payment_detected',
+         paid_at = now(),
+         approved_at = now(),
+         payment_source = p_source,
+         payment_message_id = p_message_key,
+         updated_at = now()
+   where id = v_order.id
+   returning * into v_order;
+
+  insert into payment_logs(source, message_key, amount, paid_amount, base_price, order_id, user_telegram_id, raw_payload, status, delivery_status)
+  values (p_source, p_message_key, p_amount, p_amount, v_order.base_price, v_order.id, v_order.user_telegram_id, p_payload, 'matched', v_order.delivery_status);
+
+  insert into audit_logs(order_id, user_telegram_id, action, status, metadata)
+  values (v_order.id, v_order.user_telegram_id, 'payment_detected', 'payment_detected', jsonb_build_object('amount', p_amount, 'message_key', p_message_key));
+
+  status := 'matched';
+  order_id := v_order.id;
+  order_number := v_order.order_number;
+  order_row := to_jsonb(v_order);
+  return next;
+end;
+$$;
+
+create or replace function expire_unpaid_orders()
+returns integer
+language plpgsql
+as $$
+declare
+  v_order orders;
+  v_count integer := 0;
+begin
+  for v_order in
+    select * from orders
+     where status in ('waiting_payment', 'pending_payment')
+       and expires_at is not null
+       and expires_at < now()
+     for update skip locked
+  loop
+    update inventory_items
+       set status = 'available',
+           assigned_order_id = null,
+           assigned_user_telegram_id = null,
+           reserved_at = null
+     where assigned_order_id = v_order.id
+       and status = 'reserved';
+
+    update orders
+       set status = 'expired',
+           delivery_status = 'failed',
+           admin_comment = 'Payment timeout',
+           updated_at = now()
+     where id = v_order.id;
+
+    insert into audit_logs(order_id, user_telegram_id, action, status, metadata)
+    values (v_order.id, v_order.user_telegram_id, 'order_expired', 'expired', jsonb_build_object('expires_at', v_order.expires_at));
+    v_count := v_count + 1;
+  end loop;
+  return v_count;
+end;
+$$;
+
+create or replace function refresh_monitoring_snapshot()
+returns monitoring_snapshots
+language plpgsql
+as $$
+declare
+  v_row monitoring_snapshots;
+begin
+  insert into monitoring_snapshots(id, orders_today, revenue_today, retries_today, failed_deliveries, updated_at)
+  values (
+    1,
+    (select count(*) from orders where created_at >= date_trunc('day', now())),
+    coalesce((select sum(unique_price) from orders where paid_at >= date_trunc('day', now()) and status in ('payment_detected', 'delivering', 'completed')), 0),
+    (select count(*) from delivery_retry_queue where created_at >= date_trunc('day', now())),
+    (select count(*) from orders where delivery_status = 'failed')
+  , now())
+  on conflict(id) do update set
+    orders_today = excluded.orders_today,
+    revenue_today = excluded.revenue_today,
+    retries_today = excluded.retries_today,
+    failed_deliveries = excluded.failed_deliveries,
+    updated_at = now()
+  returning * into v_row;
+  return v_row;
+end;
+$$;

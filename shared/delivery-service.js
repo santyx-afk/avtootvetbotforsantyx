@@ -12,9 +12,11 @@ const {
   createExceptionQueueItem,
   getInventoryCountsByPlan,
   fetchSettings,
+  enqueueDeliveryRetry,
 } = require('./db');
 const { sendMessage } = require('./telegram');
 const { decryptText } = require('./encryption');
+const { nextRetryAt, hasRetriesLeft } = require('./retry-policy');
 
 function mapTelegramSendError(error) {
   const msg = String(error?.message || '');
@@ -173,7 +175,11 @@ async function processApprovedDelivery({ supabase, order, adminTelegramId = 'web
     const userError = mapTelegramSendError(error);
     await createDeliveryLog(supabase, { order_id: order.id, user_telegram_id: userChatId, plan_id: plan.id, inventory_item_id: item.id, delivery_type: deliveryType, admin_telegram_id: String(adminTelegramId), status: 'error', error_message: String(error?.message || 'decrypt_or_send_failed') });
     await markInventoryDelivered(supabase, item.id, 'available');
-    await updateOrderStatus(supabase, order.id, 'delivering', { inventory_item_id: item.id, delivery_status: 'failed', delivery_error: String(error?.message || 'delivery_failed') });
+    const nextCount = Number(order.delivery_attempts || 0) + 1;
+    await updateOrderStatus(supabase, order.id, 'delivering', { inventory_item_id: item.id, delivery_status: 'failed', delivery_error: String(error?.message || 'delivery_failed'), delivery_attempts: nextCount });
+    if (hasRetriesLeft(nextCount)) {
+      await enqueueDeliveryRetry(supabase, { order_id: order.id, reason: 'delivery_send_failed', retry_count: nextCount, next_retry_at: nextRetryAt(nextCount), metadata: { error: String(error?.message || 'delivery_failed') } });
+    }
     return { ok: false, code: 'DELIVERY_SEND_FAILED', message: userError, admin_message: `${userError}. Userga yozib bo‘lmadi. Inventory qaytarildi.` };
   }
 
@@ -215,6 +221,8 @@ async function processApprovedOrderDelivery({ supabase, order, adminTelegramId =
     await updateOrderStatus(supabase, order.id, 'delivering', { delivery_status: failed.code === 'NO_STOCK' ? 'waiting_stock' : 'failed', delivery_error: failed.message });
     await createAuditLog(supabase, { order_id: order.id, user_telegram_id: order.user_telegram_id, action: failed.code === 'NO_STOCK' ? 'exception_queue' : 'delivery_failed', status: 'delivering', metadata: { code: failed.code, message: failed.message } });
     if (failed.code === 'NO_STOCK') await createExceptionQueueItem(supabase, { order_id: order.id, reason: 'no_inventory', metadata: { message: failed.message } });
+    else if (hasRetriesLeft(Number(order.delivery_attempts || 0) + 1)) await enqueueDeliveryRetry(supabase, { order_id: order.id, reason: failed.code || 'delivery_failed', retry_count: Number(order.delivery_attempts || 0) + 1, next_retry_at: nextRetryAt(Number(order.delivery_attempts || 0) + 1), metadata: { message: failed.message } });
+    else await createExceptionQueueItem(supabase, { order_id: order.id, reason: 'max_retries_exceeded', metadata: { message: failed.message } });
     return failed;
   }
   await updateOrderStatus(supabase, order.id, 'completed', { delivery_status: 'delivered', delivered_at: new Date().toISOString(), completed_at: new Date().toISOString() });

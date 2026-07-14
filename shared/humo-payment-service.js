@@ -2,9 +2,8 @@ const {
   findWaitingOrderByUniquePrice,
   request,
   toQuery,
-  markOrderPaidFromPayment,
   insertPaymentLog,
-  insertProcessedPaymentMessage,
+  confirmPaymentNotification,
   trackEvent,
   fetchSettings,
   createAuditLog,
@@ -47,10 +46,10 @@ async function handleHumoPaymentNotification({ supabase, message }) {
   await insertPaymentLog(supabase, { source: 'humo_card_bot', message_key: key, amount, raw_payload: message, status: amount ? 'parsed' : 'parse_failed' });
   if (!amount) return { handled: true, matched: false };
 
-  const inserted = await insertProcessedPaymentMessage(supabase, { source: 'humo_card_bot', message_key: key, amount, raw_payload: message });
-  if (!inserted) return { handled: true, duplicate: true };
+  const confirmation = await confirmPaymentNotification(supabase, { amount, source: 'humo_card_bot', messageKey: key, rawPayload: message });
+  if (confirmation?.status === 'duplicate') return { handled: true, duplicate: true };
 
-  const order = await findWaitingOrderByUniquePrice(supabase, amount);
+  const order = confirmation?.order || null;
   if (!order) {
     const baseOrder = await findWaitingOrderByBasePrice(supabase, amount);
     if (baseOrder?.user_telegram_id && Number(baseOrder.unique_price) !== amount) {
@@ -59,8 +58,7 @@ async function handleHumoPaymentNotification({ supabase, message }) {
     await insertPaymentLog(supabase, { source: 'humo_card_bot', message_key: key, amount, order_id: baseOrder?.id || null, raw_payload: message, status: baseOrder ? 'wrong_amount' : 'no_waiting_order' });
     return { handled: true, matched: false };
   }
-  const paidOrder = await markOrderPaidFromPayment(supabase, order.id, { payment_message_id: key });
-  if (!paidOrder) return { handled: true, duplicate: true };
+  const paidOrder = confirmation?.order || order;
   await insertPaymentLog(supabase, { source: 'humo_card_bot', message_key: key, amount, order_id: order.id, raw_payload: message, status: 'matched', user_telegram_id: order.user_telegram_id, base_price: order.base_price, paid_amount: amount, delivery_status: 'pending' });
   await createAuditLog(supabase, { order_id: order.id, user_telegram_id: order.user_telegram_id, action: 'payment_detected', status: 'payment_detected', metadata: { amount, messageKey: key } });
   await trackEvent(supabase, { eventType: 'auto_payment_confirmed', telegramId: order.user_telegram_id, planId: order.plan_id, metadata: { orderId: order.id, amount } });

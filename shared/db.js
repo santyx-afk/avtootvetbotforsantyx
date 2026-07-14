@@ -406,6 +406,79 @@ async function createCheckoutOrder(client, { user_telegram_id, items, expiresMin
   return order;
 }
 
+
+async function confirmPaymentNotification(client, { amount, source = 'humo_card_bot', messageKey, rawPayload = {} }) {
+  try {
+    const rows = await rpcRequest(client, 'confirm_payment_notification', {
+      p_amount: Number(amount),
+      p_source: source,
+      p_message_key: String(messageKey),
+      p_payload: rawPayload,
+    });
+    const result = rows?.[0] || rows || null;
+    return result?.order_row ? { ...result, order: result.order_row } : result;
+  } catch (error) {
+    console.warn('confirm_payment_notification RPC unavailable, using REST fallback:', error?.message);
+    const inserted = await insertProcessedPaymentMessage(client, { source, message_key: messageKey, amount, raw_payload: rawPayload });
+    if (!inserted) return { status: 'duplicate', order: null };
+    const order = await findWaitingOrderByUniquePrice(client, amount);
+    if (!order) return { status: 'no_match', order: null };
+    const paidOrder = await markOrderPaidFromPayment(client, order.id, { payment_source: source, payment_message_id: messageKey });
+    return paidOrder ? { status: 'matched', order: paidOrder } : { status: 'duplicate', order: null };
+  }
+}
+
+async function enqueueDeliveryRetry(client, { order_id, reason, metadata = {}, retry_count = 0, next_retry_at }) {
+  const dueAt = next_retry_at || new Date(Date.now() + 5000).toISOString();
+  const { data } = await request(client, 'delivery_retry_queue', {
+    method: 'POST',
+    query: 'on_conflict=order_id',
+    headers: { Prefer: 'return=representation,resolution=merge-duplicates' },
+    body: { order_id, reason, metadata, status: 'pending', retry_count, next_retry_at: dueAt, updated_at: new Date().toISOString() },
+  });
+  return data?.[0] || null;
+}
+
+async function listDueDeliveryRetries(client, limit = 20) {
+  const now = new Date().toISOString();
+  const { data } = await request(client, 'delivery_retry_queue', { query: toQuery({ select: '*,orders(*)', status: 'eq.pending', next_retry_at: `lte.${now}`, order: 'next_retry_at.asc', limit }) });
+  return data || [];
+}
+
+async function updateDeliveryRetry(client, id, patch) {
+  const { data } = await request(client, 'delivery_retry_queue', { method: 'PATCH', query: toQuery({ id: `eq.${id}` }), headers: { Prefer: 'return=representation' }, body: { ...patch, updated_at: new Date().toISOString() } });
+  return data?.[0] || null;
+}
+
+async function completeDeliveryRetry(client, id) {
+  return updateDeliveryRetry(client, id, { status: 'completed', completed_at: new Date().toISOString() });
+}
+
+async function failDeliveryRetry(client, id, { reason, metadata = {} }) {
+  return updateDeliveryRetry(client, id, { status: 'failed', reason, metadata });
+}
+
+async function listStuckDeliveringOrders(client, minutes = 2, limit = 20) {
+  const cutoff = new Date(Date.now() - Number(minutes || 2) * 60 * 1000).toISOString();
+  const { data } = await request(client, 'orders', { query: toQuery({ select: '*', status: 'eq.delivering', updated_at: `lt.${cutoff}`, order: 'updated_at.asc', limit }) });
+  return data || [];
+}
+
+async function cleanupProcessedPaymentMessages(client, days = 14) {
+  const cutoff = new Date(Date.now() - Number(days || 14) * 24 * 60 * 60 * 1000).toISOString();
+  return request(client, 'processed_payment_messages', { method: 'DELETE', query: toQuery({ created_at: `lt.${cutoff}` }) });
+}
+
+async function updateMonitoringSnapshot(client) {
+  try {
+    const rows = await rpcRequest(client, 'refresh_monitoring_snapshot', {});
+    return rows?.[0] || rows || null;
+  } catch (error) {
+    console.warn('refresh_monitoring_snapshot RPC unavailable:', error?.message);
+    return null;
+  }
+}
+
 async function findWaitingOrderByUniquePrice(client, amount) {
   const { data } = await request(client, 'orders', { query: toQuery({ select: '*', unique_price: `eq.${amount}`, status: 'in.(waiting_payment,pending_payment)', order: 'created_at.asc', limit: 1 }) });
   return data?.[0] || null;
@@ -737,6 +810,15 @@ module.exports = {
   removeCartItem,
   clearCart,
   createCheckoutOrder,
+  confirmPaymentNotification,
+  enqueueDeliveryRetry,
+  listDueDeliveryRetries,
+  updateDeliveryRetry,
+  completeDeliveryRetry,
+  failDeliveryRetry,
+  listStuckDeliveringOrders,
+  cleanupProcessedPaymentMessages,
+  updateMonitoringSnapshot,
   findWaitingOrderByUniquePrice,
   markOrderPaidFromPayment,
   insertPaymentLog,
