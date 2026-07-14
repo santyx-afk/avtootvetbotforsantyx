@@ -5,6 +5,7 @@ const {
   markInventoryDelivered,
   createDeliveryLog,
   createSubscriptionFromOrder,
+  getOrderItems,
 } = require('./db');
 const { sendMessage } = require('./telegram');
 const { decryptText } = require('./encryption');
@@ -158,4 +159,29 @@ async function processApprovedDelivery({ supabase, order, adminTelegramId = 'web
   return { ok: true, code: 'DELIVERED', message: 'Yetkazildi' };
 }
 
-module.exports = { processApprovedDelivery, resolveAutoAccount, resolveLicenseKey };
+
+async function processOrderItemDelivery({ supabase, order, plan, quantity = 1, adminTelegramId }) {
+  let lastResult = { ok: true, code: 'DELIVERED' };
+  for (let i = 0; i < Number(quantity || 1); i += 1) {
+    lastResult = await processApprovedDelivery({ supabase, order: { ...order, plan_id: plan.id, inventory_item_id: null, delivery_status: 'waiting_approval' }, adminTelegramId });
+    if (!lastResult.ok && !['MANUAL_REQUIRED'].includes(lastResult.code)) return lastResult;
+  }
+  return lastResult;
+}
+
+async function processApprovedOrderDelivery({ supabase, order, adminTelegramId = 'auto_payment' }) {
+  const items = await getOrderItems(supabase, order.id);
+  if (!items.length) return processApprovedDelivery({ supabase, order, adminTelegramId });
+  const results = [];
+  for (const item of items) {
+    if (!item.plan) {
+      results.push({ ok: false, code: 'PLAN_NOT_FOUND', message: 'Reja topilmadi' });
+      continue;
+    }
+    results.push(await processOrderItemDelivery({ supabase, order, plan: item.plan, quantity: item.quantity, adminTelegramId }));
+  }
+  const failed = results.find((result) => !result.ok && result.code !== 'NO_STOCK');
+  return failed || { ok: true, code: 'DELIVERED', message: 'Barcha mahsulotlar yetkazildi', results };
+}
+
+module.exports = { processApprovedDelivery, processApprovedOrderDelivery, resolveAutoAccount, resolveLicenseKey };

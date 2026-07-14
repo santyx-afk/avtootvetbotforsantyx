@@ -5,6 +5,13 @@ const {
   fetchPlan,
   fetchCategory,
   createOrder,
+  createCartItem,
+  listCartItems,
+  updateCartItemQuantity,
+  removeCartItem,
+  clearCart,
+  createCheckoutOrder,
+  expirePendingOrders,
   getOrderById,
   updateOrderStatus,
   approveOrder,
@@ -36,6 +43,8 @@ const {
   noActiveOrderForReceiptText,
   genericOrderErrorText,
   paymentInstructionsWithOrderText,
+  cartText,
+  autoPaymentInstructionsText,
 } = require('./messages');
 const { processApprovedDelivery } = require('./delivery-service');
 
@@ -138,8 +147,8 @@ async function showPlanOrVariants({ supabase, chatId, messageId, telegramId, pla
 
   const keyboard = inlineKeyboard([
     [{ text: 'ℹ️ Qanday ulanadi', callback_data: `how:${plan.id}` }],
-    [{ text: '🛒 Sotib olish', callback_data: `buy:${plan.id}` }],
-    [{ text: '💳 To‘lov qilish', callback_data: `pay:${plan.id}` }],
+    [{ text: '🛒 Savatchaga qo‘shish', callback_data: `cart_add:${plan.id}` }],
+    [{ text: '🛒 Savatchaga o‘tish', callback_data: 'cart_view:open' }],
     [{ text: '⬅️ Orqaga', callback_data: plan.parentPlanId ? `plan:${plan.parentPlanId}` : `category:${plan.categoryId}` }],
   ]);
   await editMessage(chatId, messageId, planDetailText(plan), keyboard);
@@ -169,6 +178,47 @@ async function showHowItWorks({ supabase, chatId, messageId, telegramId, planId 
     previous: { screen: 'plan-detail', categoryId: plan.categoryId, planId: plan.id },
   });
   await trackEvent(supabase, { eventType: 'how_it_works_opened', telegramId, categoryId: plan.categoryId, planId: plan.id });
+}
+
+
+async function showCart({ supabase, chatId, messageId, telegramId, asEdit = true }) {
+  const items = await listCartItems(supabase, telegramId);
+  const rows = items.flatMap((item) => ([
+    [{ text: `➖ ${item.plan?.name || 'Mahsulot'}`, callback_data: `cart_dec:${item.id}` }, { text: `❌`, callback_data: `cart_rm:${item.id}` }],
+  ]));
+  rows.push([{ text: '💳 To‘lov qilish', callback_data: 'checkout:cart' }]);
+  rows.push([{ text: '🛍 Yana mahsulot qo‘shish', callback_data: 'nav:home' }, { text: '🗑 Tozalash', callback_data: 'cart_clear:all' }]);
+  const text = cartText(items);
+  if (asEdit && messageId) await editMessage(chatId, messageId, text, inlineKeyboard(rows));
+  else await sendMessage(chatId, text, inlineKeyboard(rows));
+}
+
+async function addPlanToCart({ supabase, chatId, messageId, telegramId, planId }) {
+  const plan = await fetchPlan(supabase, planId);
+  if (!plan || !plan.isActive) return;
+  await upsertUser(supabase, { id: telegramId });
+  await createCartItem(supabase, { user_telegram_id: telegramId, plan_id: plan.id, quantity: 1 });
+  await editMessage(chatId, messageId, `✅ <b>${plan.name}</b> savatchaga qo‘shildi.`, inlineKeyboard([
+    [{ text: '🛒 Savatchaga o‘tish', callback_data: 'cart_view:open' }],
+    [{ text: '🛍 Davom etish', callback_data: `category:${plan.categoryId}` }],
+  ]));
+}
+
+async function checkoutCart({ supabase, chatId, messageId, telegramId }) {
+  await expirePendingOrders(supabase);
+  const [items, settings] = await Promise.all([listCartItems(supabase, telegramId), fetchSettings(supabase)]);
+  if (!items.length) {
+    await editMessage(chatId, messageId, 'Savatchangiz bo‘sh.', inlineKeyboard([[{ text: '🏠 Bosh menyu', callback_data: 'nav:home' }]]));
+    return;
+  }
+  const order = await createCheckoutOrder(supabase, { user_telegram_id: telegramId, items });
+  await clearCart(supabase, telegramId);
+  await editMessage(chatId, messageId, autoPaymentInstructionsText({ order, items, settings, fallback: { cardNumber: process.env.PAYMENT_CARD_NUMBER, cardOwner: process.env.PAYMENT_CARD_OWNER, support: process.env.SUPPORT_USERNAME } }), inlineKeyboard([
+    [{ text: '📋 Kartani nusxalash', copy_text: { text: settings?.seller_card_number || process.env.PAYMENT_CARD_NUMBER || '' } }],
+    [{ text: '📨 Admin bilan bog‘lanish', url: settings?.support_link?.startsWith('http') ? settings.support_link : `https://t.me/${String(settings?.support_link || process.env.SUPPORT_USERNAME || '@support').replace('@', '')}` }],
+    [{ text: '🏠 Bosh menyu', callback_data: 'nav:home' }],
+  ]));
+  await saveUserState(supabase, telegramId, { screen: 'payment', current_order_id: order.id, awaiting_receipt: false, previous: { screen: 'categories' } });
 }
 
 async function showPayment({ supabase, chatId, messageId, telegramId, planId }) {
@@ -329,9 +379,33 @@ async function handleCallback({ supabase, callbackQuery }) {
       case 'how':
         await showHowItWorks({ supabase, chatId, messageId, telegramId, planId: payload });
         break;
-      case 'pay':
       case 'buy':
-        await showPayment({ supabase, chatId, messageId, telegramId, planId: payload });
+      case 'cart_add':
+        await addPlanToCart({ supabase, chatId, messageId, telegramId, planId: payload });
+        break;
+      case 'cart_view':
+        await showCart({ supabase, chatId, messageId, telegramId });
+        break;
+      case 'cart_rm':
+        await removeCartItem(supabase, payload);
+        await showCart({ supabase, chatId, messageId, telegramId });
+        break;
+      case 'cart_dec': {
+        await removeCartItem(supabase, payload);
+        await showCart({ supabase, chatId, messageId, telegramId });
+        break;
+      }
+      case 'cart_clear':
+        await clearCart(supabase, telegramId);
+        await showCart({ supabase, chatId, messageId, telegramId });
+        break;
+      case 'checkout':
+        await checkoutCart({ supabase, chatId, messageId, telegramId });
+        break;
+      case 'pay':
+        await addPlanToCart({ supabase, chatId, messageId, telegramId, planId: payload });
+        break;
+      case 'noop':
         break;
       case 'ord_ap': {
         if (!isAdminTelegramId(telegramId)) {

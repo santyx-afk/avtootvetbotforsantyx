@@ -241,3 +241,59 @@ begin
   return next v_item;
 end;
 $$;
+
+-- Automatic HUMO Card Bot payment matching and cart checkout
+alter table orders add column if not exists base_price numeric(12,2);
+alter table orders add column if not exists unique_price numeric(12,2);
+alter table orders add column if not exists expires_at timestamptz;
+alter table orders add column if not exists paid_at timestamptz;
+alter table orders add column if not exists payment_source text;
+alter table orders add column if not exists payment_message_id text;
+
+create index if not exists idx_orders_unique_price_waiting on orders(unique_price) where status = 'pending_payment';
+create index if not exists idx_orders_expires_at_waiting on orders(expires_at) where status = 'pending_payment';
+
+create table if not exists cart_items (
+  id uuid primary key default gen_random_uuid(),
+  user_telegram_id text not null,
+  plan_id uuid not null references plans(id) on delete cascade,
+  quantity integer not null default 1 check (quantity > 0),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique(user_telegram_id, plan_id)
+);
+create index if not exists idx_cart_items_user on cart_items(user_telegram_id);
+
+create table if not exists order_items (
+  id uuid primary key default gen_random_uuid(),
+  order_id uuid not null references orders(id) on delete cascade,
+  user_telegram_id text not null,
+  plan_id uuid references plans(id) on delete set null,
+  quantity integer not null default 1 check (quantity > 0),
+  unit_price numeric(12,2) not null default 0,
+  total_price numeric(12,2) not null default 0,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_order_items_order on order_items(order_id);
+
+create table if not exists payment_logs (
+  id bigint generated always as identity primary key,
+  source text not null,
+  message_key text,
+  amount numeric(12,2),
+  order_id uuid references orders(id) on delete set null,
+  status text not null,
+  raw_payload jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_payment_logs_message on payment_logs(source, message_key);
+
+create table if not exists processed_payment_messages (
+  id bigint generated always as identity primary key,
+  source text not null,
+  message_key text not null,
+  amount numeric(12,2),
+  raw_payload jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  unique(source, message_key)
+);
