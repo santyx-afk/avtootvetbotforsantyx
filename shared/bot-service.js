@@ -12,6 +12,10 @@ const {
   clearCart,
   createCheckoutOrder,
   expirePendingOrders,
+  reserveInventoryForOrder,
+  createAuditLog,
+  validatePromoCode,
+  getUserBalance,
   getOrderById,
   updateOrderStatus,
   approveOrder,
@@ -45,6 +49,8 @@ const {
   paymentInstructionsWithOrderText,
   cartText,
   autoPaymentInstructionsText,
+  balanceText,
+  referralText,
 } = require('./messages');
 const { processApprovedDelivery } = require('./delivery-service');
 
@@ -205,13 +211,28 @@ async function addPlanToCart({ supabase, chatId, messageId, telegramId, planId }
 }
 
 async function checkoutCart({ supabase, chatId, messageId, telegramId }) {
-  await expirePendingOrders(supabase);
+  const expiredOrders = await expirePendingOrders(supabase);
+  for (const expired of expiredOrders) {
+    if (expired?.user_telegram_id) {
+      try {
+        await sendMessage(expired.user_telegram_id, `Buyurtma #${expired.order_number} muddati tugadi. To‘lov summasi va zaxira bo‘shatildi.`, null);
+      } catch (error) {
+        console.warn('Expire notify failed:', error?.message);
+      }
+    }
+  }
   const [items, settings] = await Promise.all([listCartItems(supabase, telegramId), fetchSettings(supabase)]);
   if (!items.length) {
     await editMessage(chatId, messageId, 'Savatchangiz bo‘sh.', inlineKeyboard([[{ text: '🏠 Bosh menyu', callback_data: 'nav:home' }]]));
     return;
   }
-  const order = await createCheckoutOrder(supabase, { user_telegram_id: telegramId, items });
+  const state = await fetchUserState(supabase, telegramId);
+  const basePrice = items.reduce((sum, item) => sum + Number(item.plan?.price || 0) * Number(item.quantity || 1), 0);
+  const promoResult = state?.promo_code ? await validatePromoCode(supabase, state.promo_code, basePrice) : null;
+  const order = await createCheckoutOrder(supabase, { user_telegram_id: telegramId, items, promo: promoResult?.ok ? promoResult.promo : null });
+  await createAuditLog(supabase, { order_id: order.id, user_telegram_id: telegramId, action: 'order_created', status: order.status, metadata: { basePrice, uniquePrice: order.unique_price } });
+  const reserved = await reserveInventoryForOrder(supabase, order.id);
+  await createAuditLog(supabase, { order_id: order.id, user_telegram_id: telegramId, action: 'payment_waiting', status: order.status, metadata: { reservedInventory: reserved.length } });
   await clearCart(supabase, telegramId);
   await editMessage(chatId, messageId, autoPaymentInstructionsText({ order, items, settings, fallback: { cardNumber: process.env.PAYMENT_CARD_NUMBER, cardOwner: process.env.PAYMENT_CARD_OWNER, support: process.env.SUPPORT_USERNAME } }), inlineKeyboard([
     [{ text: '📋 Kartani nusxalash', copy_text: { text: settings?.seller_card_number || process.env.PAYMENT_CARD_NUMBER || '' } }],
@@ -282,7 +303,7 @@ async function handleReceipt({ supabase, message }) {
     return;
   }
   const order = await getOrderById(supabase, orderId);
-  if (!order || order.status !== 'pending_payment') {
+  if (!order || !['pending_payment', 'waiting_payment'].includes(order.status)) {
     await sendMessage(message.chat.id, noActiveOrderForReceiptText(), null);
     return;
   }
@@ -401,6 +422,15 @@ async function handleCallback({ supabase, callbackQuery }) {
         break;
       case 'checkout':
         await checkoutCart({ supabase, chatId, messageId, telegramId });
+        break;
+      case 'promo':
+        await saveUserState(supabase, telegramId, { ...(await fetchUserState(supabase, telegramId)), awaiting_promo: true });
+        await sendMessage(chatId, 'Promo kodni yuboring:', null);
+        break;
+      case 'admin':
+        if (isAdminTelegramId(telegramId)) {
+          await sendMessage(chatId, '<b>Admin panel</b>\n\nOrders • Inventory • Payments • Users • Promo Codes • Referral System • Statistics • Broadcast Messages • Settings', null);
+        }
         break;
       case 'pay':
         await addPlanToCart({ supabase, chatId, messageId, telegramId, planId: payload });
@@ -523,8 +553,45 @@ async function handleCallback({ supabase, callbackQuery }) {
   }
 }
 
+
+async function handleTextCommand({ supabase, message }) {
+  const text = String(message.text || '').trim();
+  const state = await fetchUserState(supabase, message.from.id);
+  if (state?.awaiting_promo && text && !text.startsWith('/')) {
+    const items = await listCartItems(supabase, message.from.id);
+    const basePrice = items.reduce((sum, item) => sum + Number(item.plan?.price || 0) * Number(item.quantity || 1), 0);
+    const result = await validatePromoCode(supabase, text, basePrice);
+    if (!result.ok) {
+      await sendMessage(message.chat.id, 'Promo kod yaroqsiz yoki muddati tugagan.', null);
+      return true;
+    }
+    await saveUserState(supabase, message.from.id, { ...state, awaiting_promo: false, promo_code: result.promo.code });
+    await sendMessage(message.chat.id, `Promo kod qabul qilindi. Chegirma: ${formatAmount(result.discount, 'UZS')}`, null);
+    return true;
+  }
+  if (text === '/balance') {
+    const wallet = await getUserBalance(supabase, message.from.id);
+    await sendMessage(message.chat.id, balanceText(wallet), null);
+    return true;
+  }
+  if (text === '/referral' || text === '/ref') {
+    const botUsername = process.env.BOT_USERNAME || 'santyxnarxbot';
+    await sendMessage(message.chat.id, referralText({ telegramId: message.from.id, botUsername }), null);
+    return true;
+  }
+  if (text === '/admin' && isAdminTelegramId(message.from.id)) {
+    await sendMessage(message.chat.id, '<b>Telegram admin panel</b>\n\n/orders - Orders\n/payments - Payments\n/inventory - Inventory\n/users - Users\n/promos - Promo Codes\n/referrals - Referral System\n/stats - Statistics\n/broadcast - Broadcast Messages\n/settings - Settings', null);
+    return true;
+  }
+  return false;
+}
+
 async function handleStart({ supabase, message }) {
   await upsertUser(supabase, message.from);
+  const ref = String(message.text || '').match(/^\/start\s+ref_(\d+)/);
+  if (ref && ref[1] !== String(message.from.id)) {
+    await createAuditLog(supabase, { user_telegram_id: message.from.id, action: 'referral_registered', status: 'created', metadata: { referrer: ref[1] } });
+  }
   await trackEvent(supabase, { eventType: 'start_used', telegramId: message.from.id });
   await showCategories({ supabase, chatId: message.chat.id, telegramId: message.from.id, asEdit: false });
 }
@@ -533,4 +600,5 @@ module.exports = {
   handleStart,
   handleCallback,
   handleReceipt,
+  handleTextCommand,
 };

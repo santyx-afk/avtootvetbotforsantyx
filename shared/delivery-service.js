@@ -6,6 +6,12 @@ const {
   createDeliveryLog,
   createSubscriptionFromOrder,
   getOrderItems,
+  getInventoryItemById,
+  updateOrderItem,
+  createAuditLog,
+  createExceptionQueueItem,
+  getInventoryCountsByPlan,
+  fetchSettings,
 } = require('./db');
 const { sendMessage } = require('./telegram');
 const { decryptText } = require('./encryption');
@@ -71,6 +77,23 @@ function resolveLicenseKey(item = {}) {
   );
 }
 
+
+function resolveAdminChatIds(settings) {
+  return [...new Set([settings?.admin_telegram_id, process.env.ADMIN_CHAT_ID, process.env.ADMIN_TELEGRAM_ID, ...(process.env.ADMIN_TELEGRAM_IDS || '').split(',')].map((item) => String(item || '').trim()).filter(Boolean))];
+}
+
+async function notifyLowInventoryIfNeeded(supabase, plan) {
+  const threshold = Number(process.env.LOW_INVENTORY_THRESHOLD || 2);
+  if (!['auto_account', 'license_key'].includes(plan.delivery_type || plan.deliveryType)) return;
+  const counts = await getInventoryCountsByPlan(supabase, plan.id);
+  const available = Number(counts.available || 0);
+  if (available > threshold) return;
+  const settings = await fetchSettings(supabase);
+  for (const adminChatId of resolveAdminChatIds(settings)) {
+    await sendMessage(adminChatId, `⚠ ${plan.name} inventory is running low.\n\nRemaining accounts: ${available}`, null);
+  }
+}
+
 async function safeSendMessage(chatId, text, ctx = {}) {
   try {
     const result = await sendMessage(chatId, text, null);
@@ -84,7 +107,7 @@ async function safeSendMessage(chatId, text, ctx = {}) {
 
 async function processApprovedDelivery({ supabase, order, adminTelegramId = 'web_admin' }) {
   if (!order) return { ok: false, code: 'ORDER_NOT_FOUND', message: 'Buyurtma topilmadi' };
-  if (order.delivery_status === 'delivered' || order.inventory_item_id) return { ok: true, code: 'ALREADY_DELIVERED', message: 'Buyurtma oldin yetkazilgan' };
+  if (order.delivery_status === 'delivered') return { ok: true, code: 'ALREADY_DELIVERED', message: 'Buyurtma oldin yetkazilgan' };
 
   const plan = await fetchPlan(supabase, order.plan_id);
   if (!plan) return { ok: false, code: 'PLAN_NOT_FOUND', message: 'Reja topilmadi' };
@@ -115,10 +138,12 @@ async function processApprovedDelivery({ supabase, order, adminTelegramId = 'web
     return { ok: false, code: 'MISSING_ENCRYPTION_KEY', message: 'INVENTORY_ENCRYPTION_KEY o‘rnatilmagan' };
   }
 
-  const item = await claimInventoryItemForOrder(supabase, plan.id, order.id, userChatId, deliveryType);
+  const item = order.inventory_item_id
+    ? await getInventoryItemById(supabase, order.inventory_item_id)
+    : await claimInventoryItemForOrder(supabase, plan.id, order.id, userChatId, deliveryType);
   console.log('Selected inventory item', { orderId: order.id, deliveryType, itemId: item?.id, itemType: item?.type, login: item?.login || null });
   if (!item) {
-    await updateOrderStatus(supabase, order.id, 'approved', { delivery_status: 'waiting_stock' });
+    await updateOrderStatus(supabase, order.id, 'delivering', { delivery_status: 'waiting_stock' });
     const sent = await safeSendMessage(userChatId, 'To‘lovingiz tasdiqlandi. Obunangiz ulanish jarayonida. Tez orada ma’lumot yuboriladi.', { orderId: order.id, deliveryType, noStock: true });
     await createDeliveryLog(supabase, { order_id: order.id, user_telegram_id: userChatId, plan_id: plan.id, delivery_type: deliveryType, admin_telegram_id: String(adminTelegramId), status: 'waiting_stock' });
     if (!sent.ok) return { ok: false, code: 'DELIVERY_SEND_FAILED', message: mapTelegramSendError(sent.error) };
@@ -148,40 +173,53 @@ async function processApprovedDelivery({ supabase, order, adminTelegramId = 'web
     const userError = mapTelegramSendError(error);
     await createDeliveryLog(supabase, { order_id: order.id, user_telegram_id: userChatId, plan_id: plan.id, inventory_item_id: item.id, delivery_type: deliveryType, admin_telegram_id: String(adminTelegramId), status: 'error', error_message: String(error?.message || 'decrypt_or_send_failed') });
     await markInventoryDelivered(supabase, item.id, 'available');
-    await updateOrderStatus(supabase, order.id, 'approved', { inventory_item_id: null, delivery_status: 'waiting_approval' });
+    await updateOrderStatus(supabase, order.id, 'delivering', { inventory_item_id: item.id, delivery_status: 'failed', delivery_error: String(error?.message || 'delivery_failed') });
     return { ok: false, code: 'DELIVERY_SEND_FAILED', message: userError, admin_message: `${userError}. Userga yozib bo‘lmadi. Inventory qaytarildi.` };
   }
 
   await markInventoryDelivered(supabase, item.id, 'sold');
+  await createAuditLog(supabase, { order_id: order.id, user_telegram_id: userChatId, action: 'account_delivered', status: 'delivered', metadata: { planId: plan.id, inventoryItemId: item.id } });
   await updateOrderStatus(supabase, order.id, 'completed', { inventory_item_id: item.id, delivery_status: 'delivered', delivered_at: new Date().toISOString(), completed_at: new Date().toISOString() });
   await createDeliveryLog(supabase, { order_id: order.id, user_telegram_id: userChatId, plan_id: plan.id, inventory_item_id: item.id, delivery_type: deliveryType, admin_telegram_id: String(adminTelegramId), status: 'delivered', delivered_at: new Date().toISOString() });
+  await notifyLowInventoryIfNeeded(supabase, plan);
   await createSubscriptionFromOrder(supabase, order, plan);
   return { ok: true, code: 'DELIVERED', message: 'Yetkazildi' };
 }
 
 
-async function processOrderItemDelivery({ supabase, order, plan, quantity = 1, adminTelegramId }) {
-  let lastResult = { ok: true, code: 'DELIVERED' };
-  for (let i = 0; i < Number(quantity || 1); i += 1) {
-    lastResult = await processApprovedDelivery({ supabase, order: { ...order, plan_id: plan.id, inventory_item_id: null, delivery_status: 'waiting_approval' }, adminTelegramId });
-    if (!lastResult.ok && !['MANUAL_REQUIRED'].includes(lastResult.code)) return lastResult;
-  }
-  return lastResult;
+async function processOrderItemDelivery({ supabase, order, item, plan, adminTelegramId }) {
+  const result = await processApprovedDelivery({ supabase, order: { ...order, plan_id: plan.id, inventory_item_id: item.inventory_item_id || null, delivery_status: 'waiting_approval' }, adminTelegramId });
+  await updateOrderItem(supabase, item.id, { delivery_status: result.ok ? 'delivered' : result.code === 'NO_STOCK' ? 'waiting_stock' : 'failed', delivered_at: result.ok ? new Date().toISOString() : null, delivery_error: result.ok ? null : result.message });
+  return result;
 }
 
 async function processApprovedOrderDelivery({ supabase, order, adminTelegramId = 'auto_payment' }) {
+  await updateOrderStatus(supabase, order.id, 'delivering', { delivery_status: 'waiting_approval' });
+  await createAuditLog(supabase, { order_id: order.id, user_telegram_id: order.user_telegram_id, action: 'delivery_started', status: 'delivering' });
   const items = await getOrderItems(supabase, order.id);
   if (!items.length) return processApprovedDelivery({ supabase, order, adminTelegramId });
   const results = [];
   for (const item of items) {
+    if (item.delivery_status === 'delivered') {
+      results.push({ ok: true, code: 'ALREADY_DELIVERED' });
+      continue;
+    }
     if (!item.plan) {
       results.push({ ok: false, code: 'PLAN_NOT_FOUND', message: 'Reja topilmadi' });
       continue;
     }
-    results.push(await processOrderItemDelivery({ supabase, order, plan: item.plan, quantity: item.quantity, adminTelegramId }));
+    results.push(await processOrderItemDelivery({ supabase, order, item, plan: item.plan, adminTelegramId }));
   }
-  const failed = results.find((result) => !result.ok && result.code !== 'NO_STOCK');
-  return failed || { ok: true, code: 'DELIVERED', message: 'Barcha mahsulotlar yetkazildi', results };
+  const failed = results.find((result) => !result.ok);
+  if (failed) {
+    await updateOrderStatus(supabase, order.id, 'delivering', { delivery_status: failed.code === 'NO_STOCK' ? 'waiting_stock' : 'failed', delivery_error: failed.message });
+    await createAuditLog(supabase, { order_id: order.id, user_telegram_id: order.user_telegram_id, action: failed.code === 'NO_STOCK' ? 'exception_queue' : 'delivery_failed', status: 'delivering', metadata: { code: failed.code, message: failed.message } });
+    if (failed.code === 'NO_STOCK') await createExceptionQueueItem(supabase, { order_id: order.id, reason: 'no_inventory', metadata: { message: failed.message } });
+    return failed;
+  }
+  await updateOrderStatus(supabase, order.id, 'completed', { delivery_status: 'delivered', delivered_at: new Date().toISOString(), completed_at: new Date().toISOString() });
+  await createAuditLog(supabase, { order_id: order.id, user_telegram_id: order.user_telegram_id, action: 'order_completed', status: 'completed' });
+  return { ok: true, code: 'DELIVERED', message: 'Barcha mahsulotlar yetkazildi', results };
 }
 
 module.exports = { processApprovedDelivery, processApprovedOrderDelivery, resolveAutoAccount, resolveLicenseKey };

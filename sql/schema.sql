@@ -297,3 +297,121 @@ create table if not exists processed_payment_messages (
   created_at timestamptz not null default now(),
   unique(source, message_key)
 );
+
+-- Order lifecycle, auditability, wallet, referrals, promos, and exception handling
+alter table orders drop constraint if exists orders_status_check;
+alter table orders add constraint orders_status_check check (status in (
+  'created',
+  'waiting_payment',
+  'payment_detected',
+  'delivering',
+  'completed',
+  'expired',
+  'cancelled',
+  'failed',
+  -- legacy statuses kept for backward compatibility with old admin/manual flows
+  'pending_payment',
+  'payment_uploaded',
+  'checking',
+  'approved',
+  'rejected'
+));
+alter table orders add column if not exists delivery_attempts integer not null default 0;
+alter table orders add column if not exists delivery_error text;
+alter table orders add column if not exists promo_code text;
+alter table orders add column if not exists discount_amount numeric(12,2) not null default 0;
+alter table orders add column if not exists balance_used numeric(12,2) not null default 0;
+
+alter table order_items add column if not exists inventory_item_id uuid references inventory_items(id) on delete set null;
+alter table order_items add column if not exists delivery_status text not null default 'pending';
+alter table order_items add column if not exists delivery_error text;
+alter table order_items add column if not exists delivered_at timestamptz;
+alter table order_items add column if not exists updated_at timestamptz not null default now();
+create index if not exists idx_order_items_inventory on order_items(inventory_item_id);
+
+alter table payment_logs add column if not exists user_telegram_id text;
+alter table payment_logs add column if not exists base_price numeric(12,2);
+alter table payment_logs add column if not exists paid_amount numeric(12,2);
+alter table payment_logs add column if not exists delivery_status text;
+alter table payment_logs add column if not exists products jsonb not null default '[]'::jsonb;
+
+create table if not exists audit_logs (
+  id bigint generated always as identity primary key,
+  order_id uuid references orders(id) on delete set null,
+  user_telegram_id text,
+  action text not null,
+  status text,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_audit_logs_order on audit_logs(order_id, created_at desc);
+create index if not exists idx_audit_logs_action on audit_logs(action, created_at desc);
+
+create table if not exists promo_codes (
+  id uuid primary key default gen_random_uuid(),
+  code text not null unique,
+  discount_type text not null check (discount_type in ('percent', 'fixed')),
+  discount_value numeric(12,2) not null default 0,
+  is_one_time boolean not null default false,
+  max_uses integer,
+  used_count integer not null default 0,
+  expires_at timestamptz,
+  is_active boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists referrals (
+  id uuid primary key default gen_random_uuid(),
+  referrer_telegram_id text not null,
+  referred_telegram_id text not null unique,
+  status text not null default 'registered' check (status in ('registered', 'rewarded', 'cancelled')),
+  reward_type text,
+  reward_value numeric(12,2),
+  first_order_id uuid references orders(id) on delete set null,
+  created_at timestamptz not null default now(),
+  rewarded_at timestamptz
+);
+create index if not exists idx_referrals_referrer on referrals(referrer_telegram_id);
+
+create table if not exists user_wallets (
+  user_telegram_id text primary key,
+  balance numeric(12,2) not null default 0,
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists wallet_transactions (
+  id bigint generated always as identity primary key,
+  user_telegram_id text not null,
+  order_id uuid references orders(id) on delete set null,
+  amount numeric(12,2) not null,
+  type text not null check (type in ('credit', 'debit', 'refund', 'bonus')),
+  description text,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_wallet_transactions_user on wallet_transactions(user_telegram_id, created_at desc);
+
+create table if not exists exception_queue (
+  id bigint generated always as identity primary key,
+  order_id uuid references orders(id) on delete cascade,
+  reason text not null,
+  status text not null default 'open' check (status in ('open', 'resolved', 'cancelled')),
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  resolved_at timestamptz
+);
+
+create or replace view payment_history as
+select
+  o.id as order_uuid,
+  o.order_number as order_id,
+  o.user_telegram_id as user_id,
+  coalesce(jsonb_agg(jsonb_build_object('plan_id', oi.plan_id, 'quantity', oi.quantity, 'unit_price', oi.unit_price, 'total_price', oi.total_price)) filter (where oi.id is not null), '[]'::jsonb) as products,
+  o.base_price,
+  o.unique_price as paid_amount,
+  o.paid_at as payment_time,
+  o.status,
+  o.delivery_status,
+  o.created_at
+from orders o
+left join order_items oi on oi.order_id = o.id
+group by o.id;

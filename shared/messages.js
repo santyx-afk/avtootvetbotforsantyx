@@ -148,6 +148,16 @@ function autoPaymentInstructionsText({ order, items = [], settings, fallback = {
   ].join('\n');
 }
 
+
+function balanceText(wallet = {}) {
+  return [`💰 <b>Balansingiz</b>`, '', `Mavjud balans: <b>${escapeHtml(formatPrice(wallet.balance || 0, 'UZS'))}</b>`, '', 'Balansdan checkout paytida foydalanish, refund va bonuslar uchun wallet tarixi saqlanadi.'].join('\n');
+}
+
+function referralText({ telegramId, botUsername }) {
+  const username = String(botUsername || 'santyxnarxbot').replace('@', '');
+  return ['🤝 <b>Referral havolangiz</b>', '', `https://t.me/${escapeHtml(username)}?start=ref_${escapeHtml(telegramId)}`, '', 'Do‘stingiz birinchi muvaffaqiyatli xariddan keyin sizga bonus beriladi.'].join('\n');
+}
+
 function receiptAcceptedText(order) {
   return [
     'Chekingiz qabul qilindi ✅',
@@ -178,6 +188,8 @@ module.exports = {
   paymentInstructionsWithOrderText,
   cartText,
   autoPaymentInstructionsText,
+  balanceText,
+  referralText,
   receiptAcceptedText,
   noActiveOrderForReceiptText,
   genericOrderErrorText,
