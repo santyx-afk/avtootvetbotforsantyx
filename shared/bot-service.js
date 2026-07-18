@@ -93,7 +93,7 @@ async function showCategories({ supabase, chatId, messageId, telegramId, asEdit 
   const settings = await fetchSettings(supabase);
   const categories = await fetchCategories(supabase);
   const text = `${welcomeText(settings)}\n\n${categoriesText()}`;
-  const webappUrl = process.env.WEBAPP_URL || 'https://example.com/webapp/index.html';
+  const webappUrl = process.env.WEBAPP_URL || 'https://oxrgsi.netlify.app/webapp/index.html';
   
   const keyboardRows = [
     [{ text: '📱 Katalogga kirish', web_app: { url: webappUrl } }],

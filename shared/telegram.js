@@ -98,6 +98,18 @@ function setWebhook(url, secretToken) {
   });
 }
 
+function parseTelegramInitData(initData) {
+  if (!initData) return null;
+  try {
+    const urlParams = new URLSearchParams(initData);
+    const userStr = urlParams.get('user');
+    if (!userStr) return null;
+    return JSON.parse(userStr);
+  } catch (err) {
+    return null;
+  }
+}
+
 module.exports = {
   inlineKeyboard,
   answerCallbackQuery,
@@ -108,4 +120,5 @@ module.exports = {
   setWebhook,
   normalizeReplyMarkup,
   cleanPayload,
+  parseTelegramInitData,
 };
