@@ -1,14 +1,14 @@
 [build]
-  command = "echo 'Static admin + functions ready'"
-  publish = "admin"
+  command = "node scripts/build.js"
+  publish = "public"
   functions = "netlify/functions"
 
 [functions]
   node_bundler = "esbuild"
 
 [[redirects]]
-  from = "/admin"
-  to = "/index.html"
+  from = "/"
+  to = "/admin/index.html"
   status = 200
 
 [[redirects]]
