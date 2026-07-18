@@ -1,0 +1,40 @@
+:root {
+  --bg: #f5f7fb;
+  --card: #fff;
+  --text: #162033;
+  --muted: #64748b;
+  --primary: #2563eb;
+  --danger: #dc2626;
+  --border: #d8e0ef;
+}
+* { box-sizing: border-box; }
+body { margin: 0; font-family: Inter, Arial, sans-serif; background: var(--bg); color: var(--text); }
+button, input, textarea, select { font: inherit; }
+button { cursor: pointer; border: none; border-radius: 12px; padding: 0.8rem 1rem; background: var(--primary); color: #fff; }
+button.ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
+button.danger { color: var(--danger); }
+input, textarea, select { width: 100%; padding: 0.8rem; border-radius: 12px; border: 1px solid var(--border); background: #fff; }
+label { display: grid; gap: 0.4rem; color: var(--muted); font-size: 0.95rem; }
+.app-shell { display: grid; min-height: 100vh; grid-template-columns: 260px 1fr; }
+.sidebar { background: #0f172a; color: #fff; padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem; }
+.sidebar .nav-link { width: 100%; text-align: left; background: rgba(255,255,255,.08); }
+.sidebar .nav-link.active { background: #2563eb; }
+.content { padding: 1.5rem; }
+.card, .table-card { background: var(--card); border-radius: 20px; padding: 1.2rem; box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06); }
+.login-card { max-width: 420px; margin: 5rem auto; }
+.cards, .two-col { display: grid; gap: 1rem; margin-bottom: 1rem; }
+.cards { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+.two-col { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+.toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+.grid-form { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.grid-form .full, .actions.full { grid-column: 1 / -1; }
+.actions { display: flex; gap: 0.75rem; }
+.table-card table { width: 100%; border-collapse: collapse; }
+.table-card th, .table-card td { padding: 0.75rem; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+.badge { display: inline-block; padding: 0.25rem 0.6rem; background: #dbeafe; color: #1d4ed8; border-radius: 999px; font-size: 0.85rem; }
+.error { color: var(--danger); }
+ul.clean { padding-left: 1rem; margin: 0; }
+@media (max-width: 900px) {
+  .app-shell { grid-template-columns: 1fr; }
+  .sidebar { position: sticky; top: 0; z-index: 2; }
+}
