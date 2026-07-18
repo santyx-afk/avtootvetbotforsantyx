@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const { getAdminClient2 } = require('../../shared/db');
+const { getAdminClient } = require('../../shared/db');
 const { sendCheckoutMenu } = require('../../shared/bot-service');
 const { parseTelegramInitData } = require('../../shared/telegram');
 
@@ -18,7 +18,7 @@ exports.handler = async (event, context) => {
     return { statusCode: 401, body: JSON.stringify({ ok: false, error: 'Unauthorized: Invalid initData' }) };
   }
 
-  const supabase = getAdminClient2();
+  const supabase = getAdminClient();
 
   if (method === 'GET') {
     const action = event.queryStringParameters.action;
