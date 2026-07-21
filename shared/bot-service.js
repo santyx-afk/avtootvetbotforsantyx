@@ -270,10 +270,16 @@ async function showPayment({ supabase, chatId, messageId, telegramId, planId }) 
       support: process.env.SUPPORT_USERNAME,
     },
   });
-  await editMessage(chatId, messageId, paymentMessage, inlineKeyboard([
+  const keyboard = inlineKeyboard([
     [{ text: '📨 Seller bilan bog‘lanish', url: settings?.support_link?.startsWith('http') ? settings.support_link : `https://t.me/${String(settings?.support_link || process.env.SUPPORT_USERNAME || '@support').replace('@', '')}` }],
     [{ text: '⬅️ Orqaga', callback_data: `plan:${plan.id}` }],
-  ]));
+  ]);
+
+  if (messageId) {
+    await editMessage(chatId, messageId, paymentMessage, keyboard);
+  } else {
+    await sendMessage(chatId, paymentMessage, keyboard);
+  }
   await saveUserState(supabase, telegramId, {
     screen: 'payment',
     categoryId: plan.categoryId,
@@ -606,4 +612,5 @@ module.exports = {
   handleCallback,
   handleReceipt,
   handleTextCommand,
+  showPayment,
 };

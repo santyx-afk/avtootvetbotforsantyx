@@ -9,6 +9,8 @@
     "seed:demo": "node scripts/seed-demo.js",
     "test": "node --test"
   },
-  "dependencies": {},
-  "devDependencies": {}
+  "dependencies": {
+    "@supabase/supabase-js": "^2.110.8",
+    "node-fetch": "^2.7.0"
+  }
 }
