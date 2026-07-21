@@ -1,6 +1,6 @@
 const crypto = require('crypto');
-const { getAdminClient } = require('../../shared/db');
-const { sendCheckoutMenu } = require('../../shared/bot-service');
+const { getAdminClient, request, fetchPlan } = require('../../shared/db');
+const { showPayment } = require('../../shared/bot-service');
 const { parseTelegramInitData } = require('../../shared/telegram');
 
 exports.handler = async (event, context) => {
@@ -11,8 +11,6 @@ exports.handler = async (event, context) => {
     return { statusCode: 401, body: JSON.stringify({ ok: false, error: 'Unauthorized: No initData' }) };
   }
 
-  // Verify initData (you need to implement this in shared/telegram or verify it here)
-  // For now, let's assume it's valid if we can parse it, but in production verify the hash!
   const tgUser = parseTelegramInitData(initData);
   if (!tgUser) {
     return { statusCode: 401, body: JSON.stringify({ ok: false, error: 'Unauthorized: Invalid initData' }) };
@@ -24,12 +22,17 @@ exports.handler = async (event, context) => {
     const action = event.queryStringParameters.action;
     if (action === 'catalog') {
       try {
-        const { data: categories, error: catErr } = await supabase.from('categories').select('*').eq('is_active', true).order('sort_order', { ascending: true });
-        if (catErr) throw catErr;
+        const { data: categories } = await request(supabase, 'categories', {
+          query: 'select=*&is_active=eq.true&order=sort_order.asc'
+        });
 
-        const { data: plans, error: planErr } = await supabase.from('plans').select('*').eq('is_active', true).order('sort_order', { ascending: true });
-        if (planErr) throw planErr;
+        const { data: plans } = await request(supabase, 'plans', {
+          query: 'select=*&is_active=eq.true&order=sort_order.asc'
+        });
 
+        // The map functions format the data properly if needed, but since we're returning to frontend
+        // we can just return the raw rows (convert snake_case to camelCase inside the frontend if needed, 
+        // but the frontend already uses plan.category_id, plan.name, etc.)
         return { statusCode: 200, body: JSON.stringify({ ok: true, categories, plans }) };
       } catch (err) {
         return { statusCode: 500, body: JSON.stringify({ ok: false, error: err.message }) };
@@ -44,12 +47,11 @@ exports.handler = async (event, context) => {
         const planId = body.planId;
         const tgId = tgUser.id;
 
-        // Fetch plan details
-        const { data: plan } = await supabase.from('plans').select('*').eq('id', planId).single();
+        const plan = await fetchPlan(supabase, planId);
         if (!plan) throw new Error('Plan not found');
 
-        // Send checkout menu via bot
-        await sendCheckoutMenu(tgId, plan);
+        // We use showPayment which creates the order, sets user state, and sends the payment instructions to the bot!
+        await showPayment({ supabase, chatId: tgId, telegramId: tgId, planId });
 
         return { statusCode: 200, body: JSON.stringify({ ok: true }) };
       }
