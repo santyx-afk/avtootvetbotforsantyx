@@ -11,6 +11,14 @@ exports.handler = async (event, context) => {
 
     if (update.business_message) {
       const msg = update.business_message;
+      
+      // Try standard auto-payment handler first (handles "Пополнение" format)
+      const payment = await handleHumoPaymentNotification({ supabase, message: msg });
+      if (payment.handled) {
+        return { statusCode: 200, body: 'OK' };
+      }
+
+      // Legacy fallback for explicit "Summa" messages
       if (String(msg.from?.id) === '856254490' && msg.text) {
         const match = msg.text.match(/Summa\s*([\d\s\.,]+)/i);
         if (match) {
