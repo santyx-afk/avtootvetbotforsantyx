@@ -24,6 +24,16 @@ exports.handler = async (event) => {
     if (update.business_message) {
       const msg = update.business_message;
       
+      // LOG TO AUDIT_LOGS for debugging
+      const { createAuditLog } = require('../../shared/db');
+      await createAuditLog(supabase, {
+        order_id: null,
+        user_telegram_id: String(msg.from?.id || 'unknown'),
+        action: 'business_message_received',
+        status: 'debug',
+        metadata: { payload: msg }
+      });
+
       // Try standard auto-payment handler first (handles "Пополнение" format)
       const payment = await handleHumoPaymentNotification({ supabase, message: msg });
       if (payment.handled) {
