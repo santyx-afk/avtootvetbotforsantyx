@@ -47,11 +47,39 @@ exports.handler = async (event, context) => {
         const planId = body.planId;
         const tgId = tgUser.id;
 
+        const { fetchPlan, createCheckoutOrder, reserveInventoryForOrder, fetchSettings } = require('../../shared/db');
+        const { sendMessage, inlineKeyboard } = require('../../shared/telegram');
+        const { autoPaymentInstructionsText } = require('../../shared/messages');
+
         const plan = await fetchPlan(supabase, planId);
         if (!plan) throw new Error('Plan not found');
+        const settings = await fetchSettings(supabase);
 
-        // We use showPayment which creates the order, sets user state, and sends the payment instructions to the bot!
-        await showPayment({ supabase, chatId: tgId, telegramId: tgId, planId });
+        // Instead of old showPayment (manual receipt), use new auto-checkout logic with unique_price
+        const order = await createCheckoutOrder(supabase, {
+          user_telegram_id: tgId,
+          items: [{ plan_id: plan.id, plan, quantity: 1 }]
+        });
+
+        await reserveInventoryForOrder(supabase, order.id);
+
+        const text = autoPaymentInstructionsText({
+          order,
+          items: [{ plan_id: plan.id, plan, quantity: 1 }],
+          settings,
+          fallback: {
+            cardNumber: process.env.PAYMENT_CARD_NUMBER,
+            cardOwner: process.env.PAYMENT_CARD_OWNER,
+            support: process.env.SUPPORT_USERNAME
+          }
+        });
+
+        const keyboardRows = [
+          [{ text: '📋 Kartani nusxalash', copy_text: { text: settings?.seller_card_number || process.env.PAYMENT_CARD_NUMBER || '' } }],
+          [{ text: '📨 Admin bilan bog‘lanish', url: settings?.support_link?.startsWith('http') ? settings.support_link : `https://t.me/${String(settings?.support_link || process.env.SUPPORT_USERNAME || '@support').replace('@', '')}` }]
+        ];
+
+        await sendMessage(tgId, text, inlineKeyboard(keyboardRows));
 
         return { statusCode: 200, body: JSON.stringify({ ok: true }) };
       }
