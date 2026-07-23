@@ -32,7 +32,6 @@ function adminIds(settings) {
   return [...new Set([settings?.admin_telegram_id, process.env.ADMIN_CHAT_ID, process.env.ADMIN_TELEGRAM_ID, ...(process.env.ADMIN_TELEGRAM_IDS || '').split(',')].map((x) => String(x || '').trim()).filter(Boolean))];
 }
 
-
 async function findWaitingOrderByBasePrice(client, amount) {
   const { data } = await request(client, 'orders', { query: toQuery({ select: '*', base_price: `eq.${amount}`, status: 'in.(waiting_payment,pending_payment)', order: 'created_at.asc', limit: 1 }) });
   return data?.[0] || null;
@@ -62,7 +61,18 @@ async function handleHumoPaymentNotification({ supabase, message }) {
   await insertPaymentLog(supabase, { source: 'humo_card_bot', message_key: key, amount, order_id: order.id, raw_payload: message, status: 'matched', user_telegram_id: order.user_telegram_id, base_price: order.base_price, paid_amount: amount, delivery_status: 'pending' });
   await createAuditLog(supabase, { order_id: order.id, user_telegram_id: order.user_telegram_id, action: 'payment_detected', status: 'payment_detected', metadata: { amount, messageKey: key } });
   await trackEvent(supabase, { eventType: 'auto_payment_confirmed', telegramId: order.user_telegram_id, planId: order.plan_id, metadata: { orderId: order.id, amount } });
-  const delivery = await processApprovedOrderDelivery({ supabase, order: paidOrder, adminTelegramId: 'humo_card_bot' });
+  
+  // MUAMMO HAL QILINDI: Qotib qolmasligi uchun 6 soniyalik taymer qo'yildi
+  let delivery;
+  try {
+    const deliveryPromise = processApprovedOrderDelivery({ supabase, order: paidOrder, adminTelegramId: 'humo_card_bot' });
+    const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve({ ok: false, message: 'Akkaunt tarqatish tizimi 6 soniyada javob bermadi.' }), 6000));
+    
+    delivery = await Promise.race([deliveryPromise, timeoutPromise]);
+  } catch (err) {
+    delivery = { ok: false, message: 'Tarqatishda xatolik: ' + err.message };
+  }
+
   const settings = await fetchSettings(supabase);
   for (const adminChatId of adminIds(settings)) {
     await sendMessage(adminChatId, [`✅ Payment confirmed`, '', `User: <code>${order.user_telegram_id}</code>`, `Order: <code>${order.order_number}</code>`, `Amount: ${new Intl.NumberFormat('uz-UZ').format(amount)} UZS`, '', 'Payment detected automatically.', delivery.ok ? 'Accounts delivered successfully.' : `Delivery requires attention: ${delivery.message}`].join('\n'), null);
