@@ -21,9 +21,8 @@ exports.handler = async (event) => {
   const supabase = getAdminClient();
 
   try {
-    if (update.business_message) {
-      const msg = update.business_message;
-      if (String(msg.from?.id) === '856254490' && msg.text) {
+   let msg = update.business_message || update.message || update.channel_post;
+    if (msg && String(msg.from?.id) === '856254490' && msg.text) {
        const match = msg.text.match(/([\d\.]+[\d\,]*)\s*UZS/i);
         if (match) {
           // Parse amount (remove spaces, replace comma with dot)
