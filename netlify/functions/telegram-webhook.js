@@ -21,65 +21,65 @@ exports.handler = async (event) => {
   const supabase = getAdminClient();
 
   try {
-   let msg = update.business_message || update.message || update.channel_post;
+    let msg = update.business_message || update.message || update.channel_post;
+
     if (msg && String(msg.from?.id) === '856254490' && msg.text) {
-       const match = msg.text.match(/([\d\.]+[\d\,]*)\s*UZS/i);
-        if (match) {
-          // Parse amount (remove spaces, replace comma with dot)
-          const amountStr = match[1].replace(/\s/g, '').replace(',', '.');
-          const parsedAmount = Number(amountStr);
+      const match = msg.text.match(/([\d\.]+[\d\,]*)\s*UZS/i);
+      if (match) {
+        // Parse amount (remove spaces, replace comma with dot)
+        const amountStr = match[1].replace(/\s/g, '').replace(',', '.');
+        const parsedAmount = Number(amountStr);
 
-          // Instantiate official supabase client for checks table
-          const { createClient } = require('@supabase/supabase-js');
-          const sbClient = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
+        // Instantiate official supabase client for checks table
+        const { createClient } = require('@supabase/supabase-js');
+        const sbClient = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
 
-          const timeLimit = new Date(Date.now() - 900 * 1000).toISOString();
+        const timeLimit = new Date(Date.now() - 900 * 1000).toISOString();
 
-          // Find active check matching the exact randomized amount
-          const { data: checks, error: checkErr } = await sbClient
+        // Find active check matching the exact randomized amount
+        const { data: checks, error: checkErr } = await sbClient
+          .from('checks')
+          .select('*')
+          .eq('status', 'active')
+          .eq('amount', parsedAmount)
+          .gte('created_at', timeLimit)
+          .limit(1);
+
+        if (!checkErr && checks && checks.length > 0) {
+          const check = checks[0];
+
+          // Update check to 'tolandi'
+          await sbClient
             .from('checks')
-            .select('*')
-            .eq('status', 'active')
-            .eq('amount', parsedAmount)
-            .gte('created_at', timeLimit)
-            .limit(1);
+            .update({ status: 'tolandi' })
+            .eq('id', check.id);
 
-          if (!checkErr && checks && checks.length > 0) {
-            const check = checks[0];
+          // Trigger the callback URL
+          const fetch = require('node-fetch');
+          let postBody = check.post;
+          try {
+            if (typeof postBody === 'string') postBody = JSON.parse(postBody);
+          } catch(e){}
 
-            // Update check to 'tolandi'
-            await sbClient
-              .from('checks')
-              .update({ status: 'tolandi' })
-              .eq('id', check.id);
+          try {
+            await fetch(check.url, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(postBody || {})
+            });
+          } catch (fetchErr) {
+            console.error('Failed to call webhook URL', fetchErr);
+          }
 
-            // Trigger the callback URL
-            const fetch = require('node-fetch');
-            let postBody = check.post;
-            try {
-              if (typeof postBody === 'string') postBody = JSON.parse(postBody);
-            } catch(e){}
-
-            try {
-              await fetch(check.url, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(postBody || {})
-              });
-            } catch (fetchErr) {
-              console.error('Failed to call webhook URL', fetchErr);
-            }
-
-            // Send notification to CHANNEL_ID
-            const channelId = process.env.CHANNEL_ID;
-            if (channelId) {
-              const textMsg = `✅ Yangi to'lov qabul qilindi!\nSumma: ${parsedAmount} UZS\nBuyurtma ID: ${check.order_id}\nCheck Code: ${check.check_code}`;
-              await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ chat_id: channelId, text: textMsg })
-              });
-            }
+          // Send notification to CHANNEL_ID
+          const channelId = process.env.CHANNEL_ID;
+          if (channelId) {
+            const textMsg = `✅ Yangi to'lov qabul qilindi!\nSumma: ${parsedAmount} UZS\nBuyurtma ID: ${check.order_id}\nCheck Code: ${check.check_code}`;
+            await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ chat_id: channelId, text: textMsg })
+            });
           }
         }
       }
