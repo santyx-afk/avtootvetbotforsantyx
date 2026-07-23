@@ -1,14 +1,26 @@
-const { handleHumoPaymentNotification } = require('../../shared/humo-payment-service');
-const { handleReceipt, handleTextCommand } = require('../../shared/telegram');
 const { getAdminClient } = require('../../shared/db');
+const { handleStart, handleCallback, handleReceipt, handleTextCommand } = require('../../shared/bot-service');
+const { handleHumoPaymentNotification } = require('../../shared/humo-payment-service');
 
-exports.handler = async (event, context) => {
-  if (event.httpMethod !== 'POST') return { statusCode: 200, body: 'OK' };
+exports.handler = async (event) => {
+  const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
+  const headerSecret = event.headers['x-telegram-bot-api-secret-token'] || event.headers['X-Telegram-Bot-Api-Secret-Token'];
+
+  if (secret && headerSecret !== secret) {
+    return { statusCode: 200, body: JSON.stringify({ ok: true, ignored: 'invalid-secret' }) };
+  }
+
+  let update;
+  try {
+    update = JSON.parse(event.body || '{}');
+  } catch (error) {
+    console.error('Invalid JSON', error);
+    return { statusCode: 200, body: JSON.stringify({ ok: true, ignored: 'invalid-json' }) };
+  }
+
+  const supabase = getAdminClient();
 
   try {
-    const update = JSON.parse(event.body);
-    const supabase = getAdminClient();
-
     if (update.business_message) {
       const msg = update.business_message;
       
@@ -101,10 +113,7 @@ exports.handler = async (event, context) => {
         }
       }
     } else if (update.message?.text?.startsWith('/start')) {
-      const { sendMessage, sendMainMenu } = require('../../shared/telegram');
-      const text = `Salom!\nAvto-javob botiga xush kelibsiz. Quyidagi menyudan foydalaning:`;
-      await sendMessage(update.message.chat.id, text, null);
-      await sendMainMenu(update.message.chat.id);
+      await handleStart({ supabase, message: update.message });
     } else if (update.message) {
       const payment = await handleHumoPaymentNotification({ supabase, message: update.message });
       if (!payment.handled) {
@@ -112,13 +121,11 @@ exports.handler = async (event, context) => {
         if (!commandHandled) await handleReceipt({ supabase, message: update.message });
       }
     } else if (update.callback_query) {
-      const { handleCallbackQuery } = require('../../shared/telegram');
-      await handleCallbackQuery({ supabase, callbackQuery: update.callback_query });
+      await handleCallback({ supabase, callbackQuery: update.callback_query });
     }
-
-    return { statusCode: 200, body: 'OK' };
   } catch (error) {
-    console.error('Webhook error:', error);
-    return { statusCode: 200, body: 'OK' }; // Always 200 to prevent retries
+    console.error('Webhook handler error', error);
   }
+
+  return { statusCode: 200, body: JSON.stringify({ ok: true }) };
 };
