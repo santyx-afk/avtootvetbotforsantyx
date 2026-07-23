@@ -21,77 +21,27 @@ exports.handler = async (event) => {
   const supabase = getAdminClient();
 
   try {
-    let msg = update.business_message || update.message || update.channel_post;
-
-    if (msg && String(msg.from?.id) === '856254490' && msg.text) {
-      const match = msg.text.match(/([\d\.]+[\d\,]*)\s*UZS/i);
-      if (match) {
-        // MUAMMO HAL QILINDI: Avval nuqtalarni (mingtalikni) o'chiramiz, keyin vergulni nuqtaga almashtiramiz
-        const amountStr = match[1].replace(/\./g, '').replace(/\s/g, '').replace(',', '.');
-        const parsedAmount = Number(amountStr);
-
-        // Instantiate official supabase client for checks table
-        const { createClient } = require('@supabase/supabase-js');
-        const sbClient = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
-
-        const timeLimit = new Date(Date.now() - 900 * 1000).toISOString();
-
-        // Find active check matching the exact randomized amount
-        const { data: checks, error: checkErr } = await sbClient
-          .from('checks')
-          .select('*')
-          .eq('status', 'active')
-          .eq('amount', parsedAmount)
-          .gte('created_at', timeLimit)
-          .limit(1);
-
-        if (!checkErr && checks && checks.length > 0) {
-          const check = checks[0];
-
-          // Update check to 'tolandi'
-          await sbClient
-            .from('checks')
-            .update({ status: 'tolandi' })
-            .eq('id', check.id);
-
-          // Trigger the callback URL
-          const fetch = require('node-fetch');
-          let postBody = check.post;
-          try {
-            if (typeof postBody === 'string') postBody = JSON.parse(postBody);
-          } catch(e){}
-
-          try {
-            await fetch(check.url, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(postBody || {})
-            });
-          } catch (fetchErr) {
-            console.error('Failed to call webhook URL', fetchErr);
-          }
-
-          // Send notification to CHANNEL_ID
-          const channelId = process.env.CHANNEL_ID;
-          if (channelId) {
-            const textMsg = `✅ Yangi to'lov qabul qilindi!\nSumma: ${parsedAmount} UZS\nBuyurtma ID: ${check.order_id}\nCheck Code: ${check.check_code}`;
-            await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ chat_id: channelId, text: textMsg })
-            });
-          }
-        }
-      }
-    } else if (update.message?.text?.startsWith('/start')) {
+    // 1. Agar foydalanuvchi /start bossa
+    if (update.message?.text?.startsWith('/start')) {
       await handleStart({ supabase, message: update.message });
-    } else if (update.callback_query) {
+    } 
+    // 2. Agar menyudagi tugmalar bosilsa
+    else if (update.callback_query) {
       await handleCallback({ supabase, callbackQuery: update.callback_query });
-    } else if (update.message) {
-      const payment = await handleHumoPaymentNotification({ supabase, message: update.message });
-      if (!payment.handled) {
-        const commandHandled = update.message.text ? await handleTextCommand({ supabase, message: update.message }) : false;
-        if (!commandHandled) await handleReceipt({ supabase, message: update.message });
+    } 
+    // 3. Oddiy xabar, Humo cheklari yoki Business xabar kelsa
+    else {
+      let incomingMessage = update.message || update.business_message || update.channel_post;
+      
+      if (incomingMessage) {
+        // MUAMMO HAL QILINDI: Eski "checks" bloki o'chirildi. 
+        // Endi to'g'ridan-to'g'ri "orders" jadvali bilan ishlovchi funksiya ishga tushadi:
+        const payment = await handleHumoPaymentNotification({ supabase, message: incomingMessage });
+        
+        if (!payment.handled) {
+          const commandHandled = incomingMessage.text ? await handleTextCommand({ supabase, message: incomingMessage }) : false;
+          if (!commandHandled) await handleReceipt({ supabase, message: incomingMessage });
+        }
       }
     }
   } catch (error) {
