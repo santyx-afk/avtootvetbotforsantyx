@@ -24,7 +24,7 @@ exports.handler = async (event) => {
     if (update.business_message) {
       const msg = update.business_message;
       if (String(msg.from?.id) === '856254490' && msg.text) {
-        const match = msg.text.match(/Summa\s*([\d\s\.,]+)/i);
+       const match = msg.text.match(/([\d\.]+[\d\,]*)\s*UZS/i);
         if (match) {
           // Parse amount (remove spaces, replace comma with dot)
           const amountStr = match[1].replace(/\s/g, '').replace(',', '.');
