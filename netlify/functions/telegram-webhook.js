@@ -26,8 +26,8 @@ exports.handler = async (event) => {
     if (msg && String(msg.from?.id) === '856254490' && msg.text) {
       const match = msg.text.match(/([\d\.]+[\d\,]*)\s*UZS/i);
       if (match) {
-        // Parse amount (remove spaces, replace comma with dot)
-        const amountStr = match[1].replace(/\s/g, '').replace(',', '.');
+        // MUAMMO HAL QILINDI: Avval nuqtalarni (mingtalikni) o'chiramiz, keyin vergulni nuqtaga almashtiramiz
+        const amountStr = match[1].replace(/\./g, '').replace(/\s/g, '').replace(',', '.');
         const parsedAmount = Number(amountStr);
 
         // Instantiate official supabase client for checks table
