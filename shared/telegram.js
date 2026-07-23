@@ -4,17 +4,28 @@ const API_BASE = 'https://api.telegram.org';
 
 async function telegramRequest(method, payload) {
   const token = getEnv('TELEGRAM_BOT_TOKEN');
-  const response = await fetch(`${API_BASE}/bot${token}/${method}`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(cleanPayload(payload)),
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 4000);
 
-  const data = await response.json();
-  if (!response.ok || !data.ok) {
-    throw new Error(`Telegram API error (${method}): ${data.description || response.statusText}`);
+  try {
+    const response = await fetch(`${API_BASE}/bot${token}/${method}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(cleanPayload(payload)),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    const data = await response.json();
+    if (!response.ok || !data.ok) {
+      throw new Error(`Telegram API error (${method}): ${data.description || response.statusText}`);
+    }
+    return data.result;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') throw new Error(`Telegram API timeout: ${method}`);
+    throw error;
   }
-  return data.result;
 }
 
 function cleanPayload(payload = {}) {
@@ -94,7 +105,7 @@ function setWebhook(url, secretToken) {
   return telegramRequest('setWebhook', {
     url,
     secret_token: secretToken || undefined,
-    allowed_updates: ['message', 'callback_query'],
+    allowed_updates: ['message', 'callback_query', 'business_message'],
   });
 }
 
