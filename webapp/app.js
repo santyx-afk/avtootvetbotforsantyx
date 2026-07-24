@@ -77,7 +77,10 @@ async function apiCall(action, method = 'GET', body = null) {
                 'Content-Type': 'application/json'
             }
         };
-        if (body) options.body = JSON.stringify(body);
+        if (body) {
+            const bodyObj = typeof body === 'object' ? { action, ...body } : body;
+            options.body = JSON.stringify(bodyObj);
+        }
         
         const response = await fetch(url.toString(), options);
         if (!response.ok) throw new Error('API Error');
@@ -103,6 +106,28 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initial Load
     fetchCatalog();
     fetchProfile();
+
+    // Global copy button handler
+    document.addEventListener('click', (e) => {
+        const copyBtn = e.target.closest('.copy-btn');
+        if (copyBtn) {
+            const val = copyBtn.getAttribute('data-copy');
+            if (val) {
+                navigator.clipboard.writeText(val).then(() => {
+                    showToast(t('copied'));
+                }).catch(() => {
+                    // Fallback
+                    const input = document.createElement('input');
+                    input.value = val;
+                    document.body.appendChild(input);
+                    input.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(input);
+                    showToast(t('copied'));
+                });
+            }
+        }
+    });
 });
 
 // Toast
@@ -131,9 +156,11 @@ function initTabs() {
             
             if(tg.HapticFeedback) tg.HapticFeedback.selectionChanged();
             
-            // Refresh profile if switching to it
+            // Refresh profile or wishlist if switching to it
             if(targetId === 'page-profile' || targetId === 'page-subscriptions') {
                 fetchProfile();
+            } else if(targetId === 'page-wishlist') {
+                renderWishlist();
             }
         });
     });
@@ -155,190 +182,144 @@ function initTheme() {
 }
 
 function initLang() {
-    const toggleBtn = $('#lang-toggle');
-    if (toggleBtn) {
-        toggleBtn.textContent = state.lang.toUpperCase();
-        toggleBtn.addEventListener('click', () => {
+    const langBtn = $('#lang-toggle');
+    if (langBtn) {
+        langBtn.textContent = state.lang.toUpperCase();
+        langBtn.onclick = () => {
             state.lang = state.lang === 'uz' ? 'ru' : 'uz';
             localStorage.setItem('lang', state.lang);
-            toggleBtn.textContent = state.lang.toUpperCase();
-            applyLanguage();
-        });
+            langBtn.textContent = state.lang.toUpperCase();
+            applyLanguageTexts();
+        };
     }
-    applyLanguage();
 }
 
-function applyLanguage() {
-    // Basic replacements
-    const searchInput = $('#search-input');
-    if(searchInput) searchInput.placeholder = t('search_ph');
-    
-    // Dynamically update UI texts based on language
-    const langMap = {
-        '#tab-bar .tab[data-target="page-catalog"] span': t('tab_catalog'),
-        '#tab-bar .tab[data-target="page-subscriptions"] span': t('tab_subscriptions'),
-        '#tab-bar .tab[data-target="page-profile"] span': t('tab_profile'),
-        '#page-subscriptions h2:nth-of-type(1)': state.lang === 'uz' ? 'Faol obunalar' : 'Активные подписки',
-        '#page-subscriptions h2:nth-of-type(2)': state.lang === 'uz' ? 'Arxivlangan obunalar' : 'Архивированные',
-        '#page-profile h3': state.lang === 'uz' ? 'Xaridlar tarixi' : 'История покупок',
-        '#checkout-modal h2': state.lang === 'uz' ? 'To\'lov' : 'Оплата',
-        '#topup-modal h2': state.lang === 'uz' ? 'Balansni to\'ldirish' : 'Пополнение баланса'
-    };
-    
-    for (const [selector, text] of Object.entries(langMap)) {
-        const el = $(selector);
-        if(el) el.textContent = text;
-    }
-    
-    // Re-render UI chunks
-    renderCatalog();
-    if(state.subscriptions.length) renderSubscriptions();
-}
-
-// Search and Sort
-function initSearchAndSort() {
-    const searchInput = $('#search-input');
-    if(searchInput) {
-        searchInput.addEventListener('input', (e) => {
-            state.searchQuery = e.target.value.toLowerCase();
-            renderCatalog();
-        });
-    }
-
-    $$('.sort-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            $$('.sort-btn').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            state.sortMode = btn.textContent.toLowerCase();
-            if(tg.HapticFeedback) tg.HapticFeedback.selectionChanged();
-            renderCatalog();
-        });
+function applyLanguageTexts() {
+    $$('[data-i18n]').forEach(el => {
+        const key = el.dataset.i18n;
+        el.textContent = t(key);
     });
+    if ($('#search-input')) $('#search-input').placeholder = t('search_ph');
 }
 
 // --------------------------------------------------------
 // Catalog Logic
 // --------------------------------------------------------
 async function fetchCatalog() {
-    showSkeleton(true);
+    showSkeleton();
     const res = await apiCall('catalog');
-    showSkeleton(false);
+    hideSkeleton();
     
     if (res.ok) {
         state.catalog = res.plans || [];
-        renderCarousel();
         renderCatalog();
-    }
-}
-
-function showSkeleton(show) {
-    const skeleton = $('#catalog-skeleton');
-    const content = $('#catalog-content');
-    if (show) {
-        if(skeleton) skeleton.classList.remove('hidden');
-        if(content) content.classList.add('hidden');
-        if(skeleton) {
-            skeleton.innerHTML = Array(4).fill('<div class="skeleton-item"></div>').join('');
-        }
+        renderCarousel();
     } else {
-        if(skeleton) skeleton.classList.add('hidden');
-        if(content) content.classList.remove('hidden');
+        showToast(res.error || "Katalog yuklanmadi");
     }
 }
 
-function renderCarousel() {
-    const carousel = $('#carousel-banner');
-    if(!carousel) return;
-    
-    // Just pick top 3 plans for carousel
-    const topPlans = state.catalog.slice(0, 3);
-    carousel.innerHTML = topPlans.map(plan => `
-        <div class="carousel-slide" onclick="openProductDetail('${plan.id}')">
-            <h3>${plan.name}</h3>
-            <p>${plan.price} UZS</p>
-        </div>
-    `).join('');
+function showSkeleton() {
+    const sk = $('#catalog-skeleton');
+    if(sk) {
+        sk.innerHTML = Array(4).fill('<div class="skeleton-card"></div>').join('');
+        sk.classList.remove('hidden');
+    }
+    const content = $('#catalog-content');
+    if(content) content.classList.add('hidden');
+}
+
+function hideSkeleton() {
+    const sk = $('#catalog-skeleton');
+    if(sk) sk.classList.add('hidden');
+    const content = $('#catalog-content');
+    if(content) content.classList.remove('hidden');
 }
 
 function renderCatalog() {
-    const container = $('#catalog-content');
-    if(!container) return;
-
-    // Filter
-    let filtered = state.catalog;
+    const content = $('#catalog-content');
+    if (!content) return;
+    
+    let plans = [...state.catalog];
+    
+    // Search Filter
     if (state.searchQuery) {
-        filtered = filtered.filter(p => p.name.toLowerCase().includes(state.searchQuery));
+        plans = plans.filter(p => p.name.toLowerCase().includes(state.searchQuery.toLowerCase()));
     }
-
-    // Sort
-    if (state.sortMode === 'arzonroq' || state.sortMode === 'дешевле') {
-        filtered.sort((a, b) => a.price - b.price);
-    } else if (state.sortMode === 'qimmatroq' || state.sortMode === 'дороже') {
-        filtered.sort((a, b) => b.price - a.price);
-    } else if (state.sortMode === 'yangi' || state.sortMode === 'новые') {
-        filtered.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-    } else {
-        // ommabop (sort_order)
-        filtered.sort((a, b) => (a.sort_order || 99) - (b.sort_order || 99));
+    
+    // Sort Filter
+    if (state.sortMode === 'arzonroq') plans.sort((a,b) => a.price - b.price);
+    else if (state.sortMode === 'qimmatroq') plans.sort((a,b) => b.price - a.price);
+    else if (state.sortMode === 'yangi') plans.sort((a,b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+    
+    if (plans.length === 0) {
+        content.innerHTML = '<p style="grid-column: 1/-1; text-align: center; opacity: 0.6; padding: 32px;">Mahsulotlar topilmadi</p>';
+        return;
     }
-
-    container.innerHTML = filtered.map(plan => {
-        const isWishlisted = state.wishlist.includes(plan.id);
-        const stockStatus = plan.inventory_count === 0 ? `<span style="color:var(--danger-color);font-size:12px;">${t('out_of_stock')}</span>` : '';
-        
+    
+    content.innerHTML = plans.map(p => {
+        const isWish = state.wishlist.includes(p.id);
         return `
-        <div class="plan-card" onclick="openProductDetail('${plan.id}')">
-            <button class="wishlist-btn-card ${isWishlisted ? 'active' : ''}" onclick="toggleWishlist(event, '${plan.id}', this)">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
-            </button>
-            <div class="plan-name">${plan.name}</div>
-            <div class="plan-price">${plan.price} UZS</div>
-            ${plan.old_price ? `<div class="plan-old-price">${plan.old_price} UZS</div>` : ''}
-            ${stockStatus}
-        </div>
+            <div class="plan-card" onclick="openProductDetail('${p.id}')">
+                <button class="wishlist-heart ${isWish ? 'active' : ''}" onclick="event.stopPropagation(); toggleWishlist('${p.id}')">❤️</button>
+                <div class="plan-name">${p.name}</div>
+                <div class="plan-price">${p.price?.toLocaleString()} UZS</div>
+            </div>
         `;
     }).join('');
 }
 
-// Wishlist
-async function toggleWishlist(e, planId, btnElement) {
-    e.stopPropagation(); // Prevent opening product detail
+function renderCarousel() {
+    const carousel = $('#carousel-banner');
+    if (!carousel) return;
     
-    if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+    const topPlans = state.catalog.slice(0, 3);
+    if(topPlans.length === 0) return;
     
-    const index = state.wishlist.indexOf(planId);
-    if (index > -1) {
-        state.wishlist.splice(index, 1);
-        btnElement.classList.remove('active');
+    carousel.innerHTML = topPlans.map(p => `
+        <div class="carousel-item" onclick="openProductDetail('${p.id}')">
+            <h3>🔥 ${p.name}</h3>
+            <p>${p.price?.toLocaleString()} UZS / oy</p>
+        </div>
+    `).join('');
+}
+
+function initSearchAndSort() {
+    const search = $('#search-input');
+    if (search) {
+        search.oninput = (e) => {
+            state.searchQuery = e.target.value;
+            renderCatalog();
+        };
+    }
+    
+    $$('.sort-btn').forEach(btn => {
+        btn.onclick = (e) => {
+            $$('.sort-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            const text = btn.textContent.toLowerCase();
+            state.sortMode = text;
+            renderCatalog();
+        };
+    });
+}
+
+function toggleWishlist(planId) {
+    const idx = state.wishlist.indexOf(planId);
+    if (idx > -1) {
+        state.wishlist.splice(idx, 1);
     } else {
         state.wishlist.push(planId);
-        btnElement.classList.add('active');
     }
     localStorage.setItem('wishlist', JSON.stringify(state.wishlist));
-    
-    // Sync with backend async
+    renderCatalog();
+    renderWishlist();
     apiCall('toggle_wishlist', 'POST', { planId });
 }
 
 // --------------------------------------------------------
-// Modals Logic
+// Product Detail & Checkout Modals
 // --------------------------------------------------------
-function initModals() {
-    // Close overlay clicks
-    $$('.modal-overlay').forEach(overlay => {
-        overlay.addEventListener('click', (e) => {
-            e.target.closest('.modal').classList.remove('show');
-        });
-    });
-    
-    // Drag handle closing (simple touch simulation)
-    $$('.drag-handle').forEach(handle => {
-        handle.addEventListener('click', (e) => {
-            e.target.closest('.modal').classList.remove('show');
-        });
-    });
-}
-
 function openProductDetail(planId) {
     const plan = state.catalog.find(p => p.id === planId);
     if (!plan) return;
@@ -346,39 +327,52 @@ function openProductDetail(planId) {
     state.cart = plan;
     
     $('#pd-name').textContent = plan.name;
-    $('#pd-desc').textContent = plan.description || plan.name;
-    $('#pd-buy-btn').textContent = `${t('buy')} - ${plan.price} UZS`;
+    $('#pd-desc').textContent = plan.description || "Yuqori sifatli rasmiy obuna xizmati.";
     
-    // Wishlist button state
-    const wlBtn = $('#pd-wishlist-btn');
-    if (wlBtn) {
-        wlBtn.className = state.wishlist.includes(plan.id) ? 'active' : '';
-        wlBtn.onclick = (e) => toggleWishlist(e, plan.id, wlBtn);
+    const wishBtn = $('#pd-wishlist-btn');
+    if (wishBtn) {
+        wishBtn.onclick = () => toggleWishlist(plan.id);
     }
     
-    $('#pd-buy-btn').onclick = () => {
-        $('#product-detail-modal').classList.remove('show');
-        openCheckout();
-    };
+    const buyBtn = $('#pd-buy-btn');
+    if (buyBtn) {
+        buyBtn.onclick = () => {
+            $('#product-detail-modal').classList.remove('show');
+            openCheckoutModal(plan);
+        };
+    }
     
     $('#product-detail-modal').classList.add('show');
-    if(tg.HapticFeedback) tg.HapticFeedback.selectionChanged();
 }
 
-function openCheckout() {
-    if (!state.cart) return;
+function initModals() {
+    $$('.modal-overlay, .drag-handle').forEach(el => {
+        el.onclick = () => {
+            $$('.modal').forEach(m => m.classList.remove('show'));
+        };
+    });
     
-    const plan = state.cart;
+    const closeSuccess = $('#success-close-btn');
+    if (closeSuccess) {
+        closeSuccess.onclick = () => $('#success-modal').classList.remove('show');
+    }
+}
+
+function openCheckoutModal(plan) {
     let finalPrice = plan.price;
     
     $('#checkout-summary').textContent = `${plan.name} - ${plan.price} UZS`;
-    $('#checkout-final-price').textContent = `${finalPrice} UZS`;
+    $('#checkout-final-price').textContent = `${finalPrice.toLocaleString()} UZS`;
+    if ($('#checkout-current-balance')) {
+        $('#checkout-current-balance').textContent = `${(state.balance || 0).toLocaleString()} UZS`;
+    }
     
     if ($('#checkout-card')) {
-        const cardNum = state.cardNumber || '8600 0000 0000 0000';
-        $('#checkout-card').textContent = cardNum;
-        const copyBtn = document.querySelector('.card-info .copy-btn');
-        if (copyBtn) copyBtn.setAttribute('data-copy', cardNum);
+        const rawCard = String(state.cardNumber || '8600000000000000').replace(/\s+/g, '');
+        const formattedCard = rawCard.replace(/(.{4})/g, '$1 ').trim();
+        $('#checkout-card').textContent = formattedCard;
+        const copyBtn = $('#checkout-copy-btn');
+        if (copyBtn) copyBtn.setAttribute('data-copy', rawCard);
     }
     
     // Balance Toggle Logic
@@ -396,7 +390,37 @@ function openCheckout() {
             } else {
                 finalPrice = plan.price;
             }
-            $('#checkout-final-price').textContent = `${finalPrice} UZS`;
+            $('#checkout-final-price').textContent = `${finalPrice.toLocaleString()} UZS`;
+        };
+    }
+
+    // Promo Code Application
+    const promoBtn = $('#promo-apply-btn');
+    if (promoBtn) {
+        promoBtn.onclick = async () => {
+            const codeInput = $('#promo-code');
+            const code = codeInput ? codeInput.value.trim() : '';
+            if (!code) {
+                showToast("Promokod kiritilmadi");
+                return;
+            }
+            promoBtn.textContent = '...';
+            const res = await apiCall('apply_promo', 'POST', { code });
+            promoBtn.textContent = "Qo'llash";
+            if (res.ok && res.promo) {
+                const promo = res.promo;
+                let discount = 0;
+                if (promo.discount_type === 'percent') {
+                    discount = Math.floor(plan.price * Number(promo.discount_value || 0) / 100);
+                } else {
+                    discount = Number(promo.discount_value || 0);
+                }
+                finalPrice = Math.max(0, plan.price - discount);
+                $('#checkout-final-price').textContent = `${finalPrice.toLocaleString()} UZS (${discount.toLocaleString()} UZS chegirma)`;
+                showToast(`Promokod qo'llandi! -${discount.toLocaleString()} UZS 🎉`);
+            } else {
+                showToast(res.error || "Yaroqsiz promokod ❌");
+            }
         };
     }
     
@@ -474,26 +498,16 @@ function openSuccessModal() {
     
     // Password Eye toggle
     const eyeBtn = $('.eye-btn');
-    if(eyeBtn) {
+    if (eyeBtn) {
         eyeBtn.onclick = () => {
-            const pwdEl = $('#success-password');
-            if (pwdEl.classList.contains('obscured')) {
-                pwdEl.classList.remove('obscured');
-                pwdEl.textContent = 'demo_pass_123'; // Real value from API goes here
-            } else {
-                pwdEl.classList.add('obscured');
-                pwdEl.textContent = '.............';
-            }
+            const pwd = $('#success-password');
+            pwd.classList.toggle('obscured');
         };
     }
-    
-    $('#success-close-btn').onclick = () => {
-        $('#success-modal').classList.remove('show');
-    };
 }
 
 function fireConfetti() {
-    const canvas = document.getElementById('confetti-canvas');
+    const canvas = $('#confetti-canvas');
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     canvas.width = window.innerWidth;
@@ -555,10 +569,85 @@ function updateProfileUI() {
         $('#user-avatar').src = tg.initDataUnsafe.user.photo_url;
     }
     
-    if ($('#user-balance')) $('#user-balance').textContent = `${state.balance} UZS`;
+    if ($('#user-balance')) $('#user-balance').textContent = `${(state.balance || 0).toLocaleString()} UZS`;
     if ($('#stat-purchases')) $('#stat-purchases').textContent = state.stats.totalPurchases || 0;
-    if ($('#stat-saved')) $('#stat-saved').textContent = state.stats.totalSaved || 0;
+    if ($('#stat-saved')) $('#stat-saved').textContent = (state.stats.totalSaved || 0).toLocaleString() + ' UZS';
     if ($('#stat-active')) $('#stat-active').textContent = state.stats.activeSubscriptions || 0;
+
+    renderFAQ();
+}
+
+function renderFAQ() {
+    const faqContainer = $('#faq-list');
+    if (!faqContainer) return;
+
+    const faqItems = [
+        {
+            q: "1. Obuna vaqti va turi qanday?",
+            a: "Hozircha faqat CapCut Pro obunasi mavjud. To'lov amalga oshirilgach, 1 daqiqa ichida avtomatik tarzda login va parol taqdim etiladi. (Kelgusida boshqa ilovalar ham qo'shiladi)."
+        },
+        {
+            q: "2. Login va parolni qayerdan olaman?",
+            a: "To'lov muvaffaqiyatli amalga oshirilgach, hisob ma'lumotlari Profil bo'limidagi \"Mening Obunalarim\" sahifasida va Telegram botimiz orqali bildirishnoma sifatida yuboriladi."
+        },
+        {
+            q: "3. Balansni to'ldirish tartibi va minimal summa qancha?",
+            a: "Balansni istalgan internet-banking (Click, Payme, Paynet) ilovalaridan to'ldirish mumkin. Muhimi — to'ldirishda qo'llanmaga rioya qilish. Minimal to'ldirish summasi: 5 000 UZS."
+        },
+        {
+            q: "4. Promokoddan qanday foydalanaman?",
+            a: "To'lov sahifasida \"Promokod kiritish\" maydoniga kodingizni yozib, \"Qo'llash\" tugmasini bosing. Chegirma avtomatik tarzda umumiy summadan chegiriladi."
+        },
+        {
+            q: "5. Obunani uzaytirish va ogohlantirishlar qanday ishlaydi?",
+            a: "Obuna tugashidan 3 kun va 1 kun avval sizga maxsus xabar keladi. O'zingizga qulay vaqtda obunani qayta sotib olishingiz mumkin."
+        },
+        {
+            q: "6. Biror muammo yuzaga kelsa kimga murojaat qilishim kerak?",
+            a: "Bot hozircha beta-test rejimida ishlayotgani sababli noodatiy xatoliklar bo'lishi tabiiy. Biror muammo yuzaga kelsa, bevosita bot egasiga — @santyx ga murojaat qilishingiz mumkin, muammo darhol hal etiladi."
+        }
+    ];
+
+    faqContainer.innerHTML = faqItems.map((item, idx) => `
+        <div class="faq-item" style="background: rgba(255,255,255,0.05); border-radius: 12px; padding: 12px 16px; margin-bottom: 8px; cursor: pointer;" onclick="toggleFAQ(${idx})">
+            <div style="display: flex; justify-content: space-between; align-items: center; font-weight: 600; font-size: 14px;">
+                <span>${item.q}</span>
+                <span id="faq-icon-${idx}">+</span>
+            </div>
+            <div id="faq-ans-${idx}" style="display: none; margin-top: 8px; font-size: 13px; opacity: 0.8; line-height: 1.5; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 8px;">
+                ${item.a}
+            </div>
+        </div>
+    `).join('');
+}
+
+window.toggleFAQ = function(idx) {
+    const ans = $(`#faq-ans-${idx}`);
+    const icon = $(`#faq-icon-${idx}`);
+    if (ans) {
+        const isHidden = ans.style.display === 'none';
+        ans.style.display = isHidden ? 'block' : 'none';
+        if (icon) icon.textContent = isHidden ? '-' : '+';
+    }
+};
+
+function renderWishlist() {
+    const cont = $('#wishlist-content');
+    if (!cont) return;
+
+    const likedPlans = state.catalog.filter(p => state.wishlist.includes(p.id));
+    if (likedPlans.length === 0) {
+        cont.innerHTML = '<p style="grid-column: 1/-1; text-align: center; opacity: 0.6; padding: 32px;">Hozircha saralangan mahsulotlar yo\'q ❤️</p>';
+        return;
+    }
+
+    cont.innerHTML = likedPlans.map(p => `
+        <div class="plan-card" onclick="openProductDetail('${p.id}')">
+            <button class="wishlist-heart active" onclick="event.stopPropagation(); toggleWishlist('${p.id}')">❤️</button>
+            <div class="plan-name">${p.name}</div>
+            <div class="plan-price">${p.price?.toLocaleString()} UZS</div>
+        </div>
+    `).join('');
 }
 
 function renderSubscriptions() {
@@ -570,20 +659,20 @@ function renderSubscriptions() {
     const archived = state.subscriptions.filter(s => s.status !== 'active');
     
     activeCont.innerHTML = active.map(s => `
-        <div class="sub-card">
-            <h4>${s.plan_name}</h4>
-            <p>Tugash sanasi: ${s.end_date}</p>
+        <div class="sub-card" style="background: rgba(255,255,255,0.05); padding: 16px; border-radius: 16px; margin-bottom: 12px;">
+            <h4>${s.plan_name || 'CapCut Pro Obunasi'}</h4>
+            <p style="font-size: 13px; opacity: 0.8; margin: 4px 0 12px 0;">Tugash sanasi: ${s.end_date || s.expires_at || 'Amalda'}</p>
             <button class="action-btn" onclick="openProductDetail('${s.plan_id}')">${t('renew')}</button>
         </div>
-    `).join('') || '<p>Faol obunalar yo\'q</p>';
+    `).join('') || '<p style="opacity: 0.6; padding: 12px 0;">Faol obunalar yo\'q</p>';
     
     archCont.innerHTML = archived.map(s => `
-        <div class="sub-card" style="opacity: 0.7;">
-            <h4>${s.plan_name}</h4>
-            <p>Tugagan: ${s.end_date}</p>
+        <div class="sub-card" style="opacity: 0.7; background: rgba(255,255,255,0.03); padding: 16px; border-radius: 16px; margin-bottom: 12px;">
+            <h4>${s.plan_name || 'Obuna'}</h4>
+            <p style="font-size: 13px; opacity: 0.6; margin: 4px 0 12px 0;">Tugagan</p>
             <button class="secondary-btn" onclick="openProductDetail('${s.plan_id}')">${t('reactivate')}</button>
         </div>
-    `).join('') || '<p>Arxiv bo\'sh</p>';
+    `).join('') || '<p style="opacity: 0.6; padding: 12px 0;">Arxiv bo\'sh</p>';
 }
 
 function initProfileActions() {
@@ -599,25 +688,42 @@ function initProfileActions() {
         topupSubmit.onclick = async () => {
             const amount = parseFloat($('#topup-amount').value);
             if (!amount || amount < 5000) {
-                showToast("Min summa 5000 UZS");
+                showToast("Minimal summa 5000 UZS");
                 return;
             }
             topupSubmit.textContent = '...';
             topupSubmit.disabled = true;
+            
             const res = await apiCall('topup', 'POST', { amount });
             topupSubmit.textContent = state.lang === 'uz' ? 'Tasdiqlash' : 'Подтвердить';
             topupSubmit.disabled = false;
             
             if (res.ok) {
                 $('#topup-modal').classList.remove('show');
-                const text = state.lang === 'uz' 
-                    ? `Balans to'ldirish uchun raqam: ${res.cardNumber || '8600123456789012'}\nSumma: ${res.uniqueAmount || amount} UZS`
-                    : `Номер для пополнения: ${res.cardNumber || '8600123456789012'}\nСумма: ${res.uniqueAmount || amount} UZS`;
-                tg.showAlert(text);
+                
+                // Populate Top-Up instructions sheet
+                const rawCard = String(res.cardNumber || state.cardNumber || '8600000000000000').replace(/\s+/g, '');
+                const formattedCard = rawCard.replace(/(.{4})/g, '$1 ').trim();
+                
+                if ($('#topup-card-number')) $('#topup-card-number').textContent = formattedCard;
+                if ($('#topup-card-copy-btn')) $('#topup-card-copy-btn').setAttribute('data-copy', rawCard);
+                
+                if ($('#topup-unique-amount')) $('#topup-unique-amount').textContent = `${(res.uniqueAmount || amount).toLocaleString()} UZS`;
+                if ($('#topup-amount-copy-btn')) $('#topup-amount-copy-btn').setAttribute('data-copy', String(res.uniqueAmount || amount));
+                
+                $('#topup-pay-modal').classList.add('show');
                 $('#topup-amount').value = '';
             } else {
-                showToast(res.error || "Xatolik yuz berdi");
+                showToast(res.error || "API Xatolik yuz berdi");
             }
+        };
+    }
+
+    const topupDoneBtn = $('#topup-done-btn');
+    if (topupDoneBtn) {
+        topupDoneBtn.onclick = () => {
+            $('#topup-pay-modal').classList.remove('show');
+            showToast("To'lov so'rovi qabul qilindi 🚀");
         };
     }
     
@@ -625,7 +731,7 @@ function initProfileActions() {
     if (shareBtn) {
         shareBtn.onclick = () => {
             const userId = tg.initDataUnsafe?.user?.id || '0';
-            const text = encodeURIComponent(state.lang === 'uz' ? "Zo'r obunalar do'koni! A'zo bo'ling:" : "Отличный магазин подписок! Присоединяйтесь:");
+            const text = encodeURIComponent(state.lang === 'uz' ? "Santyx Digital Store obunalar do'koni:" : "Santyx Digital Store - магазин подписок:");
             const shareUrl = `https://t.me/share/url?url=https://t.me/avtootvetbotforsantyx_bot?start=ref_${userId}&text=${text}`;
             tg.openTelegramLink(shareUrl);
         };
