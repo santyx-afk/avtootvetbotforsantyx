@@ -28,9 +28,8 @@ if (fs.existsSync(adminDir)) {
 
 const webappDir = path.join(__dirname, '..', 'webapp');
 if (fs.existsSync(webappDir)) {
+  copyDir(webappDir, publicDir);
   copyDir(webappDir, path.join(publicDir, 'webapp'));
 }
-
-fs.writeFileSync(path.join(publicDir, 'index.html'), '<meta http-equiv="refresh" content="0; url=/admin/index.html">');
 
 console.log('Build completed successfully.');
