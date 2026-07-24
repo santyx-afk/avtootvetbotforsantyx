@@ -156,20 +156,21 @@ exports.handler = async (event, context) => {
         // Generate unique amount with random cents (like existing order logic)
         const uniqueAmount = amount + Math.floor(Math.random() * 99) + 1;
         
-        const { fetchSettings } = require('../../shared/db');
+        const { fetchSettings, createOrder } = require('../../shared/db');
         const settings = await fetchSettings(supabase);
         const cardNumber = settings?.seller_card_number || process.env.PAYMENT_CARD_NUMBER || '';
         
         // Create a topup order
-        await request(supabase, 'orders', {
-          method: 'POST',
-          body: {
-            user_telegram_id: String(tgUser.id),
-            status: 'waiting_payment',
-            amount: amount,
-            unique_price: uniqueAmount,
-            created_at: new Date().toISOString()
-          }
+        await createOrder(supabase, {
+          user_telegram_id: String(tgUser.id),
+          status: 'waiting_payment',
+          delivery_status: 'waiting_approval',
+          payment_method: 'humo_card_bot',
+          payment_source: 'humo_card_bot',
+          amount: amount,
+          base_price: amount,
+          unique_price: uniqueAmount,
+          created_at: new Date().toISOString()
         });
         
         return {
