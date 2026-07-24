@@ -7,6 +7,9 @@ const {
   trackEvent,
   fetchSettings,
   createAuditLog,
+  addWalletTransaction,
+  getUserBalance,
+  updateOrderStatus,
 } = require('./db');
 const { sendMessage } = require('./telegram');
 const { processApprovedOrderDelivery } = require('./delivery-service');
@@ -37,6 +40,32 @@ async function findWaitingOrderByBasePrice(client, amount) {
   return data?.[0] || null;
 }
 
+function formatUzs(value) {
+  return `${new Intl.NumberFormat('uz-UZ').format(Number(value || 0))} UZS`;
+}
+
+async function creditTopupOrder({ supabase, order, amount, messageKey }) {
+  const credited = Number(amount || 0);
+  await addWalletTransaction(supabase, {
+    user_telegram_id: order.user_telegram_id,
+    order_id: order.id,
+    amount: credited,
+    type: 'credit',
+    description: `Balans to‘ldirish #${order.order_number}`,
+  });
+  await updateOrderStatus(supabase, order.id, 'completed', { delivery_status: 'not_required', delivered_at: new Date().toISOString() });
+  await createAuditLog(supabase, { order_id: order.id, user_telegram_id: order.user_telegram_id, action: 'wallet_topup', status: 'completed', metadata: { amount: credited, messageKey } });
+
+  const wallet = await getUserBalance(supabase, order.user_telegram_id);
+  await sendMessage(order.user_telegram_id, ['✅ Balansingiz to‘ldirildi!', '', `Qo‘shildi: ${formatUzs(credited)}`, `Joriy balans: ${formatUzs(wallet?.balance)}`].join('\n'), null);
+
+  const settings = await fetchSettings(supabase);
+  for (const adminChatId of adminIds(settings)) {
+    await sendMessage(adminChatId, ['💰 Balans to‘ldirildi', '', `User: <code>${order.user_telegram_id}</code>`, `Order: <code>${order.order_number}</code>`, `Amount: ${formatUzs(credited)}`, `New balance: ${formatUzs(wallet?.balance)}`].join('\n'), null);
+  }
+  return { handled: true, matched: true, topup: true, order };
+}
+
 async function handleHumoPaymentNotification({ supabase, message }) {
   if (!isHumoNotification(message)) return { handled: false };
   const text = message.text || message.caption || '';
@@ -61,7 +90,12 @@ async function handleHumoPaymentNotification({ supabase, message }) {
   await insertPaymentLog(supabase, { source: 'humo_card_bot', message_key: key, amount, order_id: order.id, raw_payload: message, status: 'matched', user_telegram_id: order.user_telegram_id, base_price: order.base_price, paid_amount: amount, delivery_status: 'pending' });
   await createAuditLog(supabase, { order_id: order.id, user_telegram_id: order.user_telegram_id, action: 'payment_detected', status: 'payment_detected', metadata: { amount, messageKey: key } });
   await trackEvent(supabase, { eventType: 'auto_payment_confirmed', telegramId: order.user_telegram_id, planId: order.plan_id, metadata: { orderId: order.id, amount } });
-  
+
+  // Balans to'ldirish buyurtmasi: yetkazishga emas, hamyonga boradi
+  if (String(paidOrder.order_type || '') === 'topup') {
+    return creditTopupOrder({ supabase, order: paidOrder, amount, messageKey: key });
+  }
+
   // MUAMMO HAL QILINDI: Qotib qolmasligi uchun 6 soniyalik taymer qo'yildi
   let delivery;
   try {
