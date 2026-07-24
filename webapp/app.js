@@ -374,6 +374,13 @@ function openCheckout() {
     $('#checkout-summary').textContent = `${plan.name} - ${plan.price} UZS`;
     $('#checkout-final-price').textContent = `${finalPrice} UZS`;
     
+    if ($('#checkout-card')) {
+        const cardNum = state.cardNumber || '8600 0000 0000 0000';
+        $('#checkout-card').textContent = cardNum;
+        const copyBtn = document.querySelector('.card-info .copy-btn');
+        if (copyBtn) copyBtn.setAttribute('data-copy', cardNum);
+    }
+    
     // Balance Toggle Logic
     const balanceSwitch = $('#checkout-balance-switch');
     if (balanceSwitch) {
@@ -530,6 +537,7 @@ async function fetchProfile() {
         state.stats = res.stats || {};
         state.subscriptions = res.subscriptions || [];
         state.orders = res.orders || [];
+        state.cardNumber = res.cardNumber || '8600 0000 0000 0000';
         
         updateProfileUI();
         renderSubscriptions();

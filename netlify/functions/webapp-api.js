@@ -90,10 +90,14 @@ exports.handler = async (event, context) => {
           query: `select=plan_id&user_telegram_id=eq.${tgId}`
         }).catch(() => ({ data: [] }));
         
+        const { fetchSettings } = require('../../shared/db');
+        const settings = await fetchSettings(supabase);
+        const cardNumber = settings?.seller_card_number || process.env.PAYMENT_CARD_NUMBER || '';
+        
         return {
           statusCode: 200,
           headers,
-          body: JSON.stringify({ ok: true, user, subscriptions, orders, balance, stats, wishlist: (wishlist || []).map(w => w.plan_id) })
+          body: JSON.stringify({ ok: true, user, subscriptions, orders, balance, stats, wishlist: (wishlist || []).map(w => w.plan_id), cardNumber })
         };
       } catch (err) {
         return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: err.message }) };
