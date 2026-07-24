@@ -23,22 +23,18 @@
     </div>
     
     <!-- Dynamic Island Toast -->
-    <div id="dynamic-island-toast" class="toast hidden"></div>
+    <div id="dynamic-island-toast" class="toast"></div>
 
     <!-- Onboarding Modal -->
-    <div id="onboarding-modal" class="modal hidden">
-        <div class="onboarding-slides">
-            <div class="slide" id="slide-1">
-                <h2>Xush Kelibsiz!</h2>
-                <p>Eng zo'r obunalar do'koniga xush kelibsiz.</p>
-            </div>
-            <div class="slide hidden" id="slide-2">
-                <h2>Imkoniyatlar</h2>
-                <p>Oson to'lov, tezkor yetkazib berish.</p>
-            </div>
-            <div class="slide hidden" id="slide-3">
-                <h2>Boshlaymizmi?</h2>
-                <button id="start-btn" class="action-btn">Boshlash</button>
+    <div id="onboarding-modal" class="modal">
+        <div class="modal-overlay"></div>
+        <div class="modal-content">
+            <div class="onboarding-slides">
+                <div class="slide" id="slide-1">
+                    <h2>Xush Kelibsiz!</h2>
+                    <p>Eng zo'r obunalar do'koniga xush kelibsiz.</p>
+                    <button id="start-btn" class="action-btn">Boshlash</button>
+                </div>
             </div>
         </div>
     </div>
@@ -58,9 +54,9 @@
                 </div>
 
                 <div class="sort-buttons">
+                    <button class="sort-btn active">Ommabop</button>
                     <button class="sort-btn">Arzonroq</button>
                     <button class="sort-btn">Qimmatroq</button>
-                    <button class="sort-btn">Ommabop</button>
                     <button class="sort-btn">Yangi</button>
                 </div>
 
@@ -74,7 +70,7 @@
             </div>
 
             <!-- Subscriptions Page -->
-            <div id="page-subscriptions" class="page hidden">
+            <div id="page-subscriptions" class="page">
                 <h2>Faol obunalar</h2>
                 <div id="active-subs" class="subs-list"></div>
                 
@@ -83,7 +79,7 @@
             </div>
 
             <!-- Profile Page -->
-            <div id="page-profile" class="page hidden">
+            <div id="page-profile" class="page">
                 <div class="user-card">
                     <img id="user-avatar" src="" alt="Avatar">
                     <div class="user-info">
@@ -117,7 +113,7 @@
 
                 <div class="referral-card">
                     <p>Do'stlarni taklif qiling va bonus oling!</p>
-                    <button id="share-ref-btn">Ulashish</button>
+                    <button id="share-ref-btn" class="secondary-btn">Ulashish</button>
                 </div>
 
                 <div class="order-history">
@@ -136,13 +132,13 @@
                     </div>
                     <div class="setting-item">
                         <span>Til (UZ/RU)</span>
-                        <button id="lang-toggle">UZ</button>
+                        <button id="lang-toggle" class="secondary-btn" style="width: auto; padding: 8px 16px; margin:0;">UZ</button>
                     </div>
                 </div>
 
                 <button id="contact-admin-btn" class="secondary-btn">Admin bilan bog'lanish</button>
 
-                <div class="faq-section">
+                <div class="faq-section" style="margin-top: 24px;">
                     <h3>Ko'p so'raladigan savollar</h3>
                     <div id="faq-list"></div>
                 </div>
@@ -168,7 +164,8 @@
 
     <!-- Modals -->
     <!-- Product Detail Slide-Up Modal -->
-    <div id="product-detail-modal" class="modal slide-up hidden">
+    <div id="product-detail-modal" class="modal slide-up">
+        <div class="modal-overlay"></div>
         <div class="modal-content">
             <div class="drag-handle"></div>
             <img id="pd-image" src="" alt="Product">
@@ -188,7 +185,8 @@
     </div>
 
     <!-- Checkout Slide-Up Sheet -->
-    <div id="checkout-modal" class="modal slide-up hidden">
+    <div id="checkout-modal" class="modal slide-up">
+        <div class="modal-overlay"></div>
         <div class="modal-content">
             <div class="drag-handle"></div>
             <h2>To'lov</h2>
@@ -197,7 +195,7 @@
             
             <div class="card-info">
                 <span>Karta raqami: <b id="checkout-card">8600 0000 0000 0000</b></span>
-                <button class="copy-btn" data-copy="8600 0000 0000 0000">1-tap nusxa</button>
+                <button class="copy-btn" data-copy="8600 0000 0000 0000">Nusxa</button>
             </div>
             
             <div class="balance-toggle">
@@ -217,7 +215,8 @@
     </div>
 
     <!-- Wallet Top-Up Modal -->
-    <div id="topup-modal" class="modal slide-up hidden">
+    <div id="topup-modal" class="modal slide-up">
+        <div class="modal-overlay"></div>
         <div class="modal-content">
             <div class="drag-handle"></div>
             <h2>Balansni to'ldirish</h2>
@@ -227,7 +226,8 @@
     </div>
 
     <!-- Receipt Modal -->
-    <div id="receipt-modal" class="modal slide-up hidden">
+    <div id="receipt-modal" class="modal slide-up">
+        <div class="modal-overlay"></div>
         <div class="modal-content">
             <div class="drag-handle"></div>
             <h2>Chek</h2>
@@ -235,12 +235,13 @@
                 <!-- Receipt elements -->
             </div>
             <button id="receipt-share-btn" class="action-btn">Telegramda ulashish</button>
-            <button id="receipt-download-btn" class="action-btn secondary">PNG yuklab olish</button>
+            <button id="receipt-download-btn" class="secondary-btn">PNG yuklab olish</button>
         </div>
     </div>
 
     <!-- Success Modal -->
-    <div id="success-modal" class="modal slide-up hidden">
+    <div id="success-modal" class="modal slide-up">
+        <div class="modal-overlay"></div>
         <canvas id="confetti-canvas"></canvas>
         <div class="modal-content">
             <h2>Muvaffaqiyatli xarid!</h2>
