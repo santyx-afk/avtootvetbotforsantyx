@@ -253,7 +253,7 @@ function renderCarousel() {
     // Just pick top 3 plans for carousel
     const topPlans = state.catalog.slice(0, 3);
     carousel.innerHTML = topPlans.map(plan => `
-        <div class="carousel-slide" onclick="openProductDetail(${plan.id})">
+        <div class="carousel-slide" onclick="openProductDetail('${plan.id}')">
             <h3>${plan.name}</h3>
             <p>${plan.price} UZS</p>
         </div>
@@ -287,8 +287,8 @@ function renderCatalog() {
         const stockStatus = plan.inventory_count === 0 ? `<span style="color:var(--danger-color);font-size:12px;">${t('out_of_stock')}</span>` : '';
         
         return `
-        <div class="plan-card" onclick="openProductDetail(${plan.id})">
-            <button class="wishlist-btn-card ${isWishlisted ? 'active' : ''}" onclick="toggleWishlist(event, ${plan.id}, this)">
+        <div class="plan-card" onclick="openProductDetail('${plan.id}')">
+            <button class="wishlist-btn-card ${isWishlisted ? 'active' : ''}" onclick="toggleWishlist(event, '${plan.id}', this)">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
             </button>
             <div class="plan-name">${plan.name}</div>
@@ -565,7 +565,7 @@ function renderSubscriptions() {
         <div class="sub-card">
             <h4>${s.plan_name}</h4>
             <p>Tugash sanasi: ${s.end_date}</p>
-            <button class="action-btn" onclick="openProductDetail(${s.plan_id})">${t('renew')}</button>
+            <button class="action-btn" onclick="openProductDetail('${s.plan_id}')">${t('renew')}</button>
         </div>
     `).join('') || '<p>Faol obunalar yo\'q</p>';
     
@@ -573,7 +573,7 @@ function renderSubscriptions() {
         <div class="sub-card" style="opacity: 0.7;">
             <h4>${s.plan_name}</h4>
             <p>Tugagan: ${s.end_date}</p>
-            <button class="secondary-btn" onclick="openProductDetail(${s.plan_id})">${t('reactivate')}</button>
+            <button class="secondary-btn" onclick="openProductDetail('${s.plan_id}')">${t('reactivate')}</button>
         </div>
     `).join('') || '<p>Arxiv bo\'sh</p>';
 }
