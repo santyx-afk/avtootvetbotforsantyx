@@ -231,6 +231,7 @@ async function createOrder(client, order) {
     user_id: order.user_id || null,
     user_telegram_id: String(order.user_telegram_id),
     plan_id: order.plan_id || null,
+    order_type: order.order_type || 'purchase',
     amount: Number(order.amount || 0),
     base_price: order.base_price === undefined ? Number(order.amount || 0) : Number(order.base_price || 0),
     unique_price: order.unique_price === undefined ? null : Number(order.unique_price || 0),
@@ -347,9 +348,29 @@ async function getUserBalance(client, telegramId) {
   return data?.[0] || { user_telegram_id: String(telegramId), balance: 0 };
 }
 
+async function adjustWalletBalance(client, telegramId, delta) {
+  try {
+    const rows = await rpcRequest(client, 'credit_user_wallet', { p_user_telegram_id: String(telegramId), p_amount: Number(delta) });
+    return (Array.isArray(rows) ? rows[0] : rows) || null;
+  } catch (error) {
+    console.warn('credit_user_wallet RPC unavailable, using REST fallback:', error?.message);
+    const wallet = await getUserBalance(client, telegramId);
+    const { data } = await request(client, 'user_wallets', {
+      method: 'POST',
+      query: 'on_conflict=user_telegram_id',
+      headers: { Prefer: 'return=representation,resolution=merge-duplicates' },
+      body: { user_telegram_id: String(telegramId), balance: Number(wallet.balance || 0) + Number(delta), updated_at: new Date().toISOString() },
+    });
+    return data?.[0] || null;
+  }
+}
+
+// Tranzaksiya yozuvi user_wallets.balance ni o'zi yangilamaydi, shuning uchun ikkalasi shu yerda birga bajariladi
 async function addWalletTransaction(client, item) {
-  const { data } = await request(client, 'wallet_transactions', { method: 'POST', headers: { Prefer: 'return=representation' }, body: { user_telegram_id: String(item.user_telegram_id), order_id: item.order_id || null, amount: Number(item.amount || 0), type: item.type, description: item.description || null } });
-  return data?.[0] || null;
+  const amount = Math.abs(Number(item.amount || 0));
+  const { data } = await request(client, 'wallet_transactions', { method: 'POST', headers: { Prefer: 'return=representation' }, body: { user_telegram_id: String(item.user_telegram_id), order_id: item.order_id || null, amount, type: item.type, description: item.description || null } });
+  const wallet = await adjustWalletBalance(client, item.user_telegram_id, item.type === 'debit' ? -amount : amount);
+  return { ...(data?.[0] || {}), wallet };
 }
 
 async function createCartItem(client, item) {
@@ -740,7 +761,10 @@ async function createSubscriptionFromOrder(client, order, plan) {
     const expiresAt = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000).toISOString();
     const { data } = await request(client, 'subscriptions', {
       method: 'POST',
-      headers: { Prefer: 'return=representation,resolution=merge-duplicates', 'on_conflict': 'order_id' },
+      // on_conflict query parametri, header emas — aks holda PostgREST id bo'yicha
+      // konflikt qidiradi va bir order uchun ikkinchi yozuv 409 bilan yiqiladi
+      query: 'on_conflict=order_id',
+      headers: { Prefer: 'return=representation,resolution=merge-duplicates' },
       body: {
         order_id: order.id,
         user_telegram_id: String(order.user_telegram_id),
@@ -804,12 +828,14 @@ module.exports = {
   validatePromoCode,
   getUserBalance,
   addWalletTransaction,
+  adjustWalletBalance,
   createCartItem,
   listCartItems,
   updateCartItemQuantity,
   removeCartItem,
   clearCart,
   createCheckoutOrder,
+  generateUniquePrice,
   confirmPaymentNotification,
   enqueueDeliveryRetry,
   listDueDeliveryRetries,

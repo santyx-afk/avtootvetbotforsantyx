@@ -88,6 +88,52 @@ function isSafeOrderId(orderId) {
   return /^[a-f0-9-]{16,64}$/i.test(String(orderId || ''));
 }
 
+function addPromoUsageText() {
+  return [
+    '❌ Format: <code>/addpromo KOD percent|fixed QIYMAT [max:N] [expires:YYYY-MM-DD] [onetime]</code>',
+    '',
+    'Masalan:',
+    '<code>/addpromo SALE10 percent 10</code>',
+    '<code>/addpromo SALE10 percent 10 max:5 expires:2025-12-31 onetime</code>',
+  ].join('\n');
+}
+
+// Ixtiyoriy argumentlar: max:N, expires:YYYY-MM-DD, onetime
+function parsePromoOptions(tokens = []) {
+  const result = { ok: true, maxUses: null, expiresAt: null, isOneTime: false };
+  for (const raw of tokens) {
+    const token = String(raw).trim();
+    if (!token) continue;
+    const lower = token.toLowerCase();
+
+    if (lower === 'onetime' || lower === 'one_time') {
+      result.isOneTime = true;
+      continue;
+    }
+    if (lower.startsWith('max:')) {
+      const max = parseInt(token.slice(4), 10);
+      if (!Number.isFinite(max) || max <= 0) return { ok: false, error: `max noto‘g‘ri: ${token}` };
+      result.maxUses = max;
+      continue;
+    }
+    if (lower.startsWith('expires:')) {
+      const date = token.slice(8);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { ok: false, error: `expires sanasi YYYY-MM-DD ko‘rinishida bo‘lishi kerak: ${token}` };
+      const parsed = new Date(`${date}T23:59:59.999Z`);
+      // Date 2025-02-30 ni jimgina 2025-03-02 ga aylantiradi, shuning uchun teskari tekshiruv
+      if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== date) {
+        return { ok: false, error: `expires sanasi mavjud emas: ${date}` };
+      }
+      result.expiresAt = parsed.toISOString();
+      continue;
+    }
+    return { ok: false, error: `Noma’lum parametr: ${token}` };
+  }
+  // is_one_time hech qayerda tekshirilmaydi, shuning uchun u max_uses=1 orqali kuchga kiradi
+  if (result.isOneTime && !result.maxUses) result.maxUses = 1;
+  return result;
+}
+
 
 async function showCategories({ supabase, chatId, messageId, telegramId, asEdit = false }) {
   const settings = await fetchSettings(supabase);
@@ -242,8 +288,22 @@ async function handleCallback({ supabase, callbackQuery }) {
         return;
       }
 
-      const deliveryRes = await processApprovedDelivery(supabase, res.order);
-      await editMessage(chatId, messageId, `✅ Buyurtma #${res.order.order_number} tasdiqlandi va yetkazildi.`, null);
+      const deliveryRes = await processApprovedDelivery({
+        supabase,
+        order: res.order,
+        adminTelegramId: String(callbackQuery.from.id),
+      });
+      if (!deliveryRes.ok) {
+        const reason = deliveryRes.admin_message || deliveryRes.message || deliveryRes.code || 'Noma’lum xatolik';
+        await editMessage(chatId, messageId, `⚠️ Buyurtma #${res.order.order_number} tasdiqlandi, lekin yetkazib bo‘lmadi.\n\nSabab: ${reason}`, null);
+        await answerCallbackQuery(callbackQuery.id, `Yetkazishda xatolik: ${deliveryRes.code || 'xato'}`);
+        return;
+      }
+
+      const doneText = deliveryRes.code === 'MANUAL_REQUIRED'
+        ? `✅ Buyurtma #${res.order.order_number} tasdiqlandi. Obunani qo‘lda ulash kerak.`
+        : `✅ Buyurtma #${res.order.order_number} tasdiqlandi va yetkazildi.`;
+      await editMessage(chatId, messageId, doneText, null);
       await sendMessage(res.order.user_telegram_id, `🎉 Buyurtmangiz #${res.order.order_number} tasdiqlandi!`, null);
       await answerCallbackQuery(callbackQuery.id, 'Buyurtma tasdiqlandi');
       return;
@@ -330,44 +390,95 @@ async function handleTextCommand({ supabase, message }) {
     return true;
   }
   if (text === '/admin' && isAdminTelegramId(message.from.id)) {
-    await sendMessage(message.chat.id, '<b>Telegram Admin Panel</b>\n\nYangi promokod qo\'shish:\n<code>/addpromo CODE percent 10</code> (10% chegirma)\n<code>/addpromo CODE fixed 5000</code> (5000 UZS chegirma)\n\nPromokodlar ro\'yxati: /promos\nStatistika: /stats', null);
+    await sendMessage(message.chat.id, [
+      '<b>Telegram Admin Panel</b>',
+      '',
+      'Yangi promokod qo\'shish:',
+      '<code>/addpromo CODE percent 10</code> (10% chegirma)',
+      '<code>/addpromo CODE fixed 5000</code> (5000 UZS chegirma)',
+      '',
+      'Ixtiyoriy parametrlar:',
+      '<code>max:5</code> — nechi marta ishlatilishi mumkin',
+      '<code>expires:2025-12-31</code> — shu sanagacha amal qiladi',
+      '<code>onetime</code> — bir martalik (max:5 berilmasa max:1)',
+      '',
+      'To\'liq misol:',
+      '<code>/addpromo SALE10 percent 10 max:5 expires:2025-12-31 onetime</code>',
+      '',
+      'Promokodlar ro\'yxati: /promos',
+      'Statistika: /stats',
+    ].join('\n'), null);
     return true;
   }
   if (text.startsWith('/addpromo') && isAdminTelegramId(message.from.id)) {
     const parts = text.split(/\s+/);
     if (parts.length < 4) {
-      await sendMessage(message.chat.id, '❌ Format: <code>/addpromo <code> <percent|fixed> <value></code>\nMasalan: <code>/addpromo SALE10 percent 10</code>', null);
+      await sendMessage(message.chat.id, addPromoUsageText(), null);
       return true;
     }
     const code = parts[1].toUpperCase();
     const type = parts[2].toLowerCase() === 'percent' ? 'percent' : 'fixed';
     const value = parseFloat(parts[3]);
-    
+
     if (!value || value <= 0) {
       await sendMessage(message.chat.id, '❌ Qiymat noldan katta bo\'lishi kerak', null);
       return true;
     }
-    
+    if (type === 'percent' && value > 100) {
+      await sendMessage(message.chat.id, '❌ Foiz chegirma 100 dan oshmasligi kerak', null);
+      return true;
+    }
+
+    const options = parsePromoOptions(parts.slice(4));
+    if (!options.ok) {
+      await sendMessage(message.chat.id, `❌ ${options.error}\n\n${addPromoUsageText()}`, null);
+      return true;
+    }
+
     const { insertRow } = require('./db');
     await insertRow(supabase, 'promo_codes', {
       code,
       discount_type: type,
       discount_value: value,
+      is_one_time: options.isOneTime,
+      max_uses: options.maxUses,
+      expires_at: options.expiresAt,
       is_active: true,
       used_count: 0
     });
-    
-    await sendMessage(message.chat.id, `✅ Promokod yaratildi:\n<b>Kod:</b> ${code}\n<b>Turi:</b> ${type === 'percent' ? '%' : 'UZS'}\n<b>Qiymati:</b> ${value}`, null);
+
+    const details = [
+      `✅ Promokod yaratildi:`,
+      `<b>Kod:</b> ${code}`,
+      `<b>Turi:</b> ${type === 'percent' ? '%' : 'UZS'}`,
+      `<b>Qiymati:</b> ${value}`,
+      `<b>Limit:</b> ${options.maxUses ? `${options.maxUses} marta` : 'cheksiz'}`,
+      `<b>Amal qiladi:</b> ${options.expiresAt ? String(options.expiresAt).slice(0, 10) + ' gacha' : 'muddatsiz'}`,
+      `<b>Bir martalik:</b> ${options.isOneTime ? 'ha' : 'yo\'q'}`,
+    ];
+    await sendMessage(message.chat.id, details.join('\n'), null);
     return true;
   }
   if (text === '/promos' && isAdminTelegramId(message.from.id)) {
-    const { listTable } = require('./db');
-    const promos = await listTable(supabase, 'promo_codes').catch(() => []);
+    // listTable sort_order bo'yicha saralaydi, promo_codes da bunday ustun yo'q
+    const { request } = require('./db');
+    const promos = await request(supabase, 'promo_codes', { query: 'select=*&order=created_at.desc' })
+      .then((res) => res.data || [])
+      .catch(() => []);
     if (!promos || promos.length === 0) {
       await sendMessage(message.chat.id, 'Hozircha promokodlar yo\'q', null);
       return true;
     }
-    const msg = promos.map(p => `• <b>${p.code}</b>: ${p.discount_value}${p.discount_type === 'percent' ? '%' : ' UZS'} (Ishlatildi: ${p.used_count || 0})`).join('\n');
+    const msg = promos.map((p) => {
+      const usage = p.max_uses ? `${p.used_count || 0}/${p.max_uses}` : `${p.used_count || 0}`;
+      const extras = [
+        `Ishlatildi: ${usage}`,
+        p.expires_at ? `Muddat: ${String(p.expires_at).slice(0, 10)}` : null,
+        p.is_one_time ? 'bir martalik' : null,
+        p.is_active === false ? 'o‘chirilgan' : null,
+      ].filter(Boolean).join(', ');
+      return `• <b>${p.code}</b>: ${p.discount_value}${p.discount_type === 'percent' ? '%' : ' UZS'} (${extras})`;
+    }).join('\n');
     await sendMessage(message.chat.id, `<b>Mavjud Promokodlar:</b>\n\n${msg}`, null);
     return true;
   }

@@ -153,18 +153,22 @@ exports.handler = async (event, context) => {
         const amount = Number(body.amount);
         if (!amount || amount < 5000) throw new Error('Minimal summa 5000 UZS');
         
-        // Generate unique amount with random cents (like existing order logic)
-        const uniqueAmount = amount + Math.floor(Math.random() * 99) + 1;
-        
-        const { fetchSettings, createOrder } = require('../../shared/db');
+        const { fetchSettings, createOrder, generateUniquePrice } = require('../../shared/db');
+
+        // Boshqa kutilayotgan buyurtmalar bilan to'qnashmasligi uchun summa
+        // umumiy generator orqali olinadi (aks holda to'lov boshqa orderga tushib qolishi mumkin)
+        const uniqueAmount = await generateUniquePrice(supabase, amount);
+
         const settings = await fetchSettings(supabase);
         const cardNumber = settings?.seller_card_number || process.env.PAYMENT_CARD_NUMBER || '';
         
-        // Create a topup order
-        await createOrder(supabase, {
+        // Create a topup order — order_type 'topup' bo'lmasa humo to'lovi
+        // akkaunt yetkazishga ketib qoladi va balans kreditlanmaydi
+        const order = await createOrder(supabase, {
           user_telegram_id: String(tgUser.id),
+          order_type: 'topup',
           status: 'waiting_payment',
-          delivery_status: 'waiting_approval',
+          delivery_status: 'not_required',
           payment_method: 'humo_card_bot',
           payment_source: 'humo_card_bot',
           amount: amount,
@@ -172,11 +176,11 @@ exports.handler = async (event, context) => {
           unique_price: uniqueAmount,
           created_at: new Date().toISOString()
         });
-        
+
         return {
           statusCode: 200,
           headers,
-          body: JSON.stringify({ ok: true, amount, uniqueAmount, cardNumber })
+          body: JSON.stringify({ ok: true, amount, uniqueAmount, cardNumber, orderNumber: order?.order_number || null })
         };
       }
 
