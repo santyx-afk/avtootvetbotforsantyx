@@ -6,7 +6,7 @@ module.exports.handler = schedule('0 9 * * *', async (event) => {
   console.log('Running scheduled daily reminder task...');
   try {
     const supabase = getAdminClient();
-    const webAppUrl = (process.env.URL || 'https://oxrgsi.netlify.app') + '/webapp/';
+    const webAppUrl = process.env.WEBAPP_URL || 'https://avtootvetbotforsantyx.netlify.app?v=2.0';
 
     // 1. Get subscriptions ending in 3 days
     const threeDaysFromNow = new Date();
@@ -60,7 +60,7 @@ module.exports.handler = schedule('0 9 * * *', async (event) => {
             `📦 ${sub.plan_name || 'Obuna'}\n` +
             `📅 Tugash sanasi: ${sub.end_date}\n\n` +
             `Hozir uzaytirsangiz hisobingizga 10% keshbek beriladi! 🎁`;
-            
+
           const keyboard = inlineKeyboard([
             [{ text: '🚀 Obunani uzaytirish', web_app: { url: webAppUrl } }]
           ]);
@@ -80,7 +80,7 @@ module.exports.handler = schedule('0 9 * * *', async (event) => {
       console.error('Error fetching 1d expiring subs:', e);
     }
 
-    // 3. Get subscriptions that expired today
+    // 3. Expire today's subscriptions
     const today = new Date().toISOString().split('T')[0];
     try {
       const { data: expiredToday } = await request(supabase, 'subscriptions', {
@@ -94,7 +94,7 @@ module.exports.handler = schedule('0 9 * * *', async (event) => {
             `Arxivdan 1-bosishda qayta sotib olishingiz mumkin 👇`;
 
           const keyboard = inlineKeyboard([
-            [{ text: '♻️ Qayta sotib olish', web_app: { url: webAppUrl } }]
+            [{ text: '🔄 Qayta sotib olish', web_app: { url: webAppUrl } }]
           ]);
 
           await sendMessage(String(sub.user_telegram_id), textExpired, keyboard);
@@ -105,100 +105,16 @@ module.exports.handler = schedule('0 9 * * *', async (event) => {
             body: { status: 'expired', expired_notified: true }
           });
         } catch (e) {
-          console.error(`Error processing expired notification for sub ${sub.id}:`, e);
+          console.error(`Error processing expired sub ${sub.id}:`, e);
         }
       }
     } catch (e) {
       console.error('Error fetching expired subs:', e);
     }
 
-    // 4. Check 1-year loyalty bonus
-    try {
-      const oneYearAgo = new Date();
-      oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-      const oneYearStr = oneYearAgo.toISOString().split('T')[0];
-
-      const { data: loyalUsers } = await request(supabase, 'users', {
-        query: `select=*&created_at=gte.${oneYearStr}T00:00:00&created_at=lt.${oneYearStr}T23:59:59&loyalty_bonus_sent=eq.false`
-      }).catch(() => ({ data: [] }));
-
-      for (const user of (loyalUsers || [])) {
-        try {
-          await request(supabase, 'wallet_transactions', {
-            method: 'POST',
-            body: {
-              user_telegram_id: String(user.telegram_id),
-              amount: 10000,
-              type: 'loyalty_bonus',
-              description: '1 yillik sodiqlik bonusi'
-            }
-          });
-          
-          const { data: wallets } = await request(supabase, 'user_wallets', {
-            query: `select=*&user_telegram_id=eq.${user.telegram_id}`
-          }).catch(() => ({ data: [] }));
-          
-          const currentBalance = wallets?.[0]?.balance || 0;
-          if (wallets?.[0]) {
-            await request(supabase, 'user_wallets', {
-              query: `user_telegram_id=eq.${user.telegram_id}`,
-              method: 'PATCH',
-              body: { balance: currentBalance + 10000 }
-            });
-          }
-          
-          await request(supabase, 'users', {
-            query: `id=eq.${user.id}`,
-            method: 'PATCH',
-            body: { loyalty_bonus_sent: true }
-          });
-          
-          const loyaltyText = `🎉 Tabriklaymiz! Siz 1 yildan beri bizning sodiq foydalanuvchimiz!\n\n` +
-            `🎁 Sizga 10,000 so'm bonus balansingizga tushirildi!\n` +
-            `💰 Yangi balansingiz: ${(currentBalance + 10000).toLocaleString()} UZS`;
-          await sendMessage(String(user.telegram_id), loyaltyText);
-        } catch (e) {
-          console.error(`Error processing loyalty bonus for user ${user.id}:`, e);
-        }
-      }
-    } catch (e) {
-      console.error('Error fetching loyal users:', e);
-    }
-
-    // 5. Expire old pending orders (15-min cleanup)
-    try {
-      const fifteenMinAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
-      const { data: expiredOrders } = await request(supabase, 'orders', {
-        query: `select=*&status=eq.waiting_payment&created_at=lt.${fifteenMinAgo}`
-      }).catch(() => ({ data: [] }));
-
-      for (const order of (expiredOrders || [])) {
-        try {
-          await request(supabase, 'orders', {
-            query: `id=eq.${order.id}`,
-            method: 'PATCH',
-            body: { status: 'expired' }
-          });
-          
-          if (typeof releaseInventoryForOrder === 'function') {
-            await releaseInventoryForOrder(supabase, order.id).catch(() => {});
-          }
-          
-          await sendMessage(String(order.user_telegram_id), 
-            `⏰ Buyurtma #${order.order_number || order.id.slice(0,8)} muddati tugadi. To'lov summasi va zaxira bo'shatildi.`
-          ).catch(() => {});
-        } catch (e) {
-          console.error(`Error expiring order ${order.id}:`, e);
-        }
-      }
-    } catch (e) {
-      console.error('Error fetching expired orders:', e);
-    }
-
-    console.log('Scheduled task completed successfully.');
-    return { statusCode: 200 };
+    return { statusCode: 200, body: JSON.stringify({ message: 'Daily reminder processed' }) };
   } catch (error) {
-    console.error('Critical error in scheduled task:', error);
-    return { statusCode: 500 };
+    console.error('Scheduled task error:', error);
+    return { statusCode: 500, body: JSON.stringify({ error: error.message }) };
   }
 });
