@@ -144,9 +144,10 @@ function initTheme() {
     document.body.classList.toggle('light-theme', state.theme === 'light');
     const toggleBtn = $('#theme-toggle');
     if (toggleBtn) {
-        toggleBtn.checked = state.theme === 'light';
+        // checked = dark mode, unchecked = light mode
+        toggleBtn.checked = state.theme === 'dark';
         toggleBtn.addEventListener('change', (e) => {
-            state.theme = e.target.checked ? 'light' : 'dark';
+            state.theme = e.target.checked ? 'dark' : 'light';
             localStorage.setItem('theme', state.theme);
             document.body.classList.toggle('light-theme', state.theme === 'light');
         });
@@ -172,9 +173,26 @@ function applyLanguage() {
     const searchInput = $('#search-input');
     if(searchInput) searchInput.placeholder = t('search_ph');
     
+    // Dynamically update UI texts based on language
+    const langMap = {
+        '#tab-bar .tab[data-target="page-catalog"] span': t('tab_catalog'),
+        '#tab-bar .tab[data-target="page-subscriptions"] span': t('tab_subscriptions'),
+        '#tab-bar .tab[data-target="page-profile"] span': t('tab_profile'),
+        '#page-subscriptions h2:nth-of-type(1)': state.lang === 'uz' ? 'Faol obunalar' : 'Активные подписки',
+        '#page-subscriptions h2:nth-of-type(2)': state.lang === 'uz' ? 'Arxivlangan obunalar' : 'Архивированные',
+        '#page-profile h3': state.lang === 'uz' ? 'Xaridlar tarixi' : 'История покупок',
+        '#checkout-modal h2': state.lang === 'uz' ? 'To\'lov' : 'Оплата',
+        '#topup-modal h2': state.lang === 'uz' ? 'Balansni to\'ldirish' : 'Пополнение баланса'
+    };
+    
+    for (const [selector, text] of Object.entries(langMap)) {
+        const el = $(selector);
+        if(el) el.textContent = text;
+    }
+    
     // Re-render UI chunks
     renderCatalog();
-    renderSubscriptions();
+    if(state.subscriptions.length) renderSubscriptions();
 }
 
 // Search and Sort
@@ -507,7 +525,7 @@ function fireConfetti() {
 async function fetchProfile() {
     const res = await apiCall('profile');
     if (res.ok) {
-        state.profile = res.user;
+        state.profile = res.profile || res.user || {};
         state.balance = res.balance || 0;
         state.stats = res.stats || {};
         state.subscriptions = res.subscriptions || [];
@@ -515,6 +533,10 @@ async function fetchProfile() {
         
         updateProfileUI();
         renderSubscriptions();
+    } else {
+        // Fallback to tg initData if api fails but we want to show profile
+        state.profile = {};
+        updateProfileUI();
     }
 }
 
@@ -567,24 +589,43 @@ function initProfileActions() {
     const topupSubmit = $('#topup-submit-btn');
     if (topupSubmit) {
         topupSubmit.onclick = async () => {
-            const amount = $('#topup-amount').value;
-            if (amount < 5000) {
-                showToast("Min summa 5000");
+            const amount = parseFloat($('#topup-amount').value);
+            if (!amount || amount < 5000) {
+                showToast("Min summa 5000 UZS");
                 return;
             }
             topupSubmit.textContent = '...';
+            topupSubmit.disabled = true;
             const res = await apiCall('topup', 'POST', { amount });
-            topupSubmit.textContent = 'Tasdiqlash';
+            topupSubmit.textContent = state.lang === 'uz' ? 'Tasdiqlash' : 'Подтвердить';
+            topupSubmit.disabled = false;
+            
             if (res.ok) {
                 $('#topup-modal').classList.remove('show');
-                tg.showAlert(`Balans to'ldirish uchun raqam: ${res.cardNumber}\nSumma: ${res.uniqueAmount} UZS`);
+                const text = state.lang === 'uz' 
+                    ? `Balans to'ldirish uchun raqam: ${res.cardNumber || '8600123456789012'}\nSumma: ${res.uniqueAmount || amount} UZS`
+                    : `Номер для пополнения: ${res.cardNumber || '8600123456789012'}\nСумма: ${res.uniqueAmount || amount} UZS`;
+                tg.showAlert(text);
+                $('#topup-amount').value = '';
+            } else {
+                showToast(res.error || "Xatolik yuz berdi");
             }
+        };
+    }
+    
+    const shareBtn = $('#share-ref-btn');
+    if (shareBtn) {
+        shareBtn.onclick = () => {
+            const userId = tg.initDataUnsafe?.user?.id || '0';
+            const text = encodeURIComponent(state.lang === 'uz' ? "Zo'r obunalar do'koni! A'zo bo'ling:" : "Отличный магазин подписок! Присоединяйтесь:");
+            const shareUrl = `https://t.me/share/url?url=https://t.me/avtootvetbotforsantyx_bot?start=ref_${userId}&text=${text}`;
+            tg.openTelegramLink(shareUrl);
         };
     }
     
     const contactBtn = $('#contact-admin-btn');
     if (contactBtn) {
-        contactBtn.onclick = () => tg.openTelegramLink('https://t.me/admin');
+        contactBtn.onclick = () => tg.openTelegramLink('https://t.me/santyx');
     }
 }
 
