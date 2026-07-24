@@ -242,8 +242,22 @@ async function handleCallback({ supabase, callbackQuery }) {
         return;
       }
 
-      const deliveryRes = await processApprovedDelivery(supabase, res.order);
-      await editMessage(chatId, messageId, `✅ Buyurtma #${res.order.order_number} tasdiqlandi va yetkazildi.`, null);
+      const deliveryRes = await processApprovedDelivery({
+        supabase,
+        order: res.order,
+        adminTelegramId: String(callbackQuery.from.id),
+      });
+      if (!deliveryRes.ok) {
+        const reason = deliveryRes.admin_message || deliveryRes.message || deliveryRes.code || 'Noma’lum xatolik';
+        await editMessage(chatId, messageId, `⚠️ Buyurtma #${res.order.order_number} tasdiqlandi, lekin yetkazib bo‘lmadi.\n\nSabab: ${reason}`, null);
+        await answerCallbackQuery(callbackQuery.id, `Yetkazishda xatolik: ${deliveryRes.code || 'xato'}`);
+        return;
+      }
+
+      const doneText = deliveryRes.code === 'MANUAL_REQUIRED'
+        ? `✅ Buyurtma #${res.order.order_number} tasdiqlandi. Obunani qo‘lda ulash kerak.`
+        : `✅ Buyurtma #${res.order.order_number} tasdiqlandi va yetkazildi.`;
+      await editMessage(chatId, messageId, doneText, null);
       await sendMessage(res.order.user_telegram_id, `🎉 Buyurtmangiz #${res.order.order_number} tasdiqlandi!`, null);
       await answerCallbackQuery(callbackQuery.id, 'Buyurtma tasdiqlandi');
       return;
