@@ -761,7 +761,10 @@ async function createSubscriptionFromOrder(client, order, plan) {
     const expiresAt = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000).toISOString();
     const { data } = await request(client, 'subscriptions', {
       method: 'POST',
-      headers: { Prefer: 'return=representation,resolution=merge-duplicates', 'on_conflict': 'order_id' },
+      // on_conflict query parametri, header emas — aks holda PostgREST id bo'yicha
+      // konflikt qidiradi va bir order uchun ikkinchi yozuv 409 bilan yiqiladi
+      query: 'on_conflict=order_id',
+      headers: { Prefer: 'return=representation,resolution=merge-duplicates' },
       body: {
         order_id: order.id,
         user_telegram_id: String(order.user_telegram_id),

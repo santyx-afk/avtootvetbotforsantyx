@@ -115,11 +115,17 @@ Create these variables in `.env` locally and in Netlify Site settings for produc
 
 ## Database setup
 
-Use Supabase SQL editor and run:
+Use Supabase SQL editor and run the files in `sql/` in order:
 
 ```sql
--- paste the contents of sql/schema.sql
+-- 1. sql/schema.sql             base schema
+-- 2. sql/02_humo_payment.sql    HUMO auto-confirmation columns
+-- 3. sql/03_checks_table.sql    payment checks table
+-- 4. sql/04_topup_order_type.sql  orders.order_type + wallet credit function
+-- 5. sql/05_subscriptions.sql   subscriptions + reminder columns
 ```
+
+Every file is idempotent, so re-running them on an existing database is safe.
 
 Then seed demo content:
 
@@ -268,7 +274,7 @@ The bot does **not** ask customers to submit unsafe full financial data.
 - `admin/` — admin web interface.
 - `netlify/functions/` — Telegram webhook and admin API.
 - `shared/` — reusable business logic, Telegram API, DB helpers, auth, seed logic.
-- `sql/schema.sql` — Supabase/Postgres schema.
+- `sql/` — Supabase/Postgres schema and migrations, applied in filename order.
 - `scripts/seed-demo.js` — demo data seeder.
 - `.env.example` — required environment variables.
 - `netlify.toml` — Netlify configuration.
