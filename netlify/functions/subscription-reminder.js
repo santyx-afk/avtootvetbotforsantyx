@@ -6,8 +6,6 @@ module.exports.handler = schedule('0 9 * * *', async (event) => {
   console.log('Running scheduled daily reminder task...');
   try {
     const supabase = getAdminClient();
-    const webAppUrl = process.env.WEBAPP_URL || 'https://avtootvetbotforsantyx.netlify.app?v=2.0';
-
     // 1. Get subscriptions ending in 3 days
     const threeDaysFromNow = new Date();
     threeDaysFromNow.setDate(threeDaysFromNow.getDate() + 3);
@@ -26,7 +24,7 @@ module.exports.handler = schedule('0 9 * * *', async (event) => {
             `Hozir uzaytirsangiz hisobingizga 10% keshbek beriladi! 🎁`;
 
           const keyboard = inlineKeyboard([
-            [{ text: '🚀 Obunani uzaytirish', web_app: { url: webAppUrl } }]
+            [{ text: '🚀 Obunani uzaytirish', callback_data: 'start' }]
           ]);
 
           await sendMessage(String(sub.user_telegram_id), text3d, keyboard);
@@ -62,7 +60,7 @@ module.exports.handler = schedule('0 9 * * *', async (event) => {
             `Hozir uzaytirsangiz hisobingizga 10% keshbek beriladi! 🎁`;
 
           const keyboard = inlineKeyboard([
-            [{ text: '🚀 Obunani uzaytirish', web_app: { url: webAppUrl } }]
+            [{ text: '🚀 Obunani uzaytirish', callback_data: 'start' }]
           ]);
 
           await sendMessage(String(sub.user_telegram_id), text1d, keyboard);
@@ -94,7 +92,7 @@ module.exports.handler = schedule('0 9 * * *', async (event) => {
             `Arxivdan 1-bosishda qayta sotib olishingiz mumkin 👇`;
 
           const keyboard = inlineKeyboard([
-            [{ text: '🔄 Qayta sotib olish', web_app: { url: webAppUrl } }]
+            [{ text: '🔄 Qayta sotib olish', callback_data: 'start' }]
           ]);
 
           await sendMessage(String(sub.user_telegram_id), textExpired, keyboard);
