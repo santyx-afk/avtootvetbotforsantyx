@@ -28,7 +28,16 @@ exports.handler = async (event, context) => {
     return { statusCode: 401, headers, body: JSON.stringify({ ok: false, error: 'Unauthorized: Invalid initData' }) };
   }
 
-  const supabase = getAdminClient();
+  // getAdminClient() env yo'q bo'lsa xato tashlaydi. Bu try/catch dan tashqarida
+  // bo'lgani uchun funksiya 502 bilan qulab tushardi (opaque, frontend hech narsa ko'rsatmasdi).
+  // Endi toza JSON qaytadi, frontend haqiqiy sababni ko'rsata oladi.
+  let supabase;
+  try {
+    supabase = getAdminClient();
+  } catch (err) {
+    console.error('webapp-api config error:', err?.message);
+    return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: 'Server sozlamalari to‘liq emas. Administrator bilan bog‘laning.' }) };
+  }
 
   if (method === 'GET') {
     const action = event.queryStringParameters.action;
@@ -61,11 +70,16 @@ exports.handler = async (event, context) => {
         });
         const user = users?.[0] || null;
         
-        // Get active subscriptions
+        // Get active subscriptions. Wrapped in catch: subscriptions jadvali sxemasi
+        // mos kelmasa (masalan user_telegram_id ustuni yo'q bo'lsa) 400 qaytadi va
+        // butun profil 500 bo'lib qolardi — balans, buyurtmalar, statistika ham yo'qolardi.
         const { data: subscriptions } = await request(supabase, 'subscriptions', {
           query: `select=*&user_telegram_id=eq.${tgId}&order=created_at.desc`
+        }).catch((err) => {
+          console.warn('subscriptions query failed (profil davom etadi):', err?.message);
+          return { data: [] };
         });
-        
+
         // Get orders
         const { data: orders } = await request(supabase, 'orders', {
           query: `select=*&user_telegram_id=eq.${tgId}&order=created_at.desc&limit=50`
