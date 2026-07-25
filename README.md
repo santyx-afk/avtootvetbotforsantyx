@@ -26,6 +26,58 @@ This project helps a subscription seller automate Telegram conversations for pro
 - Manage categories, plans, variants, ordering, and settings.
 - View dashboard metrics such as total users, clicks, payment opens, most viewed categories/plans, and recent event logs.
 
+## Mini App (React + Vite)
+
+The customer-facing **Telegram Mini App** lives in `src/` and is built with React +
+Vite. It is a subscription store with a bottom tab bar (Catalog, Cart, Wishlist,
+History, Profile), Telegram-native theming (auto dark/light), 3 languages
+(Uzbek / Russian / English), onboarding slides, and phone-number onboarding.
+
+See `mini-app-rebuild-plan.md` for the full phased plan. **Phase 1 (skeleton)** is
+implemented: project setup, Telegram WebApp SDK integration (theme, back button,
+haptics, initData), routing, Supabase client, i18n, localStorage helpers, skeleton
+loaders, error boundary + retry, onboarding, and contact (phone) capture.
+
+### Structure
+
+```text
+index.html              Vite entry (loads Telegram WebApp SDK)
+vite.config.mjs         Vite config (builds to dist/)
+src/
+  main.jsx              App bootstrap + providers
+  App.jsx               Gates (onboarding, contact) + routes
+  telegram/             WebApp SDK wrapper + provider (theme, haptics, back button)
+  i18n/                 uz / ru / en translations + provider
+  lib/                  Supabase client + webapp-api fetch wrapper
+  utils/                localStorage + formatting helpers
+  components/           TabBar, Skeleton, Onboarding, ContactGate, ...
+  pages/               Catalog, Cart, Wishlist, History, Profile
+  styles/global.css    Theme variables + base styles
+netlify/functions/
+  webapp-api.js         Mini App API (initData-validated: init, save-contact)
+shared/webapp-auth.js   Telegram initData HMAC validation
+```
+
+### Build & deploy
+
+`npm run build` runs `vite build` (output: `dist/`) then copies the static admin
+panel into `dist/admin/`. Netlify serves the Mini App at `/`, the admin panel at
+`/admin`, and functions via `/api/*`.
+
+- Mini App dev server: `npm run dev` (Vite on port 5173)
+- Full stack (functions + app): `npm run dev:netlify`
+
+### Extra environment variables
+
+Build-time (exposed to the browser — public values only):
+
+- `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` — direct Supabase reads / Storage
+- `VITE_API_BASE` — API base path (default `/api`)
+- `VITE_SUPPORT_USERNAME`, `VITE_BOT_USERNAME`
+
+Run `sql/06_webapp_users.sql` to add the `phone`, `birthday`, `photo_url`, and
+`webapp_lang` columns used by the Mini App.
+
 ## Architecture plan
 
 ### Stack choice

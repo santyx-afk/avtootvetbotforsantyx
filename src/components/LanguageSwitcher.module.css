@@ -1,0 +1,40 @@
+.list {
+  background: var(--app-surface);
+  border-radius: var(--app-radius);
+  overflow: hidden;
+}
+
+.item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 16px;
+  text-align: left;
+  color: var(--app-text);
+  font-size: 16px;
+  border-bottom: 0.5px solid var(--app-separator);
+  transition: background 0.12s ease;
+}
+
+.list li:last-child .item {
+  border-bottom: none;
+}
+
+.item:active {
+  background: var(--app-separator);
+}
+
+.flag {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.name {
+  flex: 1;
+}
+
+.check {
+  color: var(--app-accent);
+  display: flex;
+}

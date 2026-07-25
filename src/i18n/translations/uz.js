@@ -1,0 +1,104 @@
+// O'zbekcha tarjimalar
+export default {
+  app: {
+    name: 'santyx',
+    tagline: 'Obunalar do\'koni',
+  },
+  common: {
+    loading: 'Yuklanmoqda...',
+    error: 'Xatolik',
+    retry: 'Qayta urinish',
+    cancel: 'Bekor qilish',
+    save: 'Saqlash',
+    close: 'Yopish',
+    back: 'Orqaga',
+    skip: 'O\'tkazib yuborish',
+    next: 'Keyingi',
+    continue: 'Davom etish',
+    done: 'Tayyor',
+    search: 'Qidirish',
+    ok: 'OK',
+    soon: 'Tez orada',
+    comingSoon: 'Bu bo\'lim tez orada tayyor bo\'ladi',
+  },
+  tabs: {
+    catalog: 'Katalog',
+    cart: 'Savat',
+    wishlist: 'Sevimli',
+    history: 'Tarix',
+    profile: 'Profil',
+  },
+  onboarding: {
+    skip: 'O\'tkazib yuborish',
+    start: 'Boshlash',
+    next: 'Keyingi',
+    slides: [
+      {
+        title: 'santyx do\'koniga xush kelibsiz',
+        text: 'CapCut, Canva, AI va boshqa mashhur obunalarni eng qulay narxlarda toping.',
+      },
+      {
+        title: 'Katalogdan tanlang',
+        text: 'Kategoriyalar bo\'yicha qidiring, narxlarni solishtiring va sevimlilaringizni belgilang.',
+      },
+      {
+        title: 'Savatga qo\'shing',
+        text: 'Bir nechta obunani birga tanlab, bitta to\'lovda rasmiylashtiring.',
+      },
+      {
+        title: 'Tez va xavfsiz to\'lov',
+        text: 'Kartaga to\'lang — to\'lov avtomatik aniqlanadi va obuna darhol yetkaziladi.',
+      },
+      {
+        title: 'Balans va bonuslar',
+        text: 'Balansingizni to\'ldiring, do\'stlaringizni taklif qiling va bonuslar oling.',
+      },
+    ],
+  },
+  contact: {
+    title: 'Telefon raqamingizni ulashing',
+    subtitle: 'Buyurtmalaringiz va obunalaringiz bilan bog\'lanish uchun raqamingiz kerak.',
+    shareButton: 'Raqamni ulashish',
+    why: 'Raqamingiz faqat buyurtmalar uchun ishlatiladi va uchinchi tomonlarga berilmaydi.',
+    saving: 'Saqlanmoqda...',
+    error: 'Raqamni saqlashda xatolik. Qayta urinib ko\'ring.',
+    denied: 'Davom etish uchun raqamni ulashishingiz kerak.',
+  },
+  errorState: {
+    title: 'Nimadir noto\'g\'ri ketdi',
+    text: 'Ma\'lumotlarni yuklab bo\'lmadi. Internet aloqasini tekshirib, qayta urinib ko\'ring.',
+    retry: 'Qayta urinish',
+  },
+  pages: {
+    catalog: {
+      title: 'Katalog',
+      empty: 'Hozircha obunalar yo\'q',
+    },
+    cart: {
+      title: 'Savat',
+      empty: 'Savatingiz bo\'sh',
+      emptyHint: 'Katalogdan obuna tanlab, savatga qo\'shing.',
+    },
+    wishlist: {
+      title: 'Sevimli',
+      empty: 'Sevimlilar ro\'yxati bo\'sh',
+      emptyHint: 'Yoqqan obunalarni ❤️ bilan belgilang.',
+    },
+    history: {
+      title: 'Tarix',
+      empty: 'Buyurtmalar tarixi bo\'sh',
+    },
+    profile: {
+      title: 'Profil',
+      language: 'Til',
+      support: 'Qo\'llab-quvvatlash',
+      settings: 'Sozlamalar',
+    },
+  },
+  language: {
+    uz: 'O\'zbekcha',
+    ru: 'Ruscha',
+    en: 'Inglizcha',
+    choose: 'Tilni tanlang',
+  },
+};

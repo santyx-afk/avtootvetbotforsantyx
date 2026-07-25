@@ -1,0 +1,47 @@
+.tabbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 100;
+  background: color-mix(in srgb, var(--app-surface) 92%, transparent);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border-top: 0.5px solid var(--app-separator);
+  padding-bottom: var(--safe-bottom);
+}
+
+.inner {
+  display: flex;
+  align-items: stretch;
+  max-width: 560px;
+  margin: 0 auto;
+  height: var(--tabbar-height);
+}
+
+.tab {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  color: var(--app-hint);
+  transition: color 0.15s ease, transform 0.08s ease;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.tab:active {
+  transform: scale(0.9);
+}
+
+.active {
+  color: var(--app-accent);
+}
+
+.label {
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.1px;
+}

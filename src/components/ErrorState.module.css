@@ -1,0 +1,44 @@
+.wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 48px 24px;
+  gap: 10px;
+  min-height: 50vh;
+}
+
+.iconCircle {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--app-danger) 14%, transparent);
+  color: var(--app-danger);
+  margin-bottom: 4px;
+}
+
+.title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--app-text);
+}
+
+.text {
+  font-size: 14px;
+  color: var(--app-hint);
+  max-width: 300px;
+}
+
+.btn {
+  margin-top: 12px;
+  padding: 12px 28px;
+  border-radius: var(--app-radius);
+  background: var(--app-accent);
+  color: var(--app-accent-text);
+  font-size: 15px;
+  font-weight: 600;
+}

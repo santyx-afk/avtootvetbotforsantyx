@@ -122,6 +122,26 @@ exports.handler = async (event) => {
           }
         }
       }
+    } else if (update.message?.contact) {
+      // Mini App requestContact orqali ulashilgan telefon raqamini saqlaymiz.
+      // (Kontakt xabari matnsiz, shuning uchun uni chek deb qabul qilmaslik kerak.)
+      const contact = update.message.contact;
+      const fromId = String(update.message.from?.id || '');
+      const isOwnContact = !contact.user_id || String(contact.user_id) === fromId;
+      const digits = String(contact.phone_number || '').replace(/\D/g, '');
+      if (fromId && digits && isOwnContact) {
+        const { request, upsertUser } = require('../../shared/db');
+        try {
+          await upsertUser(supabase, update.message.from);
+          await request(supabase, 'users', {
+            method: 'PATCH',
+            query: `telegram_id=eq.${fromId}`,
+            body: { phone: `+${digits}`, updated_at: new Date().toISOString() },
+          });
+        } catch (e) {
+          console.warn('save contact phone warn:', e?.message);
+        }
+      }
     } else if (update.message?.text?.startsWith('/start')) {
       await handleStart({ supabase, message: update.message });
     } else if (update.message) {

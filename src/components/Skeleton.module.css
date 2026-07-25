@@ -1,0 +1,52 @@
+.skeleton {
+  display: block;
+  position: relative;
+  overflow: hidden;
+  background: var(--app-separator);
+  opacity: 0.7;
+}
+
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.18),
+    transparent
+  );
+  animation: shimmer 1.3s infinite;
+}
+
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.textBlock {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--app-gap);
+}
+
+.card {
+  background: var(--app-surface);
+  border-radius: var(--app-radius);
+  padding: 10px;
+}
+
+.cardBody {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 4px 4px;
+}
