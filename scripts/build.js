@@ -1,10 +1,14 @@
 const fs = require('fs');
 const path = require('path');
 
+// Vite build'dan KEYIN ishlaydi (package.json: "vite build && node scripts/build.js").
+// Vazifasi: statik admin panelni (`admin/`) Vite chiqishi (`dist/`) ichiga
+// `dist/admin/` sifatida ko'chirish. `dist/` ni O'CHIRMAYDI — Mini App shu yerda.
+
 function copyDir(src, dest) {
   if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true });
   const entries = fs.readdirSync(src, { withFileTypes: true });
-  for (let entry of entries) {
+  for (const entry of entries) {
     const srcPath = path.join(src, entry.name);
     const destPath = path.join(dest, entry.name);
     if (entry.isDirectory()) {
@@ -15,15 +19,19 @@ function copyDir(src, dest) {
   }
 }
 
-const publicDir = path.join(__dirname, '..', 'public');
-if (fs.existsSync(publicDir)) {
-  fs.rmSync(publicDir, { recursive: true, force: true });
-}
-fs.mkdirSync(publicDir);
+const rootDir = path.join(__dirname, '..');
+const distDir = path.join(rootDir, 'dist');
+const adminDir = path.join(rootDir, 'admin');
 
-const adminDir = path.join(__dirname, '..', 'admin');
+if (!fs.existsSync(distDir)) {
+  // Vite build ishlamagan bo'lsa — noto'g'ri tartib.
+  fs.mkdirSync(distDir, { recursive: true });
+  console.warn('Warning: dist/ topilmadi. Avval `vite build` ishga tushishi kerak.');
+}
+
 if (fs.existsSync(adminDir)) {
-  copyDir(adminDir, path.join(publicDir, 'admin'));
+  copyDir(adminDir, path.join(distDir, 'admin'));
+  console.log('Admin panel dist/admin/ ga ko\'chirildi.');
 }
 
-console.log('Build completed successfully.');
+console.log('Build post-step tugadi.');

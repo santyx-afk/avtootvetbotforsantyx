@@ -1,12 +1,31 @@
 [build]
-  command = "node scripts/build.js"
-  publish = "public"
+  command = "npm run build"
+  publish = "dist"
   functions = "netlify/functions"
+
+[build.environment]
+  NODE_VERSION = "22"
 
 [functions]
   node_bundler = "esbuild"
 
+# Local development: `netlify dev` Vite serverini ishga tushiradi va
+# funksiyalarni /api/* orqali proksi qiladi.
+[dev]
+  command = "vite"
+  targetPort = 5173
+  framework = "#custom"
+  autoLaunch = false
+
+# API chaqiruvlari Netlify funksiyalariga
 [[redirects]]
   from = "/api/*"
   to = "/.netlify/functions/:splat"
+  status = 200
+
+# SPA fallback — React Router client-side yo'nalishlari uchun.
+# Mavjud statik fayllar (masalan /admin/*) bu qoidadan oldin xizmat qilinadi.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
   status = 200
