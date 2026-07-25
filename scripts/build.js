@@ -26,10 +26,4 @@ if (fs.existsSync(adminDir)) {
   copyDir(adminDir, path.join(publicDir, 'admin'));
 }
 
-const webappDir = path.join(__dirname, '..', 'webapp');
-if (fs.existsSync(webappDir)) {
-  copyDir(webappDir, publicDir);
-  copyDir(webappDir, path.join(publicDir, 'webapp'));
-}
-
 console.log('Build completed successfully.');

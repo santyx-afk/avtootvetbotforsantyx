@@ -1,4 +1,4 @@
--- Obunalar jadvali: subscription-reminder.js, webapp-api.js (profile) va
+-- Obunalar jadvali: subscription-reminder.js va
 -- db.createSubscriptionFromOrder shu jadvalga bog'liq.
 --
 -- MUHIM: ba'zi muhitlarda subscriptions jadvali AVVAL boshqacha sxema bilan

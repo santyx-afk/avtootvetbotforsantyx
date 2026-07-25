@@ -139,10 +139,7 @@ async function showCategories({ supabase, chatId, messageId, telegramId, asEdit 
   const settings = await fetchSettings(supabase);
   const categories = await fetchCategories(supabase);
   const text = `${welcomeText(settings)}\n\n${categoriesText()}`;
-  const webappUrl = process.env.WEBAPP_URL || 'https://avtootvetbotforsantyx.netlify.app?v=2.0';
-  
   const keyboardRows = [
-    [{ text: '📱 Katalogga kirish', web_app: { url: webappUrl } }],
     ...categories.map((category) => [{ text: category.buttonLabel, callback_data: `category:${category.id}` }])
   ];
   if (asEdit && messageId) {
