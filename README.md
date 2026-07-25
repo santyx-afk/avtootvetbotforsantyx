@@ -122,10 +122,18 @@ Use Supabase SQL editor and run the files in `sql/` in order:
 -- 2. sql/02_humo_payment.sql    HUMO auto-confirmation columns
 -- 3. sql/03_checks_table.sql    payment checks table
 -- 4. sql/04_topup_order_type.sql  orders.order_type + wallet credit function
--- 5. sql/05_subscriptions.sql   subscriptions + reminder columns
+-- 5. sql/05_subscriptions.sql   subscriptions + reminder columns (reconciles legacy schema)
+-- 6. sql/06_webapp_tables.sql   user_wishlist + stock_waitlist (used by the Mini App)
 ```
 
 Every file is idempotent, so re-running them on an existing database is safe.
+
+> **Netlify env vars are required at runtime.** The functions call
+> `getAdminClient()` on the very first line, so if `SUPABASE_URL` or
+> `SUPABASE_SERVICE_ROLE_KEY` are missing (or not scoped to *Functions*),
+> **every** function — the Telegram webhook and the whole Mini App API —
+> fails immediately. In Netlify: *Site configuration → Environment variables*,
+> make sure both are set and their scope includes **Functions**, then redeploy.
 
 Then seed demo content:
 
