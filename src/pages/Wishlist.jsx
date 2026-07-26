@@ -8,6 +8,7 @@ import ProductCard from '../components/ProductCard.jsx';
 import { useI18n } from '../i18n/I18nProvider.jsx';
 import { apiCall } from '../lib/api.js';
 import { useProductActions } from '../hooks/useProductActions.js';
+import { haptic } from '../telegram/webapp.js';
 import styles from './Wishlist.module.css';
 
 export default function Wishlist() {
@@ -34,6 +35,7 @@ export default function Wishlist() {
   }, [load]);
 
   const handleRemove = async (product) => {
+    haptic.impact('medium');
     const prev = items;
     setItems((list) => list.filter((p) => p.id !== product.id)); // optimistik
     try {

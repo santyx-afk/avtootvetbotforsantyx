@@ -167,3 +167,36 @@ ul {
   transform: scale(0.97);
   opacity: 0.85;
 }
+
+/* ---------------- Sahifa o'tish animatsiyalari ----------------
+   Yengil (kutubxonasiz). Tab sahifalarda .app-container har
+   navigatsiyada qayta mount bo'ladi — shuning uchun animatsiya
+   qayta ijro etiladi. Full-screen sahifalar (.page) faqat opacity
+   bilan (transform position:fixed action-bar'ni buzadi). */
+@keyframes appPageEnter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.app-container {
+  animation: appPageEnter 0.24s ease both;
+}
+
+/* Harakatni kamaytirish rejimi — barcha animatsiyalar o'chadi */
+@media (prefers-reduced-motion: reduce) {
+  .app-container {
+    animation: none;
+  }
+  .pressable {
+    transition: none;
+  }
+  .pressable:active {
+    transform: none;
+  }
+}
