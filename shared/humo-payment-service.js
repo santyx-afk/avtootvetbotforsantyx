@@ -45,7 +45,9 @@ function formatUzs(value) {
 }
 
 async function creditTopupOrder({ supabase, order, amount, messageKey }) {
-  const credited = Number(amount || 0);
+  // topup_credit — cashback bilan hamyonga tushadigan summa (checkout paytida hisoblangan).
+  // Bo'lmasa, to'langan summaning o'zi hisoblanadi.
+  const credited = Number(order.topup_credit != null ? order.topup_credit : amount || 0);
   await addWalletTransaction(supabase, {
     user_telegram_id: order.user_telegram_id,
     order_id: order.id,

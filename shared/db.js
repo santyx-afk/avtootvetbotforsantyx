@@ -253,6 +253,11 @@ async function createOrder(client, order) {
     discount_amount: Number(order.discount_amount || 0),
     balance_used: Number(order.balance_used || 0),
   };
+  // topup_credit faqat berilganda qo'shiladi — shunda ustun hali yo'q DB'da
+  // (migratsiya qo'llanmagan) oddiy xaridlar buzilmaydi.
+  if (order.topup_credit !== undefined && order.topup_credit !== null) {
+    payload.topup_credit = Number(order.topup_credit);
+  }
   const { data } = await request(client, 'orders', {
     method: 'POST',
     headers: { Prefer: 'return=representation' },

@@ -9,6 +9,7 @@ import Catalog from './pages/Catalog.jsx';
 import ProductDetail from './pages/ProductDetail.jsx';
 import Cart from './pages/Cart.jsx';
 import Checkout from './pages/Checkout.jsx';
+import TopUp from './pages/TopUp.jsx';
 import Wishlist from './pages/Wishlist.jsx';
 import History from './pages/History.jsx';
 import Profile from './pages/Profile.jsx';
@@ -79,6 +80,7 @@ export default function App() {
         {/* To'liq ekran (tab barsiz) sahifalar */}
         <Route path="/catalog/:id" element={<ProductDetail />} />
         <Route path="/checkout" element={<Checkout />} />
+        <Route path="/profile/topup" element={<TopUp />} />
         {/* Tab barli sahifalar */}
         <Route element={<Layout />}>
           <Route path="/catalog" element={<Catalog />} />

@@ -17,6 +17,8 @@ const {
   getOrderById,
   getOrderItems,
   getInventoryItemById,
+  createOrder,
+  generateUniquePrice,
 } = require('../../shared/db');
 const {
   processApprovedOrderDelivery,
@@ -551,6 +553,126 @@ exports.handler = async (event) => {
         support: PAYMENT_WARN_SUPPORT,
         expires_at: order.expires_at,
         fully_paid: fullyCovered,
+      });
+    }
+
+    if (body.action === 'profile') {
+      const lang = body.lang || 'uz';
+      const BOT = process.env.BOT_USERNAME || 'santyxnarxbot';
+      const [wallet, settings, userRes, subsRes, txRes, refRes, faqRes] = await Promise.all([
+        getUserBalance(supabase, telegramId).catch(() => ({ balance: 0 })),
+        fetchSettings(supabase).catch(() => null),
+        request(supabase, 'users', {
+          query: `select=phone,birthday,photo_url&telegram_id=eq.${telegramId}&limit=1`,
+        }).catch(() => ({ data: [] })),
+        request(supabase, 'subscriptions', {
+          query: `select=plan_name,expires_at,status&user_telegram_id=eq.${telegramId}&status=eq.active&order=expires_at.asc`,
+        }).catch(() => ({ data: [] })),
+        request(supabase, 'wallet_transactions', {
+          query: `select=amount,type,description,created_at&user_telegram_id=eq.${telegramId}&order=created_at.desc&limit=20`,
+        }).catch(() => ({ data: [] })),
+        request(supabase, 'referrals', {
+          query: `select=status,reward_value&referrer_telegram_id=eq.${telegramId}`,
+        }).catch(() => ({ data: [] })),
+        request(supabase, 'faq', {
+          query: 'select=id,question,answer,lang,sort_order&is_active=eq.true&order=sort_order.asc',
+        }).catch(() => ({ data: [] })),
+      ]);
+
+      const now = Date.now();
+      const subscriptions = (subsRes.data || [])
+        .filter((s) => !s.expires_at || new Date(s.expires_at).getTime() > now)
+        .map((s) => {
+          const daysLeft = s.expires_at
+            ? Math.ceil((new Date(s.expires_at).getTime() - now) / 86400000)
+            : null;
+          return {
+            plan_name: s.plan_name,
+            expires_at: s.expires_at,
+            days_left: daysLeft,
+            warn: daysLeft != null && daysLeft <= 3,
+          };
+        });
+
+      const refs = refRes.data || [];
+      const u = userRes.data?.[0] || {};
+      const faq = (faqRes.data || [])
+        .filter((f) => !f.lang || f.lang === lang)
+        .map((f) => ({ id: f.id, question: f.question, answer: f.answer }));
+
+      return json(200, {
+        ok: true,
+        user: {
+          first_name: tgUser.first_name || null,
+          last_name: tgUser.last_name || null,
+          username: tgUser.username || null,
+          phone: u.phone || null,
+          birthday: u.birthday || null,
+          photo_url: u.photo_url || tgUser.photo_url || null,
+        },
+        balance: Number(wallet?.balance || 0),
+        transactions: (txRes.data || []).map((tx) => ({
+          amount: Number(tx.amount),
+          type: tx.type,
+          description: tx.description,
+          created_at: tx.created_at,
+        })),
+        subscriptions,
+        referral: {
+          link: `https://t.me/${BOT}?start=ref_${telegramId}`,
+          invited: refs.length,
+          bonus_earned: refs.reduce((s, r) => s + Number(r.reward_value || 0), 0),
+          percent: Number(settings?.referral_percent ?? 10),
+        },
+        faq,
+        birthday_discount: Number(settings?.birthday_discount_percent ?? 10),
+        cashback_enabled: Boolean(settings?.cashback_enabled),
+        cashback_percent: Number(settings?.cashback_percent ?? 10),
+        min_topup: Number(settings?.min_topup ?? 5000),
+        support: PAYMENT_WARN_SUPPORT,
+      });
+    }
+
+    if (body.action === 'topup') {
+      const settings = await fetchSettings(supabase).catch(() => null);
+      const minTopup = Number(settings?.min_topup ?? 5000);
+      const base = Math.round(Number(body.amount || 0));
+      if (!(base >= minTopup)) return json(400, { ok: false, error: 'min_topup', min: minTopup });
+
+      const uniquePrice = await generateUniquePrice(supabase, base);
+      const cashbackEnabled = Boolean(settings?.cashback_enabled);
+      const cashbackPercent = Number(settings?.cashback_percent ?? 10);
+      const cashback = cashbackEnabled ? Math.round((base * cashbackPercent) / 100) : 0;
+      const credit = uniquePrice + cashback;
+      const expiresAt = new Date(
+        Date.now() + Number(process.env.WEBAPP_CHECKOUT_MINUTES || 10) * 60000,
+      ).toISOString();
+
+      const order = await createOrder(supabase, {
+        user_telegram_id: telegramId,
+        order_type: 'topup',
+        amount: uniquePrice,
+        base_price: base,
+        unique_price: uniquePrice,
+        expires_at: expiresAt,
+        status: 'waiting_payment',
+        delivery_status: 'not_required',
+        payment_method: 'humo_card_bot',
+        payment_source: 'humo_card_bot',
+        topup_credit: credit,
+      });
+
+      return json(200, {
+        ok: true,
+        order_id: order.id,
+        order_number: order.order_number,
+        amount: uniquePrice,
+        credit,
+        cashback,
+        cashback_enabled: cashbackEnabled,
+        card_number: cardNumber(settings),
+        support: PAYMENT_WARN_SUPPORT,
+        expires_at: expiresAt,
       });
     }
 

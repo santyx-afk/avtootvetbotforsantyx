@@ -487,6 +487,22 @@ async function handleStart({ supabase, message }) {
   const ref = String(message.text || '').match(/^\/start\s+ref_(\d+)/);
   if (ref && ref[1] !== String(message.from.id)) {
     await createAuditLog(supabase, { user_telegram_id: message.from.id, action: 'referral_registered', status: 'created', metadata: { referrer: ref[1] } });
+    // Referal yozuvini yaratamiz (referred_telegram_id unique — takror e'tiborsiz).
+    try {
+      const { request } = require('./db');
+      await request(supabase, 'referrals', {
+        method: 'POST',
+        query: 'on_conflict=referred_telegram_id',
+        headers: { Prefer: 'resolution=ignore-duplicates' },
+        body: {
+          referrer_telegram_id: String(ref[1]),
+          referred_telegram_id: String(message.from.id),
+          status: 'registered',
+        },
+      });
+    } catch (error) {
+      console.warn('referral insert warn:', error?.message);
+    }
   }
   await trackEvent(supabase, { eventType: 'start_used', telegramId: message.from.id });
   await showCategories({ supabase, chatId: message.chat.id, telegramId: message.from.id, asEdit: false });

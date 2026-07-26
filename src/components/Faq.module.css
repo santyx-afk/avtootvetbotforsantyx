@@ -1,0 +1,51 @@
+.list {
+  background: var(--app-surface);
+  border-radius: var(--app-radius);
+  overflow: hidden;
+}
+
+.item {
+  border-bottom: 0.5px solid var(--app-separator);
+}
+
+.item:last-child {
+  border-bottom: none;
+}
+
+.q {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 15px 16px;
+  text-align: left;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--app-text);
+}
+
+.chevron {
+  color: var(--app-hint);
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.chevronOpen {
+  transform: rotate(180deg);
+}
+
+.a {
+  padding: 0 16px 15px;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--app-hint);
+  animation: expand 0.2s ease;
+}
+
+@keyframes expand {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
