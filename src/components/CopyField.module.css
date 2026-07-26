@@ -1,0 +1,58 @@
+.field {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--app-surface);
+  border-radius: var(--app-radius);
+  text-align: left;
+  transition: background 0.12s ease;
+}
+
+.field:active {
+  background: var(--app-separator);
+}
+
+.texts {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.label {
+  font-size: 12px;
+  color: var(--app-hint);
+}
+
+.value {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--app-text);
+  letter-spacing: 0.02em;
+  word-break: break-all;
+}
+
+.big {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.icon {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--app-accent);
+  flex-shrink: 0;
+}
+
+.copied {
+  color: #34c759;
+}
+
+.copiedText {
+  font-size: 13px;
+  font-weight: 600;
+}

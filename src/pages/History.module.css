@@ -1,0 +1,126 @@
+.skel {
+  background: var(--app-surface);
+  border-radius: var(--app-radius);
+  padding: 16px;
+  margin-bottom: 10px;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.card {
+  background: var(--app-surface);
+  border-radius: var(--app-radius);
+  padding: 16px;
+}
+
+.top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.orderNo {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--app-text);
+}
+
+.chip {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+
+.waiting {
+  color: #d9822b;
+  background: color-mix(in srgb, #ff9500 15%, transparent);
+}
+
+.confirmed {
+  color: #2ea24d;
+  background: color-mix(in srgb, #34c759 15%, transparent);
+}
+
+.cancelled {
+  color: var(--app-hint);
+  background: var(--app-separator);
+}
+
+.date {
+  font-size: 13px;
+  color: var(--app-hint);
+  margin-top: 4px;
+}
+
+.items {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.itemRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14px;
+}
+
+.itemName {
+  color: var(--app-text);
+}
+
+.qty {
+  color: var(--app-hint);
+}
+
+.itemPrice {
+  color: var(--app-text);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.period {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: var(--app-bg);
+  border-radius: 10px;
+  font-size: 13px;
+  color: var(--app-hint);
+}
+
+.period :global(svg) {
+  color: var(--app-accent);
+  flex-shrink: 0;
+}
+
+.divider {
+  height: 0.5px;
+  background: var(--app-separator);
+  margin: 12px 0;
+}
+
+.total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--app-text);
+}
+
+.total > span:first-child {
+  color: var(--app-hint);
+  font-weight: 500;
+}

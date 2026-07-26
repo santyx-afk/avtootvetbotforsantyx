@@ -88,6 +88,43 @@ const PATHS = {
     </>
   ),
   minus: <path d="M5 12h14" />,
+  copy: (
+    <>
+      <rect x="9" y="9" width="11" height="11" rx="2" />
+      <path d="M5 15V5a2 2 0 0 1 2-2h10" />
+    </>
+  ),
+  trash: (
+    <>
+      <path d="M4 7h16" />
+      <path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+      <path d="M6 7v13a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V7" />
+      <path d="M10 11v6M14 11v6" />
+    </>
+  ),
+  gift: (
+    <>
+      <path d="M20 12v8a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-8" />
+      <path d="M2.5 8h19v4h-19z" />
+      <path d="M12 8v13" />
+      <path d="M12 8S10.5 4 8 4a2.2 2.2 0 0 0 0 4.4h4z" />
+      <path d="M12 8s1.5-4 4-4a2.2 2.2 0 0 1 0 4.4h-4z" />
+    </>
+  ),
+  wallet: (
+    <>
+      <path d="M3 7a2 2 0 0 1 2-2h13v4" />
+      <path d="M3 7v10a2 2 0 0 0 2 2h14a1 1 0 0 0 1-1v-3" />
+      <path d="M21 11v4h-4a2 2 0 0 1 0-4h4z" />
+    </>
+  ),
+  chevronDown: <path d="m6 9 6 6 6-6" />,
+  clock: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </>
+  ),
 };
 
 export default function Icon({ name, size = 24, strokeWidth = 1.9, filled = false, style, className }) {

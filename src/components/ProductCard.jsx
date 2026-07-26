@@ -52,6 +52,7 @@ export default function ProductCard({ product, inWishlist, onToggleWishlist, onA
         )}
 
         <div className={styles.badges}>
+          {product.price_dropped && <span className={styles.dropped}>📉 {t('wishlist.priceDropped')}</span>}
           {product.is_popular && <span className={styles.popular}>🔥 {t('catalog.popular')}</span>}
           {off > 0 && <span className={styles.discount}>-{off}%</span>}
         </div>

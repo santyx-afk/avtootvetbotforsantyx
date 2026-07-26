@@ -45,7 +45,9 @@ function formatUzs(value) {
 }
 
 async function creditTopupOrder({ supabase, order, amount, messageKey }) {
-  const credited = Number(amount || 0);
+  // topup_credit — cashback bilan hamyonga tushadigan summa (checkout paytida hisoblangan).
+  // Bo'lmasa, to'langan summaning o'zi hisoblanadi.
+  const credited = Number(order.topup_credit != null ? order.topup_credit : amount || 0);
   await addWalletTransaction(supabase, {
     user_telegram_id: order.user_telegram_id,
     order_id: order.id,
@@ -94,6 +96,23 @@ async function handleHumoPaymentNotification({ supabase, message }) {
   // Balans to'ldirish buyurtmasi: yetkazishga emas, hamyonga boradi
   if (String(paidOrder.order_type || '') === 'topup') {
     return creditTopupOrder({ supabase, order: paidOrder, amount, messageKey: key });
+  }
+
+  // Qisman balansdan to'langan bo'lsa — karta to'lovi aniqlangandan keyin
+  // balans qismini hamyondan yechamiz (checkout paytida emas — muddat tugasa
+  // qaytarish shart bo'lmasligi uchun).
+  if (Number(paidOrder.balance_used || 0) > 0) {
+    try {
+      await addWalletTransaction(supabase, {
+        user_telegram_id: paidOrder.user_telegram_id,
+        order_id: paidOrder.id,
+        amount: Number(paidOrder.balance_used),
+        type: 'debit',
+        description: `Balansdan yechildi #${paidOrder.order_number}`,
+      });
+    } catch (err) {
+      console.warn('balance debit warn:', err?.message);
+    }
   }
 
   // MUAMMO HAL QILINDI: Qotib qolmasligi uchun 6 soniyalik taymer qo'yildi
