@@ -69,6 +69,10 @@ export default {
     text: 'Could not load the data. Check your connection and try again.',
     retry: 'Retry',
   },
+  blocked: {
+    title: 'Your account is blocked',
+    text: 'Contact {support} for help',
+  },
   pages: {
     catalog: {
       title: 'Catalog',

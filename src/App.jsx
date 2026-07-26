@@ -15,6 +15,7 @@ import Wishlist from './pages/Wishlist.jsx';
 import History from './pages/History.jsx';
 import Profile from './pages/Profile.jsx';
 import { useTelegram } from './telegram/TelegramProvider.jsx';
+import { useI18n } from './i18n/I18nProvider.jsx';
 import { apiCall } from './lib/api.js';
 import {
   isOnboarded,
@@ -23,8 +24,11 @@ import {
   setContactSaved,
 } from './utils/storage.js';
 
+const SUPPORT = `@${(import.meta.env.VITE_SUPPORT_USERNAME || 'santyx').replace(/^@/, '')}`;
+
 export default function App() {
   const { isTelegram } = useTelegram();
+  const { t } = useI18n();
   const [booting, setBooting] = useState(() => isTelegram);
   const [blocked, setBlocked] = useState(false);
   const [onboarded, setOnboardedState] = useState(() => isOnboarded());
@@ -63,7 +67,11 @@ export default function App() {
   if (blocked) {
     return (
       <div className="app-container" style={{ paddingTop: 80 }}>
-        <EmptyState emoji="\u{1F6AB}" title="Sizning hisobingiz bloklangan" hint="Yordam uchun @santyx ga murojaat qiling" />
+        <EmptyState
+          emoji="🚫"
+          title={t('blocked.title')}
+          hint={t('blocked.text', { support: SUPPORT })}
+        />
       </div>
     );
   }

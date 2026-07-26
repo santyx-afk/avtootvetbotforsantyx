@@ -12,6 +12,7 @@ import { useI18n } from '../i18n/I18nProvider.jsx';
 import { apiCall } from '../lib/api.js';
 import { useProductActions } from '../hooks/useProductActions.js';
 import { getRecentlyViewed } from '../utils/storage.js';
+import { haptic } from '../telegram/webapp.js';
 import styles from './Catalog.module.css';
 
 const SORTS = ['default', 'price_asc', 'price_desc', 'popular'];
@@ -72,6 +73,7 @@ export default function Catalog() {
   }, [data, products]);
 
   const handleWishlist = async (product) => {
+    haptic.impact('light');
     const next = new Set(wishlist);
     const has = next.has(product.id);
     if (has) next.delete(product.id);

@@ -69,6 +69,10 @@ export default {
     text: 'Ma\'lumotlarni yuklab bo\'lmadi. Internet aloqasini tekshirib, qayta urinib ko\'ring.',
     retry: 'Qayta urinish',
   },
+  blocked: {
+    title: 'Hisobingiz bloklangan',
+    text: 'Yordam uchun {support} ga murojaat qiling',
+  },
   pages: {
     catalog: {
       title: 'Katalog',

@@ -89,6 +89,13 @@ export default function TopUp() {
     if (phase === 'payment' && expired && !statusData?.delivered) setPhase('result');
   }, [expired, phase, statusData]);
 
+  // Natija haptik javobi (bir marta)
+  useEffect(() => {
+    if (phase !== 'result' || !statusData) return;
+    if (statusData.delivered) haptic.notification('success');
+    else if (statusData.expired) haptic.notification('warning');
+  }, [phase, statusData?.delivered, statusData?.expired]);
+
   const quickAmounts = [10000, 25000, 50000, 100000].filter((v) => v >= min);
 
   /* ---------- FORM ---------- */

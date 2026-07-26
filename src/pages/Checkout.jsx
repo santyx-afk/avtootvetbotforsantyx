@@ -130,6 +130,16 @@ export default function Checkout() {
     if (phase === 'payment' && expired && !statusData?.paid) setPhase('result');
   }, [expired, phase, statusData]);
 
+  // Natija haptik javobi (bir marta)
+  useEffect(() => {
+    if (phase !== 'result' || !statusData) return;
+    if (statusData.delivered || statusData.waiting_stock || statusData.manual) {
+      haptic.notification('success');
+    } else if (statusData.expired) {
+      haptic.notification('warning');
+    }
+  }, [phase, statusData?.delivered, statusData?.waiting_stock, statusData?.manual, statusData?.expired]);
+
   /* ---------- Renderlar ---------- */
 
   if (status === 'loading') {
