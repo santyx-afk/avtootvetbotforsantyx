@@ -212,6 +212,19 @@ export default {
       bonus: 'Bonus',
     },
   },
+  history: {
+    orderNumber: 'Order #{n}',
+    statusWaiting: 'Pending',
+    statusConfirmed: 'Confirmed',
+    statusCancelled: 'Cancelled',
+    purchased: 'Purchased',
+    expires: 'Expires',
+    period: 'Validity period',
+  },
+  wishlist: {
+    priceDropped: 'Price dropped',
+    remove: 'Remove',
+  },
   topup: {
     title: 'Top up balance',
     amountLabel: 'Top-up amount',

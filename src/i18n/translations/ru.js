@@ -212,6 +212,19 @@ export default {
       bonus: 'Бонус',
     },
   },
+  history: {
+    orderNumber: 'Заказ #{n}',
+    statusWaiting: 'Ожидает',
+    statusConfirmed: 'Подтверждён',
+    statusCancelled: 'Отменён',
+    purchased: 'Получено',
+    expires: 'Истекает',
+    period: 'Срок действия',
+  },
+  wishlist: {
+    priceDropped: 'Цена снижена',
+    remove: 'Удалить',
+  },
   topup: {
     title: 'Пополнение баланса',
     amountLabel: 'Сумма пополнения',

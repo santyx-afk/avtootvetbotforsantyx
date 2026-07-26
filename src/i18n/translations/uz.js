@@ -212,6 +212,19 @@ export default {
       bonus: 'Bonus',
     },
   },
+  history: {
+    orderNumber: 'Buyurtma #{n}',
+    statusWaiting: 'Kutilmoqda',
+    statusConfirmed: 'Tasdiqlandi',
+    statusCancelled: 'Bekor qilingan',
+    purchased: 'Olingan',
+    expires: 'Tugaydi',
+    period: 'Amal qilish muddati',
+  },
+  wishlist: {
+    priceDropped: 'Narx tushdi',
+    remove: 'O\'chirish',
+  },
   topup: {
     title: 'Balansni to\'ldirish',
     amountLabel: 'To\'ldirish summasi',

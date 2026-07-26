@@ -145,6 +145,13 @@ function reviewShape(row) {
   };
 }
 
+// Buyurtma holatini foydalanuvchi uchun 3 toifaga keltiradi.
+function statusCategory(s) {
+  if (['completed', 'approved'].includes(s)) return 'confirmed';
+  if (['cancelled', 'rejected', 'expired', 'failed'].includes(s)) return 'cancelled';
+  return 'waiting';
+}
+
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') return json(405, { ok: false, error: 'method_not_allowed' });
 
@@ -345,6 +352,19 @@ exports.handler = async (event) => {
         headers: { Prefer: 'resolution=ignore-duplicates' },
         body: { user_telegram_id: telegramId, plan_id: productId },
       });
+      // "Narx tushdi" kuzatuvi uchun qo'shilgan paytdagi narxni yozamiz (best-effort).
+      try {
+        const { data: planRow } = await request(supabase, 'plans', {
+          query: `select=price&id=eq.${productId}&limit=1`,
+        });
+        await request(supabase, 'wishlist', {
+          method: 'PATCH',
+          query: `user_telegram_id=eq.${telegramId}&plan_id=eq.${productId}`,
+          body: { price_at_add: Number(planRow?.[0]?.price || 0) },
+        });
+      } catch {
+        /* price_at_add ustuni hali yo'q bo'lishi mumkin — jiddiy emas */
+      }
       return json(200, { ok: true, in_wishlist: true });
     }
 
@@ -700,6 +720,87 @@ exports.handler = async (event) => {
         expires_at: order.expires_at,
         deliveries,
       });
+    }
+
+    if (body.action === 'history') {
+      const ordersRes = await request(supabase, 'orders', {
+        query: `select=*&user_telegram_id=eq.${telegramId}&order=created_at.desc&limit=50`,
+      });
+      const purchases = (ordersRes.data || []).filter(
+        (o) => String(o.order_type || 'purchase') !== 'topup',
+      );
+
+      const itemsByOrder = {};
+      const subsByOrder = {};
+      if (purchases.length) {
+        const inList = `(${purchases.map((o) => o.id).join(',')})`;
+        const [oiRes, subsRes] = await Promise.all([
+          request(supabase, 'order_items', {
+            query: `select=order_id,quantity,unit_price,plans(name)&order_id=in.${inList}`,
+          }).catch(() => ({ data: [] })),
+          request(supabase, 'subscriptions', {
+            query: `select=order_id,started_at,expires_at&order_id=in.${inList}`,
+          }).catch(() => ({ data: [] })),
+        ]);
+        for (const it of oiRes.data || []) {
+          (itemsByOrder[it.order_id] || (itemsByOrder[it.order_id] = [])).push({
+            name: it.plans?.name || '—',
+            quantity: Number(it.quantity || 1),
+            price: Number(it.unit_price || 0),
+          });
+        }
+        for (const s of subsRes.data || []) {
+          subsByOrder[s.order_id] = { started_at: s.started_at, expires_at: s.expires_at };
+        }
+      }
+
+      const orders = purchases.map((o) => ({
+        id: o.id,
+        order_number: o.order_number,
+        status: statusCategory(o.status),
+        amount: Number(o.unique_price ?? o.amount ?? 0),
+        currency: 'UZS',
+        created_at: o.created_at,
+        items: itemsByOrder[o.id] || [],
+        subscription: subsByOrder[o.id] || null,
+      }));
+
+      return json(200, { ok: true, orders });
+    }
+
+    if (body.action === 'wishlist') {
+      const wlRes = await request(supabase, 'wishlist', {
+        query: `select=plan_id,price_at_add,created_at&user_telegram_id=eq.${telegramId}&order=created_at.desc`,
+      });
+      const wl = wlRes.data || [];
+      if (!wl.length) return json(200, { ok: true, items: [] });
+
+      const planIds = wl.map((w) => w.plan_id);
+      const [plansRes, stockMap] = await Promise.all([
+        request(supabase, 'plans', { query: `select=*&id=in.(${planIds.join(',')})` }),
+        availableStockByPlan(supabase).catch(() => ({})),
+      ]);
+      const byId = {};
+      for (const p of plansRes.data || []) byId[p.id] = p;
+
+      const items = wl
+        .map((w) => {
+          const p = byId[w.plan_id];
+          if (!p || !p.is_active) return null;
+          const auto = AUTO_DELIVERY.includes(p.delivery_type);
+          const stock = auto ? stockMap[p.id] || 0 : null;
+          const inStock = auto ? stock > 0 : true;
+          const priceAtAdd = w.price_at_add != null ? Number(w.price_at_add) : null;
+          return {
+            ...productShape(p, { stock, inStock, rating: { avg: 0, count: 0 } }),
+            price_at_add: priceAtAdd,
+            price_dropped: priceAtAdd != null && Number(p.price) < priceAtAdd,
+          };
+        })
+        .filter(Boolean);
+      // Wishlistda stock=0 obunalar ham ko'rsatiladi (foydalanuvchi o'chira olishi uchun).
+
+      return json(200, { ok: true, items });
     }
 
     return json(400, { ok: false, error: 'unknown_action' });
