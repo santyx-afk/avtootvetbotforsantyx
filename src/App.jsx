@@ -4,6 +4,7 @@ import Layout from './components/Layout.jsx';
 import BackButtonManager from './components/BackButtonManager.jsx';
 import Onboarding from './components/Onboarding.jsx';
 import ContactGate from './components/ContactGate.jsx';
+import EmptyState from './components/EmptyState.jsx';
 import { FullScreenLoader } from './components/Spinner.jsx';
 import Catalog from './pages/Catalog.jsx';
 import ProductDetail from './pages/ProductDetail.jsx';
@@ -25,11 +26,10 @@ import {
 export default function App() {
   const { isTelegram } = useTelegram();
   const [booting, setBooting] = useState(() => isTelegram);
+  const [blocked, setBlocked] = useState(false);
   const [onboarded, setOnboardedState] = useState(() => isOnboarded());
   const [contactSaved, setContactSavedState] = useState(() => isContactSaved());
 
-  // Ilova ochilishida foydalanuvchini backend'da ro'yxatga olamiz (init).
-  // Agar telefon allaqachon saqlangan bo'lsa — kontakt so'ramaymiz.
   useEffect(() => {
     let active = true;
     const timer = setTimeout(() => active && setBooting(false), 6000);
@@ -41,8 +41,10 @@ export default function App() {
             setContactSaved(true);
             setContactSavedState(true);
           }
-        } catch {
-          /* backend tayyor bo'lmasa — gate baribir urinib ko'radi */
+        } catch (err) {
+          if (active && (err?.status === 403 || err?.message === 'blocked')) {
+            setBlocked(true);
+          }
         }
       }
       if (active) {
@@ -57,6 +59,14 @@ export default function App() {
   }, [isTelegram]);
 
   if (booting) return <FullScreenLoader />;
+
+  if (blocked) {
+    return (
+      <div className="app-container" style={{ paddingTop: 80 }}>
+        <EmptyState emoji="\u{1F6AB}" title="Sizning hisobingiz bloklangan" hint="Yordam uchun @santyx ga murojaat qiling" />
+      </div>
+    );
+  }
 
   if (!onboarded) {
     return (

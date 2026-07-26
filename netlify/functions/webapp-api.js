@@ -179,17 +179,22 @@ exports.handler = async (event) => {
     // Foydalanuvchini har doim ro'yxatga olamiz/yangilaymiz (phone ga tegmaydi)
     await upsertUser(supabase, tgUser).catch((e) => console.warn('upsertUser warn:', e?.message));
 
+    // Bloklangan foydalanuvchini tekshirish
+    let userRow = null;
+    try {
+      const { data } = await request(supabase, 'users', {
+        query: `select=phone,is_blocked&telegram_id=eq.${telegramId}&limit=1`,
+      });
+      userRow = data?.[0] || null;
+    } catch (e) {
+      console.warn('user row read warn:', e?.message);
+    }
+    if (userRow?.is_blocked) {
+      return json(403, { ok: false, error: 'blocked' });
+    }
+
     if (body.action === 'init') {
-      let hasPhone = false;
-      try {
-        const { data } = await request(supabase, 'users', {
-          query: `select=phone&telegram_id=eq.${telegramId}&limit=1`,
-        });
-        hasPhone = Boolean(data?.[0]?.phone);
-      } catch (e) {
-        // phone ustuni hali yo'q bo'lsa (migratsiya qo'llanmagan) — bloklamaymiz
-        console.warn('phone column read warn:', e?.message);
-      }
+      const hasPhone = Boolean(userRow?.phone);
       return json(200, {
         ok: true,
         hasPhone,
