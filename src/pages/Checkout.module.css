@@ -1,0 +1,424 @@
+.page {
+  min-height: 100dvh;
+  padding-bottom: calc(80px + var(--safe-bottom));
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+}
+
+.center {
+  min-height: 70vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dim {
+  color: var(--app-hint);
+}
+
+/* Header */
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: calc(var(--safe-top) + 10px) var(--app-pad) 12px;
+}
+
+.header h1 {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--app-text);
+}
+
+.backBtn {
+  width: 34px;
+  height: 34px;
+  margin-left: -6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--app-text);
+}
+
+.floatBack {
+  position: absolute;
+  top: calc(var(--safe-top) + 10px);
+  left: 12px;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--app-surface);
+  color: var(--app-text);
+  z-index: 2;
+}
+
+.body {
+  padding: 0 var(--app-pad);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.card {
+  background: var(--app-surface);
+  border-radius: var(--app-radius);
+  padding: 16px;
+}
+
+.cardTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--app-hint);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 12px;
+}
+
+.orderRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 15px;
+  color: var(--app-text);
+  padding: 6px 0;
+}
+
+.orderName {
+  color: var(--app-text);
+}
+
+.qtyTag {
+  color: var(--app-hint);
+  font-size: 13px;
+}
+
+/* Toggle */
+.toggleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.toggleLabel {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--app-text);
+}
+
+.toggleHint {
+  font-size: 13px;
+  color: var(--app-hint);
+  margin-top: 2px;
+}
+
+/* Promo */
+.promoRow {
+  display: flex;
+  gap: 8px;
+}
+
+.promoInput {
+  flex: 1;
+  height: 44px;
+  border: none;
+  border-radius: 12px;
+  background: var(--app-bg);
+  padding: 0 14px;
+  color: var(--app-text);
+  font-size: 15px;
+  outline: none;
+  text-transform: uppercase;
+}
+
+.promoInput::placeholder {
+  color: var(--app-hint);
+  text-transform: none;
+}
+
+.promoBtn {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: var(--app-accent);
+  color: var(--app-accent-text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.promoBtn:disabled {
+  opacity: 0.6;
+}
+
+.promoOk {
+  margin-top: 10px;
+  font-size: 14px;
+  color: #2ea24d;
+  font-weight: 600;
+}
+
+.promoErr {
+  margin-top: 10px;
+  font-size: 14px;
+  color: var(--app-danger);
+}
+
+/* Rules */
+.rulesText {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--app-text);
+  margin-bottom: 14px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.rulesText p {
+  margin-bottom: 8px;
+}
+
+.generalTerms {
+  color: var(--app-hint);
+}
+
+.agreeRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.checkbox {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  border: 2px solid var(--app-separator);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  transition: background 0.15s ease, border-color 0.15s ease;
+  margin-top: 1px;
+}
+
+.checkboxOn {
+  background: var(--app-accent);
+  border-color: var(--app-accent);
+}
+
+.agreeText {
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--app-text);
+}
+
+/* Totals */
+.totals {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 4px 0;
+}
+
+.totalRow {
+  display: flex;
+  justify-content: space-between;
+  font-size: 15px;
+  color: var(--app-text);
+}
+
+.totalRow > span:first-child {
+  color: var(--app-hint);
+}
+
+.minus {
+  color: #2ea24d;
+  font-weight: 600;
+}
+
+/* Action bar */
+.actionBar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 10px var(--app-pad) calc(10px + var(--safe-bottom));
+  background: color-mix(in srgb, var(--app-surface) 94%, transparent);
+  backdrop-filter: saturate(180%) blur(20px);
+  border-top: 0.5px solid var(--app-separator);
+}
+
+.payBtn {
+  width: 100%;
+  height: 50px;
+  border-radius: 14px;
+  background: var(--app-accent);
+  color: var(--app-accent-text);
+  font-size: 16px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.payBtn:disabled {
+  opacity: 0.5;
+}
+
+/* Payment phase */
+.timerBox {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 0 18px;
+}
+
+.timerLabel {
+  font-size: 13px;
+  color: var(--app-hint);
+}
+
+.timer {
+  font-size: 40px;
+  font-weight: 800;
+  color: var(--app-text);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+.warning {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin-top: 14px;
+  padding: 14px;
+  border-radius: var(--app-radius);
+  background: color-mix(in srgb, #ff9500 12%, transparent);
+  color: #b26a00;
+}
+
+.warning :global(svg) {
+  flex-shrink: 0;
+  color: #ff9500;
+}
+
+.warning p {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.waiting {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 22px;
+  color: var(--app-hint);
+  font-size: 15px;
+}
+
+/* Result */
+.result {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: calc(var(--safe-top) + 40px) 24px 24px;
+  gap: 10px;
+}
+
+.resIcon {
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 6px;
+}
+
+.resOk {
+  background: color-mix(in srgb, #34c759 16%, transparent);
+  color: #34c759;
+}
+
+.resWarn {
+  background: color-mix(in srgb, #ff9500 16%, transparent);
+  color: #ff9500;
+}
+
+.resSpinner {
+  margin-bottom: 10px;
+}
+
+.result h2 {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--app-text);
+}
+
+.result > p {
+  font-size: 15px;
+  color: var(--app-hint);
+  max-width: 320px;
+}
+
+.creds {
+  width: 100%;
+  margin-top: 20px;
+  text-align: left;
+}
+
+.credsTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--app-hint);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 10px;
+}
+
+.credCard {
+  background: var(--app-surface);
+  border-radius: var(--app-radius);
+  padding: 14px;
+  margin-bottom: 12px;
+}
+
+.credName {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--app-text);
+  margin-bottom: 12px;
+}
+
+.instruction {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--app-text);
+  white-space: pre-wrap;
+}
+
+.backCatalog {
+  margin-top: 24px;
+  padding: 13px 28px;
+  border-radius: var(--app-radius);
+  background: var(--app-accent);
+  color: var(--app-accent-text);
+  font-size: 15px;
+  font-weight: 600;
+}

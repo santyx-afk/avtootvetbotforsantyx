@@ -96,6 +96,23 @@ async function handleHumoPaymentNotification({ supabase, message }) {
     return creditTopupOrder({ supabase, order: paidOrder, amount, messageKey: key });
   }
 
+  // Qisman balansdan to'langan bo'lsa — karta to'lovi aniqlangandan keyin
+  // balans qismini hamyondan yechamiz (checkout paytida emas — muddat tugasa
+  // qaytarish shart bo'lmasligi uchun).
+  if (Number(paidOrder.balance_used || 0) > 0) {
+    try {
+      await addWalletTransaction(supabase, {
+        user_telegram_id: paidOrder.user_telegram_id,
+        order_id: paidOrder.id,
+        amount: Number(paidOrder.balance_used),
+        type: 'debit',
+        description: `Balansdan yechildi #${paidOrder.order_number}`,
+      });
+    } catch (err) {
+      console.warn('balance debit warn:', err?.message);
+    }
+  }
+
   // MUAMMO HAL QILINDI: Qotib qolmasligi uchun 6 soniyalik taymer qo'yildi
   let delivery;
   try {

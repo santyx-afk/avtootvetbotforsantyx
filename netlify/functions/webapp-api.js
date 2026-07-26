@@ -5,8 +5,57 @@ const {
   fetchSettings,
   createCartItem,
   listCartItems,
+  updateCartItemQuantity,
+  removeCartItem,
+  clearCart,
+  validatePromoCode,
+  getUserBalance,
+  createCheckoutOrder,
+  reserveInventoryForOrder,
+  setUserAwaitingReceipt,
+  addWalletTransaction,
+  getOrderById,
+  getOrderItems,
+  getInventoryItemById,
 } = require('../../shared/db');
+const {
+  processApprovedOrderDelivery,
+  resolveAutoAccount,
+  resolveLicenseKey,
+} = require('../../shared/delivery-service');
 const { validateInitData } = require('../../shared/webapp-auth');
+
+const PAYMENT_WARN_SUPPORT = (process.env.SUPPORT_USERNAME || '@santyx').replace(/^@?/, '@');
+
+function cardNumber(settings) {
+  return settings?.seller_card_number || process.env.PAYMENT_CARD_NUMBER || '';
+}
+
+// Yetkazilgan buyurtma elementlaridan kredensiallarni (deshifrlangan) chiqaradi.
+async function collectDeliveries(supabase, orderId) {
+  const items = await getOrderItems(supabase, orderId);
+  const out = [];
+  for (const it of items) {
+    const plan = it.plan;
+    const dtype = plan?.delivery_type || 'manual';
+    let credential = null;
+    if (it.inventory_item_id) {
+      const inv = await getInventoryItemById(supabase, it.inventory_item_id).catch(() => null);
+      if (inv && dtype === 'auto_account') {
+        const { login, password } = resolveAutoAccount(inv);
+        if (login || password) credential = { type: 'account', login, password };
+      } else if (inv && dtype === 'license_key') {
+        const key = resolveLicenseKey(inv);
+        if (key) credential = { type: 'key', key };
+      }
+    }
+    if (!credential && dtype === 'instruction_only') {
+      credential = { type: 'instruction', text: plan?.deliveryInstructions || '' };
+    }
+    out.push({ plan_name: plan?.name || '', delivery_type: dtype, credential });
+  }
+  return out;
+}
 
 // Mini App (React) uchun asosiy API.
 // Har bir so'rov Telegram initData (X-Telegram-Init-Data header) bilan tasdiqlanadi.
@@ -361,6 +410,174 @@ exports.handler = async (event) => {
         /* ignore */
       }
       return json(200, { ok: true, cartCount });
+    }
+
+    if (body.action === 'cart') {
+      const [items, wallet, settings] = await Promise.all([
+        listCartItems(supabase, telegramId),
+        getUserBalance(supabase, telegramId).catch(() => ({ balance: 0 })),
+        fetchSettings(supabase).catch(() => null),
+      ]);
+      const mapped = (items || [])
+        .filter((i) => i.plan)
+        .map((i) => ({
+          id: i.id,
+          plan_id: i.plan_id,
+          name: i.plan.name,
+          image_url: i.plan.image_url || null,
+          price: Number(i.plan.price || 0),
+          old_price: i.plan.old_price != null ? Number(i.plan.old_price) : null,
+          currency: i.plan.currency || 'UZS',
+          quantity: Number(i.quantity || 1),
+          rules: i.plan.rulesText || '',
+        }));
+      return json(200, {
+        ok: true,
+        items: mapped,
+        balance: Number(wallet?.balance || 0),
+        card_number: cardNumber(settings),
+        general_terms: settings?.general_terms || '',
+      });
+    }
+
+    if (body.action === 'cart-update') {
+      const { itemId, quantity } = body;
+      if (!itemId) return json(400, { ok: false, error: 'no_item_id' });
+      const qty = Math.min(5, Math.max(1, Math.round(Number(quantity || 1))));
+      await updateCartItemQuantity(supabase, itemId, qty);
+      return json(200, { ok: true, quantity: qty });
+    }
+
+    if (body.action === 'cart-remove') {
+      const { itemId } = body;
+      if (!itemId) return json(400, { ok: false, error: 'no_item_id' });
+      await removeCartItem(supabase, itemId);
+      return json(200, { ok: true });
+    }
+
+    if (body.action === 'promo-validate') {
+      const code = String(body.code || '').trim();
+      if (!code) return json(400, { ok: false, error: 'no_code' });
+      const items = await listCartItems(supabase, telegramId);
+      const basePrice = (items || []).reduce(
+        (s, i) => s + Number(i.plan?.price || 0) * Number(i.quantity || 1),
+        0,
+      );
+      const result = await validatePromoCode(supabase, code, basePrice);
+      if (!result.ok) return json(200, { ok: true, valid: false, reason: result.reason });
+      return json(200, {
+        ok: true,
+        valid: true,
+        code: result.promo.code,
+        discount: result.discount,
+        discount_type: result.promo.discount_type,
+        discount_value: Number(result.promo.discount_value),
+      });
+    }
+
+    if (body.action === 'checkout') {
+      const items = await listCartItems(supabase, telegramId);
+      const cartItems = (items || []).filter((i) => i.plan);
+      if (!cartItems.length) return json(400, { ok: false, error: 'empty_cart' });
+
+      const basePrice = cartItems.reduce(
+        (s, i) => s + Number(i.plan.price || 0) * Number(i.quantity || 1),
+        0,
+      );
+
+      // Promo tekshirish
+      let promo = null;
+      let discount = 0;
+      if (body.promoCode) {
+        const res = await validatePromoCode(supabase, String(body.promoCode).trim(), basePrice);
+        if (res.ok) {
+          promo = res.promo;
+          discount = res.discount;
+        }
+      }
+
+      // Balans (server hisoblaydi)
+      let balanceUsed = 0;
+      if (body.useBalance) {
+        const wallet = await getUserBalance(supabase, telegramId).catch(() => ({ balance: 0 }));
+        const payableAfterPromo = Math.max(0, basePrice - discount);
+        balanceUsed = Math.min(Number(wallet?.balance || 0), payableAfterPromo);
+      }
+
+      const order = await createCheckoutOrder(supabase, {
+        user_telegram_id: telegramId,
+        items: cartItems,
+        promo,
+        balanceUsed,
+        expiresMinutes: Number(process.env.WEBAPP_CHECKOUT_MINUTES || 10),
+      });
+
+      await reserveInventoryForOrder(supabase, order.id).catch((e) =>
+        console.warn('reserve warn:', e?.message),
+      );
+      await setUserAwaitingReceipt(supabase, telegramId, { current_order_id: order.id }).catch(
+        () => {},
+      );
+      await clearCart(supabase, telegramId).catch(() => {});
+
+      const fullyCovered = Number(order.unique_price || 0) <= 0;
+
+      // To'liq balansdan to'langan bo'lsa — hoziroq yechamiz va yetkazamiz
+      if (fullyCovered && balanceUsed > 0) {
+        await addWalletTransaction(supabase, {
+          user_telegram_id: telegramId,
+          order_id: order.id,
+          amount: balanceUsed,
+          type: 'debit',
+          description: `Balansdan to'liq to'landi #${order.order_number}`,
+        }).catch((e) => console.warn('debit warn:', e?.message));
+        await processApprovedOrderDelivery({
+          supabase,
+          order,
+          adminTelegramId: 'webapp_balance',
+        }).catch((e) => console.warn('deliver warn:', e?.message));
+      }
+
+      const settings = await fetchSettings(supabase).catch(() => null);
+      return json(200, {
+        ok: true,
+        order_id: order.id,
+        order_number: order.order_number,
+        base_price: Number(order.base_price || basePrice),
+        discount,
+        balance_used: balanceUsed,
+        amount: Number(order.unique_price || 0),
+        card_number: cardNumber(settings),
+        support: PAYMENT_WARN_SUPPORT,
+        expires_at: order.expires_at,
+        fully_paid: fullyCovered,
+      });
+    }
+
+    if (body.action === 'order-status') {
+      const orderId = body.orderId;
+      if (!orderId) return json(400, { ok: false, error: 'no_order_id' });
+      const order = await getOrderById(supabase, orderId);
+      if (!order || String(order.user_telegram_id) !== telegramId) {
+        return json(404, { ok: false, error: 'not_found' });
+      }
+      const paid = ['payment_detected', 'delivering', 'completed'].includes(order.status);
+      const delivered = order.delivery_status === 'delivered' || order.status === 'completed';
+      const deliveries = delivered ? await collectDeliveries(supabase, orderId).catch(() => []) : [];
+      return json(200, {
+        ok: true,
+        status: order.status,
+        delivery_status: order.delivery_status,
+        paid,
+        delivered,
+        waiting_stock: order.delivery_status === 'waiting_stock',
+        manual: order.delivery_status === 'manual_required',
+        expired: order.status === 'expired',
+        order_number: order.order_number,
+        amount: Number(order.unique_price || 0),
+        expires_at: order.expires_at,
+        deliveries,
+      });
     }
 
     return json(400, { ok: false, error: 'unknown_action' });

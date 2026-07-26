@@ -88,6 +88,12 @@ function mapPlan(row) {
     deliveryType: row.delivery_type,
     deliveryInstructions: row.delivery_instructions,
     rulesText: row.rules_text || '',
+    oldPrice: row.old_price != null ? Number(row.old_price) : null,
+    old_price: row.old_price != null ? Number(row.old_price) : null,
+    imageUrl: row.image_url || null,
+    image_url: row.image_url || null,
+    isPopular: Boolean(row.is_popular),
+    is_popular: Boolean(row.is_popular),
     isActive: row.is_active,
     sortOrder: row.sort_order,
   };
