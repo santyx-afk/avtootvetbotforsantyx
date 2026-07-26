@@ -211,7 +211,7 @@ function renderReviews() {
       <td>${r.user_telegram_id}</td>
       <td>${state.plans.find((p) => p.id === r.plan_id)?.name || r.plan_id}</td>
       <td class="review-stars">${'★'.repeat(r.rating)}${'☆'.repeat(5 - r.rating)}</td>
-      <td>${r.comment || '-'}</td>
+      <td>${r.text || '-'}</td>
       <td><span class="badge">${r.status || 'pending'}</span></td>
       <td>
         ${r.status !== 'approved' ? `<button class="ghost review-action" data-action="approve" data-id="${r.id}">✓</button>` : ''}

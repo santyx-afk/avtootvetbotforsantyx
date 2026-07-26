@@ -7,8 +7,9 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS is_blocked BOOLEAN DEFAULT FALSE;
 ALTER TABLE plans ADD COLUMN IF NOT EXISTS official_price NUMERIC;
 ALTER TABLE plans ADD COLUMN IF NOT EXISTS rules_text TEXT;
 
--- Sharhlar statusini boshqarish
-ALTER TABLE reviews ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'pending';
+-- Sharhlar statusini boshqarish (default 'approved' — sharh darhol ko'rinadi,
+-- admin kerak bo'lsa reject/delete qiladi; mavjud sharhlar buzilmaydi)
+ALTER TABLE reviews ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'approved';
 
 -- Settings uchun yangi sozlamalar
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS referral_percent NUMERIC DEFAULT 10;

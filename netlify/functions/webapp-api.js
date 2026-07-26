@@ -242,7 +242,8 @@ exports.handler = async (event) => {
         request(supabase, 'plans', {
           query: 'select=*&is_active=eq.true&order=sort_order.asc,created_at.asc',
         }),
-        request(supabase, 'reviews', { query: 'select=plan_id,rating&is_hidden=eq.false' }).catch(() => ({ data: [] })),
+        request(supabase, 'reviews', { query: 'select=plan_id,rating&is_hidden=eq.false&status=neq.rejected' })
+          .catch(() => request(supabase, 'reviews', { query: 'select=plan_id,rating&is_hidden=eq.false' }).catch(() => ({ data: [] }))),
         request(supabase, 'wishlist', {
           query: `select=plan_id&user_telegram_id=eq.${telegramId}`,
         }).catch(() => ({ data: [] })),
@@ -298,8 +299,12 @@ exports.handler = async (event) => {
 
       const [reviewsRes, wishRes, settings] = await Promise.all([
         request(supabase, 'reviews', {
-          query: `select=id,rating,text,admin_reply,user_name,created_at&plan_id=eq.${productId}&is_hidden=eq.false&order=created_at.desc`,
-        }).catch(() => ({ data: [] })),
+          query: `select=id,rating,text,admin_reply,user_name,created_at&plan_id=eq.${productId}&is_hidden=eq.false&status=neq.rejected&order=created_at.desc`,
+        }).catch(() =>
+          request(supabase, 'reviews', {
+            query: `select=id,rating,text,admin_reply,user_name,created_at&plan_id=eq.${productId}&is_hidden=eq.false&order=created_at.desc`,
+          }).catch(() => ({ data: [] })),
+        ),
         request(supabase, 'wishlist', {
           query: `select=id&user_telegram_id=eq.${telegramId}&plan_id=eq.${productId}&limit=1`,
         }).catch(() => ({ data: [] })),
@@ -597,8 +602,12 @@ exports.handler = async (event) => {
           query: `select=amount,type,description,created_at&user_telegram_id=eq.${telegramId}&order=created_at.desc&limit=20`,
         }).catch(() => ({ data: [] })),
         request(supabase, 'referrals', {
-          query: `select=status,reward_value&referrer_telegram_id=eq.${telegramId}`,
-        }).catch(() => ({ data: [] })),
+          query: `select=status,total_earned&referrer_telegram_id=eq.${telegramId}`,
+        }).catch(() =>
+          request(supabase, 'referrals', {
+            query: `select=status,reward_value&referrer_telegram_id=eq.${telegramId}`,
+          }).catch(() => ({ data: [] })),
+        ),
         request(supabase, 'faq', {
           query: 'select=id,question,answer,lang,sort_order&is_active=eq.true&order=sort_order.asc',
         }).catch(() => ({ data: [] })),
@@ -646,7 +655,7 @@ exports.handler = async (event) => {
         referral: {
           link: `https://t.me/${BOT}?start=ref_${telegramId}`,
           invited: refs.length,
-          bonus_earned: refs.reduce((s, r) => s + Number(r.reward_value || 0), 0),
+          bonus_earned: refs.reduce((s, r) => s + Number(r.total_earned ?? r.reward_value ?? 0), 0),
           percent: Number(settings?.referral_percent ?? 10),
         },
         faq,
