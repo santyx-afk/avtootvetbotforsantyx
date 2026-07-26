@@ -1,4 +1,11 @@
-const { getAdminClient, request, upsertUser } = require('../../shared/db');
+const {
+  getAdminClient,
+  request,
+  upsertUser,
+  fetchSettings,
+  createCartItem,
+  listCartItems,
+} = require('../../shared/db');
 const { validateInitData } = require('../../shared/webapp-auth');
 
 // Mini App (React) uchun asosiy API.
@@ -28,6 +35,63 @@ function extractPhoneFromRaw(raw) {
     raw?.contact?.phone_number ||
     null
   );
+}
+
+const AUTO_DELIVERY = ['auto_account', 'license_key'];
+
+// Bitta plan qatorini frontend uchun mahsulot obyektiga aylantiradi.
+function productShape(row, { stock, inStock, rating }) {
+  return {
+    id: row.id,
+    category_id: row.category_id,
+    name: row.name,
+    description: row.description || '',
+    price: Number(row.price || 0),
+    old_price: row.old_price != null ? Number(row.old_price) : null,
+    currency: row.currency || 'UZS',
+    duration: row.duration || '',
+    image_url: row.image_url || null,
+    is_popular: Boolean(row.is_popular),
+    delivery_type: row.delivery_type || 'manual',
+    stock,
+    in_stock: inStock,
+    rating,
+  };
+}
+
+// Sharhlar ro'yxatidan {plan_id: {avg, count}} xaritasini quradi.
+function aggregateRatings(reviews) {
+  const map = {};
+  for (const r of reviews) {
+    const m = map[r.plan_id] || (map[r.plan_id] = { sum: 0, count: 0 });
+    m.sum += Number(r.rating || 0);
+    m.count += 1;
+  }
+  const out = {};
+  for (const [id, m] of Object.entries(map)) {
+    out[id] = { avg: m.count ? Math.round((m.sum / m.count) * 10) / 10 : 0, count: m.count };
+  }
+  return out;
+}
+
+async function availableStockByPlan(supabase) {
+  const { data } = await request(supabase, 'inventory_items', {
+    query: 'select=plan_id&status=eq.available',
+  });
+  const map = {};
+  for (const it of data || []) map[it.plan_id] = (map[it.plan_id] || 0) + 1;
+  return map;
+}
+
+function reviewShape(row) {
+  return {
+    id: row.id,
+    rating: Number(row.rating || 0),
+    text: row.text || '',
+    admin_reply: row.admin_reply || null,
+    user_name: row.user_name || null,
+    created_at: row.created_at,
+  };
 }
 
 exports.handler = async (event) => {
@@ -100,6 +164,203 @@ exports.handler = async (event) => {
       // Telefon topilmasa ham xato bermaymiz: requestContact kontaktni botga ham
       // yuboradi va webhook uni ushlab qoladi.
       return json(200, { ok: true, saved });
+    }
+
+    if (body.action === 'catalog') {
+      const now = Date.now();
+
+      const [bannersRes, categoriesRes, plansRes, reviewsRes, wishlistRes] = await Promise.all([
+        request(supabase, 'banners', {
+          query: 'select=id,title,image_url,link,expires_at&is_active=eq.true&order=sort_order.asc',
+        }).catch(() => ({ data: [] })),
+        request(supabase, 'categories', {
+          query: 'select=id,name,button_label,sort_order&is_active=eq.true&order=sort_order.asc,created_at.asc',
+        }),
+        request(supabase, 'plans', {
+          query: 'select=*&is_active=eq.true&order=sort_order.asc,created_at.asc',
+        }),
+        request(supabase, 'reviews', { query: 'select=plan_id,rating&is_hidden=eq.false' }).catch(() => ({ data: [] })),
+        request(supabase, 'wishlist', {
+          query: `select=plan_id&user_telegram_id=eq.${telegramId}`,
+        }).catch(() => ({ data: [] })),
+      ]);
+
+      const banners = (bannersRes.data || []).filter(
+        (b) => !b.expires_at || new Date(b.expires_at).getTime() > now,
+      );
+      const plans = plansRes.data || [];
+      const ratingMap = aggregateRatings(reviewsRes.data || []);
+      const stockMap = await availableStockByPlan(supabase).catch(() => ({}));
+      const wishlistIds = (wishlistRes.data || []).map((w) => w.plan_id);
+
+      // Faqat "yaproq" rejalar (variantlari bo'lmagan) mahsulot sifatida ko'rsatiladi
+      const parentIds = new Set(plans.map((p) => p.parent_plan_id).filter(Boolean));
+      const products = plans
+        .filter((p) => !parentIds.has(p.id))
+        .map((p) => {
+          const auto = AUTO_DELIVERY.includes(p.delivery_type);
+          const stock = auto ? stockMap[p.id] || 0 : null;
+          const inStock = auto ? stock > 0 : true;
+          return productShape(p, {
+            stock,
+            inStock,
+            rating: ratingMap[p.id] || { avg: 0, count: 0 },
+          });
+        })
+        // stock = 0 (auto-yetkazish) obunalar yashiriladi
+        .filter((p) => p.in_stock);
+
+      return json(200, {
+        ok: true,
+        banners,
+        categories: (categoriesRes.data || []).map((c) => ({
+          id: c.id,
+          name: c.button_label || c.name,
+          sort_order: c.sort_order,
+        })),
+        products,
+        wishlist: wishlistIds,
+      });
+    }
+
+    if (body.action === 'product') {
+      const productId = body.productId;
+      if (!productId) return json(400, { ok: false, error: 'no_product_id' });
+
+      const { data: planRows } = await request(supabase, 'plans', {
+        query: `select=*&id=eq.${productId}&limit=1`,
+      });
+      const p = planRows?.[0];
+      if (!p) return json(404, { ok: false, error: 'not_found' });
+
+      const [reviewsRes, wishRes, settings] = await Promise.all([
+        request(supabase, 'reviews', {
+          query: `select=id,rating,text,admin_reply,user_name,created_at&plan_id=eq.${productId}&is_hidden=eq.false&order=created_at.desc`,
+        }).catch(() => ({ data: [] })),
+        request(supabase, 'wishlist', {
+          query: `select=id&user_telegram_id=eq.${telegramId}&plan_id=eq.${productId}&limit=1`,
+        }).catch(() => ({ data: [] })),
+        fetchSettings(supabase).catch(() => null),
+      ]);
+
+      const reviews = (reviewsRes.data || []).map(reviewShape);
+      const rating = reviews.length
+        ? {
+            avg:
+              Math.round(
+                (reviews.reduce((s, r) => s + r.rating, 0) / reviews.length) * 10,
+              ) / 10,
+            count: reviews.length,
+          }
+        : { avg: 0, count: 0 };
+
+      const auto = AUTO_DELIVERY.includes(p.delivery_type);
+      let stock = null;
+      let inStock = true;
+      if (auto) {
+        const stockMap = await availableStockByPlan(supabase).catch(() => ({}));
+        stock = stockMap[p.id] || 0;
+        inStock = stock > 0;
+      }
+
+      return json(200, {
+        ok: true,
+        product: {
+          ...productShape(p, { stock, inStock, rating }),
+          warranty_text: p.warranty_text || '',
+          rules_text: p.rules_text || '',
+          how_it_works_text: p.how_it_works_text || '',
+        },
+        general_terms: settings?.general_terms || '',
+        reviews,
+        in_wishlist: Boolean(wishRes.data?.length),
+      });
+    }
+
+    if (body.action === 'wishlist-toggle') {
+      const productId = body.productId;
+      if (!productId) return json(400, { ok: false, error: 'no_product_id' });
+
+      const { data } = await request(supabase, 'wishlist', {
+        query: `select=id&user_telegram_id=eq.${telegramId}&plan_id=eq.${productId}&limit=1`,
+      });
+      if (data?.[0]) {
+        await request(supabase, 'wishlist', { method: 'DELETE', query: `id=eq.${data[0].id}` });
+        return json(200, { ok: true, in_wishlist: false });
+      }
+      await request(supabase, 'wishlist', {
+        method: 'POST',
+        query: 'on_conflict=user_telegram_id,plan_id',
+        headers: { Prefer: 'resolution=ignore-duplicates' },
+        body: { user_telegram_id: telegramId, plan_id: productId },
+      });
+      return json(200, { ok: true, in_wishlist: true });
+    }
+
+    if (body.action === 'add-review') {
+      const productId = body.productId;
+      const rating = Math.round(Number(body.rating || 0));
+      const text = String(body.text || '').trim().slice(0, 1000);
+      if (!productId) return json(400, { ok: false, error: 'no_product_id' });
+      if (!(rating >= 1 && rating <= 5)) return json(400, { ok: false, error: 'bad_rating' });
+
+      const userName = tgUser.first_name || 'Foydalanuvchi';
+      const { data } = await request(supabase, 'reviews', {
+        method: 'POST',
+        query: 'on_conflict=plan_id,user_telegram_id',
+        headers: { Prefer: 'return=representation,resolution=merge-duplicates' },
+        body: {
+          plan_id: productId,
+          user_telegram_id: telegramId,
+          user_name: userName,
+          rating,
+          text,
+          updated_at: new Date().toISOString(),
+        },
+      });
+      return json(200, { ok: true, review: data?.[0] ? reviewShape(data[0]) : null });
+    }
+
+    if (body.action === 'cart-add') {
+      const productId = body.productId;
+      const qty = Math.min(5, Math.max(1, Math.round(Number(body.quantity || 1))));
+      if (!productId) return json(400, { ok: false, error: 'no_product_id' });
+
+      let current = 0;
+      try {
+        const { data } = await request(supabase, 'cart_items', {
+          query: `select=quantity&user_telegram_id=eq.${telegramId}&plan_id=eq.${productId}&limit=1`,
+        });
+        current = Number(data?.[0]?.quantity || 0);
+      } catch {
+        /* yangi element */
+      }
+      const newQty = Math.min(5, current + qty);
+      await createCartItem(supabase, {
+        user_telegram_id: telegramId,
+        plan_id: productId,
+        quantity: newQty,
+      });
+
+      let cartCount = 0;
+      try {
+        const items = await listCartItems(supabase, telegramId);
+        cartCount = items.reduce((s, i) => s + Number(i.quantity || 0), 0);
+      } catch {
+        /* ignore */
+      }
+      return json(200, { ok: true, cartCount, quantity: newQty });
+    }
+
+    if (body.action === 'cart-count') {
+      let cartCount = 0;
+      try {
+        const items = await listCartItems(supabase, telegramId);
+        cartCount = items.reduce((s, i) => s + Number(i.quantity || 0), 0);
+      } catch {
+        /* ignore */
+      }
+      return json(200, { ok: true, cartCount });
     }
 
     return json(400, { ok: false, error: 'unknown_action' });

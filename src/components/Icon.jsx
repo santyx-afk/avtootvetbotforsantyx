@@ -58,6 +58,36 @@ const PATHS = {
     </>
   ),
   check: <path d="m5 12 4.5 4.5L19 7" />,
+  star: (
+    <path d="M12 3.5l2.5 5.3 5.8.8-4.2 4.1 1 5.8-5.1-2.7-5.1 2.7 1-5.8L4.7 9.6l5.8-.8L12 3.5z" />
+  ),
+  plus: (
+    <>
+      <path d="M12 5v14" />
+      <path d="M5 12h14" />
+    </>
+  ),
+  share: (
+    <>
+      <path d="M12 3v13" />
+      <path d="m8 7 4-4 4 4" />
+      <path d="M5 12v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6" />
+    </>
+  ),
+  sort: (
+    <>
+      <path d="M4 6h16" />
+      <path d="M7 12h10" />
+      <path d="M10 18h4" />
+    </>
+  ),
+  close: (
+    <>
+      <path d="M6 6l12 12" />
+      <path d="M18 6 6 18" />
+    </>
+  ),
+  minus: <path d="M5 12h14" />,
 };
 
 export default function Icon({ name, size = 24, strokeWidth = 1.9, filled = false, style, className }) {

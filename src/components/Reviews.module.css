@@ -1,0 +1,141 @@
+.wrap {
+  margin-top: 8px;
+}
+
+.title {
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--app-text);
+  margin-bottom: 12px;
+}
+
+.form {
+  background: var(--app-surface);
+  border-radius: var(--app-radius);
+  padding: 14px;
+  margin-bottom: 16px;
+}
+
+.formTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.formLabel {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--app-text);
+}
+
+.textarea {
+  width: 100%;
+  border: none;
+  background: var(--app-bg);
+  border-radius: 10px;
+  padding: 12px;
+  color: var(--app-text);
+  font-size: 15px;
+  resize: none;
+  outline: none;
+}
+
+.textarea::placeholder {
+  color: var(--app-hint);
+}
+
+.submit {
+  margin-top: 10px;
+  width: 100%;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--app-accent);
+  color: var(--app-accent-text);
+  font-size: 15px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+}
+
+.submit:disabled {
+  opacity: 0.5;
+}
+
+.thanks {
+  background: color-mix(in srgb, #34c759 14%, transparent);
+  color: #2ea24d;
+  border-radius: var(--app-radius);
+  padding: 16px;
+  text-align: center;
+  font-weight: 600;
+  margin-bottom: 16px;
+}
+
+.empty {
+  color: var(--app-hint);
+  font-size: 14px;
+  padding: 8px 0 4px;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.item {
+  background: var(--app-surface);
+  border-radius: var(--app-radius);
+  padding: 14px;
+}
+
+.itemHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.author {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--app-text);
+}
+
+.date {
+  font-size: 12px;
+  color: var(--app-hint);
+}
+
+.text {
+  margin-top: 8px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--app-text);
+}
+
+.reply {
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: var(--app-bg);
+  border-radius: 10px;
+  border-left: 3px solid var(--app-accent);
+}
+
+.replyLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--app-accent);
+  display: block;
+  margin-bottom: 4px;
+}
+
+.reply p {
+  font-size: 14px;
+  color: var(--app-text);
+  line-height: 1.5;
+}

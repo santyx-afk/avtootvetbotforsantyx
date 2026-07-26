@@ -5,6 +5,7 @@ import App from './App.jsx';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
 import { TelegramProvider } from './telegram/TelegramProvider.jsx';
 import { I18nProvider } from './i18n/I18nProvider.jsx';
+import { CartProvider } from './lib/CartProvider.jsx';
 import './styles/global.css';
 
 createRoot(document.getElementById('root')).render(
@@ -12,9 +13,11 @@ createRoot(document.getElementById('root')).render(
     <ErrorBoundary>
       <TelegramProvider>
         <I18nProvider>
-          <BrowserRouter>
-            <App />
-          </BrowserRouter>
+          <CartProvider>
+            <BrowserRouter>
+              <App />
+            </BrowserRouter>
+          </CartProvider>
         </I18nProvider>
       </TelegramProvider>
     </ErrorBoundary>

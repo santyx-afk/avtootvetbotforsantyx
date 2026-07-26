@@ -1,0 +1,43 @@
+.wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.stars {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+}
+
+.star {
+  display: inline-flex;
+  line-height: 0;
+}
+
+.on {
+  color: #f5a623;
+}
+
+.off {
+  color: var(--app-separator);
+}
+
+button.star {
+  padding: 4px 2px;
+}
+
+button.star:active {
+  transform: scale(0.85);
+}
+
+.value {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--app-text);
+}
+
+.count {
+  font-size: 12px;
+  color: var(--app-hint);
+}
