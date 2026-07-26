@@ -1,0 +1,32 @@
+.track {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  padding: 4px var(--app-pad) 8px;
+  scrollbar-width: none;
+}
+
+.slide {
+  flex: 0 0 88%;
+  scroll-snap-align: center;
+  aspect-ratio: 2.4 / 1;
+  border-radius: var(--app-radius);
+  overflow: hidden;
+  background: var(--app-separator);
+  box-shadow: var(--app-shadow);
+}
+
+.track .slide:only-child {
+  flex-basis: 100%;
+}
+
+.slide img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.slide:active {
+  transform: scale(0.99);
+}

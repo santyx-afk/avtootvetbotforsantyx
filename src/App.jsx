@@ -6,6 +6,7 @@ import Onboarding from './components/Onboarding.jsx';
 import ContactGate from './components/ContactGate.jsx';
 import { FullScreenLoader } from './components/Spinner.jsx';
 import Catalog from './pages/Catalog.jsx';
+import ProductDetail from './pages/ProductDetail.jsx';
 import Cart from './pages/Cart.jsx';
 import Wishlist from './pages/Wishlist.jsx';
 import History from './pages/History.jsx';
@@ -74,6 +75,9 @@ export default function App() {
     <>
       <BackButtonManager />
       <Routes>
+        {/* To'liq ekran (tab barsiz) sahifalar */}
+        <Route path="/catalog/:id" element={<ProductDetail />} />
+        {/* Tab barli sahifalar */}
         <Route element={<Layout />}>
           <Route path="/catalog" element={<Catalog />} />
           <Route path="/cart" element={<Cart />} />

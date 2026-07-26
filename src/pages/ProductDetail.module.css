@@ -1,0 +1,279 @@
+.page {
+  min-height: 100dvh;
+  padding-bottom: calc(72px + var(--safe-bottom));
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Hero */
+.hero {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1.3 / 1;
+  background: var(--app-separator);
+}
+
+.hero img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 88px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.floatBack,
+.floatShare {
+  position: absolute;
+  top: calc(var(--safe-top) + 10px);
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(6px);
+  color: #fff;
+  z-index: 2;
+}
+
+.floatBack {
+  left: 12px;
+}
+
+.floatShare {
+  right: 12px;
+}
+
+.floatBack:active,
+.floatShare:active {
+  transform: scale(0.9);
+}
+
+.popular {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(4px);
+  padding: 4px 9px;
+  border-radius: 9px;
+}
+
+/* Body */
+.body {
+  padding: 16px var(--app-pad) 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.name {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--app-text);
+  line-height: 1.2;
+}
+
+.priceBlock {
+  margin-top: 4px;
+}
+
+.priceRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.price {
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--app-text);
+}
+
+.discountBadge {
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  background: #e53935;
+  padding: 3px 8px;
+  border-radius: 8px;
+}
+
+.savings {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+
+.official {
+  font-size: 14px;
+  color: var(--app-hint);
+}
+
+.saveTag {
+  font-size: 13px;
+  font-weight: 600;
+  color: #2ea24d;
+  background: color-mix(in srgb, #34c759 14%, transparent);
+  padding: 3px 8px;
+  border-radius: 8px;
+}
+
+.metaRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0;
+  border-top: 0.5px solid var(--app-separator);
+  border-bottom: 0.5px solid var(--app-separator);
+}
+
+.metaLabel {
+  font-size: 15px;
+  color: var(--app-hint);
+}
+
+.metaValue {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--app-text);
+}
+
+.section {
+  margin-top: 8px;
+}
+
+.sectionTitle {
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--app-text);
+  margin-bottom: 8px;
+}
+
+.paragraph {
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--app-text);
+  white-space: pre-wrap;
+}
+
+.generalTerms {
+  margin-top: 10px;
+  color: var(--app-hint);
+  font-size: 14px;
+}
+
+/* Sticky action bar */
+.actionBar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 10px var(--app-pad) calc(10px + var(--safe-bottom));
+  background: color-mix(in srgb, var(--app-surface) 94%, transparent);
+  backdrop-filter: saturate(180%) blur(20px);
+  border-top: 0.5px solid var(--app-separator);
+}
+
+.wishBtn {
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  border-radius: 14px;
+  background: var(--app-bg);
+  color: var(--app-text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.wishBtn:active {
+  transform: scale(0.92);
+}
+
+.wishOn {
+  color: #ff4d6d;
+}
+
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--app-bg);
+  border-radius: 14px;
+  height: 48px;
+  padding: 0 4px;
+  flex-shrink: 0;
+}
+
+.stepper button {
+  width: 36px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--app-accent);
+  border-radius: 10px;
+}
+
+.stepper button:disabled {
+  color: var(--app-hint);
+  opacity: 0.5;
+}
+
+.stepper span {
+  min-width: 22px;
+  text-align: center;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--app-text);
+}
+
+.addBtn {
+  flex: 1;
+  height: 48px;
+  border-radius: 14px;
+  background: var(--app-accent);
+  color: var(--app-accent-text);
+  font-size: 15px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.addBtn:disabled {
+  opacity: 0.6;
+}
+
+.addDone {
+  background: #34c759;
+}
