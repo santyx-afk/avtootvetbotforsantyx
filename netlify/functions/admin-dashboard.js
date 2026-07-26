@@ -49,6 +49,19 @@ exports.handler = async (event) => {
     }, {});
     const lowStockPlans = Object.entries(availableByPlan).filter(([, c]) => c <= 3).map(([id, total]) => ({ id, total, name: plans.find((p) => p.id === id)?.name || id }));
 
+    // Kunlik tushum (oxirgi 14 kun)
+    const dailyRevenue = [];
+    for (let i = 13; i >= 0; i--) {
+      const d = new Date(now);
+      d.setDate(d.getDate() - i);
+      const dayStart = new Date(d); dayStart.setHours(0, 0, 0, 0);
+      const dayEnd = new Date(d); dayEnd.setHours(23, 59, 59, 999);
+      const rev = orders
+        .filter((o) => inDone.has(o.status) && new Date(o.created_at) >= dayStart && new Date(o.created_at) <= dayEnd)
+        .reduce((s, o) => s + Number(o.amount || 0), 0);
+      dailyRevenue.push({ date: `${d.getMonth() + 1}/${d.getDate()}`, revenue: rev });
+    }
+
     const mostViewedCategories = aggregate(categoryRows, 'category_id').map((item) => resolveName(categories, item));
     const mostViewedPlans = aggregate(planRows, 'plan_id').map((item) => resolveName(plans, item));
     const mostPaymentClicks = aggregate(paymentRows, 'plan_id').map((item) => resolveName(plans, item));
@@ -77,6 +90,7 @@ exports.handler = async (event) => {
           completedCount: statusCount('completed'),
           rejectedCount: statusCount('rejected'),
           eventLogs,
+          dailyRevenue,
         },
       }),
     };

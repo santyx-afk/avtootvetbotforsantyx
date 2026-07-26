@@ -55,6 +55,41 @@ function renderStats(stats) {
   document.getElementById('topPlans').innerHTML = stats.mostViewedPlans.map((item) => `<li>${item.name}: ${item.total}</li>`).join('') || '<li>Ma\'lumot yo\'q</li>';
   document.getElementById('topPayments').innerHTML = stats.mostPaymentClicks.map((item) => `<li>${item.name}: ${item.total}</li>`).join('') || '<li>Ma\'lumot yo\'q</li>';
   document.getElementById('eventLogs').innerHTML = stats.eventLogs.map((item) => `<li><strong>${item.event_type}</strong> — ${new Date(item.created_at).toLocaleString('uz-UZ')}</li>`).join('') || '<li>Ma\'lumot yo\'q</li>';
+
+  // Revenue chart
+  if (typeof Chart !== 'undefined' && stats.dailyRevenue) {
+    renderRevenueChart(stats.dailyRevenue);
+  }
+}
+
+let revenueChartInstance = null;
+function renderRevenueChart(dailyRevenue) {
+  const ctx = document.getElementById('revenueChart');
+  if (!ctx) return;
+  if (revenueChartInstance) revenueChartInstance.destroy();
+  const labels = dailyRevenue.map((d) => d.date);
+  const data = dailyRevenue.map((d) => d.revenue);
+  revenueChartInstance = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{ label: 'Tushum (UZS)', data, backgroundColor: '#2563eb', borderRadius: 8 }],
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true } },
+    },
+  });
+}
+
+function exportCsv(filename, rows) {
+  const csv = rows.map((r) => r.map((c) => `"${String(c || '').replace(/"/g, '""')}"`).join(',')).join('\n');
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
 }
 
 function renderCategories() {
@@ -621,6 +656,15 @@ document.getElementById('messageForm')?.addEventListener('submit', async (event)
 // --- Orders ---
 document.getElementById('reloadOrdersButton')?.addEventListener('click', () => loadOrders().catch((e) => alert(e.message)));
 document.getElementById('orderStatusFilter')?.addEventListener('change', () => loadOrders().catch((e) => alert(e.message)));
+document.getElementById('exportOrdersCsv')?.addEventListener('click', () => {
+  const header = ['№', 'User', 'Reja', 'Summa', 'Status', 'Delivery', 'Vaqt'];
+  const rows = [header, ...state.orders.map((o) => [
+    o.order_number, o.user_telegram_id, o.plan_name || '-',
+    o.amount, o.status, o.delivery_status || '-',
+    new Date(o.created_at).toLocaleString('uz-UZ'),
+  ])];
+  exportCsv('orders.csv', rows);
+});
 document.getElementById('ordersList')?.addEventListener('click', async (event) => {
   const btn = event.target.closest('.order-action');
   if (!btn) return;

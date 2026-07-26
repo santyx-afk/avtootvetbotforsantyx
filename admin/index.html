@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Subscription Bot Admin</title>
     <link rel="stylesheet" href="styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js" defer></script>
   </head>
   <body>
     <div class="app-shell">
@@ -42,13 +43,17 @@
         <div id="appView" hidden>
           <section id="dashboardView" class="view">
             <div class="cards" id="statsCards"></div>
+            <div class="card" style="margin-bottom:1rem">
+              <h3>Haftalik tushum grafigi</h3>
+              <canvas id="revenueChart" height="200"></canvas>
+            </div>
             <div class="two-col">
               <div class="card"><h3>Top kategoriyalar</h3><ul id="topCategories"></ul></div>
               <div class="card"><h3>Top rejalar</h3><ul id="topPlans"></ul></div>
             </div>
             <div class="two-col">
-              <div class="card"><h3>To‘lov tugmasi eng ko‘p bosilgan</h3><ul id="topPayments"></ul></div>
-              <div class="card"><h3>So‘nggi eventlar</h3><ul id="eventLogs"></ul></div>
+              <div class="card"><h3>To’lov tugmasi eng ko’p bosilgan</h3><ul id="topPayments"></ul></div>
+              <div class="card"><h3>So’nggi eventlar</h3><ul id="eventLogs"></ul></div>
             </div>
           </section>
 
@@ -137,6 +142,7 @@
                 <option>pending_payment</option><option>payment_uploaded</option><option>approved</option><option>waiting_stock</option><option>completed</option><option>rejected</option>
               </select>
               <button id="reloadOrdersButton">Yangilash</button>
+              <button id="exportOrdersCsv" class="ghost">CSV Export</button>
             </div>
             <div id="ordersList" class="table-card"></div>
           </section>
