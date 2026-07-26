@@ -1,5 +1,6 @@
 const { requireAdmin } = require('../../shared/auth');
-const { getAdminClient, request, listTable, insertRow, updateRow, deleteRow } = require('../../shared/db');
+const { getAdminClient, request, listTable, insertRow, updateRow, deleteRow, fetchPlan, toQuery } = require('../../shared/db');
+const { sendMessage } = require('../../shared/telegram');
 
 const TABLES = { category: 'categories', plan: 'plans', promo: 'promo_codes' };
 
@@ -16,6 +17,22 @@ function badRequest(message) {
 
 function resolveTable(type) {
   return TABLES[type] || 'plans';
+}
+
+async function notifyPriceDrop(supabase, plan) {
+  const { data: wishItems } = await request(supabase, 'wishlist', {
+    query: toQuery({ select: 'user_telegram_id', plan_id: `eq.${plan.id}` }),
+  });
+  if (!wishItems?.length) return;
+  const oldPrice = Number(plan.old_price || 0);
+  const newPrice = Number(plan.price || 0);
+  const text = `🔥 <b>Narx tushdi!</b>\n\n${plan.name}\n${oldPrice ? `<s>${oldPrice.toLocaleString('uz-UZ')}</s> → ` : ''}${newPrice.toLocaleString('uz-UZ')} UZS\n\nMini Appda xarid qiling!`;
+  const sent = new Set();
+  for (const w of wishItems) {
+    if (sent.has(w.user_telegram_id)) continue;
+    sent.add(w.user_telegram_id);
+    await sendMessage(w.user_telegram_id, text, { parse_mode: 'HTML' }).catch(() => {});
+  }
 }
 
 // promo_codes da sort_order ustuni yo'q, shuning uchun listTable ishlamaydi
@@ -126,7 +143,19 @@ exports.handler = async (event) => {
     if (event.httpMethod === 'PUT') {
       const table = resolveTable(payload.type);
       const { id, ...item } = payload.item;
+
+      // Narx tushishini aniqlash va wishlist foydalanuvchilarini xabardor qilish
+      let oldPlan = null;
+      if (table === 'plans' && item.price !== undefined) {
+        oldPlan = await fetchPlan(supabase, id);
+      }
+
       const updated = await updateRow(supabase, table, id, sanitize(table, item));
+
+      if (oldPlan && updated && Number(updated.price) < Number(oldPlan.price)) {
+        notifyPriceDrop(supabase, updated).catch((e) => console.warn('price drop notify warn:', e?.message));
+      }
+
       return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ok: true, item: updated }) };
     }
 
