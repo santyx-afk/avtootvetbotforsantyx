@@ -20,7 +20,8 @@ exports.handler = async (event) => {
     }
 
     if (type === 'broadcast') {
-      const { data: users } = await request(db, 'users', { query: 'select=telegram_id&is_blocked=eq.false' });
+      const { data: users } = await request(db, 'users', { query: 'select=telegram_id&is_blocked=eq.false' })
+        .catch(() => request(db, 'users', { query: 'select=telegram_id' }));
       let sent = 0, failed = 0;
       for (const u of (users || [])) {
         try {

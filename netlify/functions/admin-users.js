@@ -8,7 +8,8 @@ exports.handler = async (event) => {
   const db = getAdminClient();
   try {
     if (event.httpMethod === 'GET') {
-      const { data } = await request(db, 'users', { query: 'select=telegram_id,username,full_name,phone,language_code,is_blocked,created_at&order=created_at.desc&limit=500' });
+      const { data } = await request(db, 'users', { query: 'select=telegram_id,username,full_name,phone,language_code,is_blocked,created_at&order=created_at.desc&limit=500' })
+        .catch(() => request(db, 'users', { query: 'select=telegram_id,username,full_name,phone,language_code,created_at&order=created_at.desc&limit=500' }));
       return json(200, { ok: true, users: data || [] });
     }
     if (event.httpMethod === 'POST') {
