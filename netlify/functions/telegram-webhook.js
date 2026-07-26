@@ -1,6 +1,18 @@
-const { getAdminClient } = require('../../shared/db');
+const { getAdminClient, request } = require('../../shared/db');
 const { handleStart, handleCallback, handleReceipt, handleTextCommand } = require('../../shared/bot-service');
 const { handleHumoPaymentNotification } = require('../../shared/humo-payment-service');
+
+async function isUserBlocked(supabase, telegramUserId) {
+  if (!telegramUserId) return false;
+  try {
+    const { data } = await request(supabase, 'users', {
+      query: `select=is_blocked&telegram_id=eq.${telegramUserId}&limit=1`,
+    });
+    return Boolean(data?.[0]?.is_blocked);
+  } catch {
+    return false;
+  }
+}
 
 exports.handler = async (event) => {
   const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
@@ -143,14 +155,20 @@ exports.handler = async (event) => {
         }
       }
     } else if (update.message?.text?.startsWith('/start')) {
+      const blocked = await isUserBlocked(supabase, update.message.from?.id);
+      if (blocked) return { statusCode: 200, body: 'blocked' };
       await handleStart({ supabase, message: update.message });
     } else if (update.message) {
+      const blocked = await isUserBlocked(supabase, update.message.from?.id);
+      if (blocked) return { statusCode: 200, body: 'blocked' };
       const payment = await handleHumoPaymentNotification({ supabase, message: update.message });
       if (!payment.handled) {
         const commandHandled = update.message.text ? await handleTextCommand({ supabase, message: update.message }) : false;
         if (!commandHandled) await handleReceipt({ supabase, message: update.message });
       }
     } else if (update.callback_query) {
+      const blocked = await isUserBlocked(supabase, update.callback_query.from?.id);
+      if (blocked) return { statusCode: 200, body: 'blocked' };
       await handleCallback({ supabase, callbackQuery: update.callback_query });
     }
   } catch (error) {

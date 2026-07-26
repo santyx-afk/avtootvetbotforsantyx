@@ -34,6 +34,12 @@ label { display: grid; gap: 0.4rem; color: var(--muted); font-size: 0.95rem; }
 .badge { display: inline-block; padding: 0.25rem 0.6rem; background: #dbeafe; color: #1d4ed8; border-radius: 999px; font-size: 0.85rem; }
 .error { color: var(--danger); }
 ul.clean { padding-left: 1rem; margin: 0; }
+.image-upload-row { display: flex; gap: 0.5rem; align-items: center; }
+.image-upload-row input[type="text"], .image-upload-row input:not([type]) { flex: 1; }
+.image-preview { max-width: 200px; max-height: 120px; border-radius: 12px; margin-top: 0.5rem; display: none; object-fit: cover; }
+.success-text { color: #16a34a; }
+.review-stars { color: #f59e0b; letter-spacing: 2px; }
+.faq-order-btns button { padding: 0.3rem 0.6rem; font-size: 0.8rem; }
 @media (max-width: 900px) {
   .app-shell { grid-template-columns: 1fr; }
   .sidebar { position: sticky; top: 0; z-index: 2; }

@@ -37,8 +37,12 @@ function requireAdmin(headers = {}) {
 function verifyPassword(password) {
   const input = String(password || '').trim();
   if (!input) return false;
-  const envPassword = String(process.env.ADMIN_PASSWORD || 'admin123').trim();
-  return input === envPassword || input === 'admin123' || input === 'santyx123' || input === 'santyx2026';
+  const envPassword = (process.env.ADMIN_PASSWORD || '').trim();
+  if (!envPassword) return false;
+  const a = Buffer.from(input);
+  const b = Buffer.from(envPassword);
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
 }
 
 module.exports = {
