@@ -20,7 +20,14 @@ async function api(url, options = {}) {
     ...options,
   });
   const text = await response.text();
-  const data = text ? JSON.parse(text) : {};
+  let data = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    // Server JSON emas javob qaytardi (masalan timeout/gateway HTML sahifasi)
+    if (!response.ok) throw new Error(`Server xatosi (${response.status})`);
+    // OK bo'lsa-yu JSON bo'lmasa — bo'sh obyekt bilan davom etamiz
+  }
   if (!response.ok) throw new Error(data.error || 'So\'rovda xatolik');
   return data;
 }
