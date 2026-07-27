@@ -15,20 +15,28 @@ exports.handler = async (event) => {
   try {
     if (type === 'individual') {
       if (!telegram_id) return json(400, { ok: false, error: 'Telegram ID kiriting' });
-      await sendMessage(telegram_id, text, { parse_mode: 'HTML' });
+      // sendMessage(chatId, text) — parse_mode HTML ichida o'rnatiladi
+      await sendMessage(telegram_id, text);
       return json(200, { ok: true, message: `Xabar ${telegram_id} ga yuborildi` });
     }
 
     if (type === 'broadcast') {
       const { data: users } = await request(db, 'users', { query: 'select=telegram_id&is_blocked=eq.false' })
         .catch(() => request(db, 'users', { query: 'select=telegram_id' }));
-      let sent = 0, failed = 0;
-      for (const u of (users || [])) {
-        try {
-          await sendMessage(u.telegram_id, text, { parse_mode: 'HTML' });
-          sent++;
-        } catch {
-          failed++;
+      const list = users || [];
+      // Ketma-ket await sekin edi — funksiya timeout bo'lib, Netlify JSON o'rniga
+      // HTML xato sahifasi qaytarardi. Endi parallel batch bilan yuboramiz.
+      const BATCH = 25;
+      let sent = 0;
+      let failed = 0;
+      for (let i = 0; i < list.length; i += BATCH) {
+        const chunk = list.slice(i, i + BATCH);
+        const results = await Promise.allSettled(
+          chunk.map((u) => sendMessage(u.telegram_id, text)),
+        );
+        for (const r of results) {
+          if (r.status === 'fulfilled') sent += 1;
+          else failed += 1;
         }
       }
       return json(200, { ok: true, message: `Yuborildi: ${sent}, xato: ${failed}` });
