@@ -1,4 +1,4 @@
-const state = { categories: [], plans: [], settings: null, orders: [], inventory: [], banners: [], reviews: [], faq: [], users: [] };
+const state = { categories: [], plans: [], settings: null, orders: [], inventory: [], banners: [], promos: [], reviews: [], faq: [], users: [] };
 
 const views = {
   dashboard: document.getElementById('dashboardView'),
@@ -7,6 +7,7 @@ const views = {
   orders: document.getElementById('ordersView'),
   inventory: document.getElementById('inventoryView'),
   banners: document.getElementById('bannersView'),
+  promos: document.getElementById('promosView'),
   reviews: document.getElementById('reviewsView'),
   faq: document.getElementById('faqView'),
   users: document.getElementById('usersView'),
@@ -209,6 +210,37 @@ function fillBannerForm(item = {}) {
   else { preview.src = ''; preview.style.display = 'none'; }
 }
 
+// --- Promos ---
+function renderPromos() {
+  const root = document.getElementById('promosList');
+  root.innerHTML = `<table><thead><tr><th>Kod</th><th>Chegirma</th><th>Min buyurtma</th><th>Ishlatildi</th><th>Muddat</th><th>Holat</th><th></th></tr></thead><tbody>${state.promos.map((p) => `
+    <tr>
+      <td><strong>${p.code}</strong>${p.is_one_time ? ' <span class="badge">1x</span>' : ''}</td>
+      <td>${Number(p.discount_value || 0).toLocaleString('uz-UZ')}${p.discount_type === 'percent' ? '%' : ' UZS'}</td>
+      <td>${Number(p.min_order_amount || 0).toLocaleString('uz-UZ')}</td>
+      <td>${p.used_count || 0}${p.max_uses ? `/${p.max_uses}` : ''}</td>
+      <td>${p.expires_at ? String(p.expires_at).slice(0, 10) : '-'}</td>
+      <td><span class="badge">${p.is_active ? 'Faol' : 'NoFaol'}</span></td>
+      <td>
+        <button class="ghost edit-promo" data-id="${p.id}">Edit</button>
+        <button class="ghost danger delete-promo" data-id="${p.id}">Del</button>
+      </td>
+    </tr>`).join('')}</tbody></table>`;
+}
+
+function fillPromoForm(item = {}) {
+  document.getElementById('promoId').value = item.id || '';
+  document.getElementById('promoCode').value = item.code || '';
+  document.getElementById('promoDiscountType').value = item.discount_type || 'percent';
+  document.getElementById('promoDiscountValue').value = item.discount_value ?? '';
+  document.getElementById('promoMinOrder').value = item.min_order_amount ?? 0;
+  document.getElementById('promoMaxUses').value = item.max_uses ?? '';
+  document.getElementById('promoExpiresAt').value = item.expires_at ? String(item.expires_at).slice(0, 10) : '';
+  document.getElementById('promoIsOneTime').checked = item.is_one_time ?? false;
+  document.getElementById('promoIsActive').checked = item.is_active ?? true;
+  document.getElementById('promoFormTitle').textContent = item.id ? 'Promokodni tahrirlash' : 'Promokod qo\'shish';
+}
+
 // --- Reviews ---
 function renderReviews() {
   const root = document.getElementById('reviewsList');
@@ -332,6 +364,14 @@ async function loadBanners() {
   } catch { state.banners = []; }
 }
 
+async function loadPromos() {
+  try {
+    const data = await api('admin-promos');
+    state.promos = data.promos || [];
+    renderPromos();
+  } catch { state.promos = []; }
+}
+
 async function loadReviews() {
   try {
     const data = await api('admin-reviews');
@@ -363,8 +403,9 @@ async function loadSettings() {
   document.getElementById('sellerDisplayName').value = state.settings.seller_display_name || '';
   document.getElementById('adminTelegramId').value = state.settings.admin_telegram_id || '';
   document.getElementById('supportLink').value = state.settings.support_link || '';
+  document.getElementById('settingsCashbackEnabled').checked = Boolean(state.settings.cashback_enabled);
   document.getElementById('settingsCashbackPercent').value = state.settings.cashback_percent ?? '';
-  document.getElementById('settingsReferralBonus').value = state.settings.referral_bonus ?? '';
+  document.getElementById('settingsReferralBonus').value = state.settings.referral_fixed_bonus ?? '';
   document.getElementById('settingsReferralPercent').value = state.settings.referral_percent ?? '';
   document.getElementById('settingsMinTopup').value = state.settings.min_topup ?? '';
   document.getElementById('welcomeText').value = state.settings.welcome_text || '';
@@ -388,7 +429,7 @@ async function initApp() {
   }
   document.getElementById('loginView').hidden = true;
   document.getElementById('appView').hidden = false;
-  await Promise.all([loadDashboard(), loadData(), loadSettings(), loadBanners(), loadReviews(), loadFaq(), loadUsers()]);
+  await Promise.all([loadDashboard(), loadData(), loadSettings(), loadBanners(), loadPromos(), loadReviews(), loadFaq(), loadUsers()]);
 }
 
 // --- Image upload helper ---
@@ -531,8 +572,9 @@ document.getElementById('settingsForm').addEventListener('submit', async (event)
       seller_display_name: document.getElementById('sellerDisplayName').value,
       admin_telegram_id: document.getElementById('adminTelegramId').value,
       support_link: document.getElementById('supportLink').value,
+      cashback_enabled: document.getElementById('settingsCashbackEnabled').checked,
       cashback_percent: document.getElementById('settingsCashbackPercent').value ? Number(document.getElementById('settingsCashbackPercent').value) : null,
-      referral_bonus: document.getElementById('settingsReferralBonus').value ? Number(document.getElementById('settingsReferralBonus').value) : null,
+      referral_fixed_bonus: document.getElementById('settingsReferralBonus').value ? Number(document.getElementById('settingsReferralBonus').value) : null,
       referral_percent: document.getElementById('settingsReferralPercent').value ? Number(document.getElementById('settingsReferralPercent').value) : null,
       min_topup: document.getElementById('settingsMinTopup').value ? Number(document.getElementById('settingsMinTopup').value) : null,
       welcome_text: document.getElementById('welcomeText').value,
@@ -573,6 +615,41 @@ document.getElementById('bannersList')?.addEventListener('click', async (event) 
   if (delBtn && confirm('Banner o\'chirilsinmi?')) {
     await api('admin-banners', { method: 'DELETE', body: JSON.stringify({ id: delBtn.dataset.id }) });
     await loadBanners();
+  }
+});
+
+// --- Promos ---
+document.getElementById('newPromoButton')?.addEventListener('click', () => fillPromoForm());
+document.getElementById('promoReset')?.addEventListener('click', () => fillPromoForm());
+document.getElementById('promoForm')?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const item = {
+    id: document.getElementById('promoId').value || undefined,
+    code: document.getElementById('promoCode').value,
+    discount_type: document.getElementById('promoDiscountType').value,
+    discount_value: Number(document.getElementById('promoDiscountValue').value || 0),
+    min_order_amount: Number(document.getElementById('promoMinOrder').value || 0),
+    max_uses: document.getElementById('promoMaxUses').value ? Number(document.getElementById('promoMaxUses').value) : null,
+    expires_at: document.getElementById('promoExpiresAt').value || null,
+    is_one_time: document.getElementById('promoIsOneTime').checked,
+    is_active: document.getElementById('promoIsActive').checked,
+  };
+  try {
+    await api('admin-promos', { method: item.id ? 'PUT' : 'POST', body: JSON.stringify(item) });
+    fillPromoForm();
+    await loadPromos();
+  } catch (err) { alert(err.message); }
+});
+document.getElementById('promosList')?.addEventListener('click', async (event) => {
+  const editBtn = event.target.closest('.edit-promo');
+  if (editBtn) {
+    fillPromoForm(state.promos.find((p) => p.id === editBtn.dataset.id));
+    return;
+  }
+  const delBtn = event.target.closest('.delete-promo');
+  if (delBtn && confirm('Promokod o\'chirilsinmi?')) {
+    await api('admin-promos', { method: 'DELETE', body: JSON.stringify({ id: delBtn.dataset.id }) });
+    await loadPromos();
   }
 });
 

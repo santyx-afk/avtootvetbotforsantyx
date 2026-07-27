@@ -18,6 +18,7 @@
           <button data-view="orders" class="nav-link">Buyurtmalar</button>
           <button data-view="inventory" class="nav-link">Inventory</button>
           <button data-view="banners" class="nav-link">Bannerlar</button>
+          <button data-view="promos" class="nav-link">Promokodlar</button>
           <button data-view="reviews" class="nav-link">Sharhlar</button>
           <button data-view="faq" class="nav-link">FAQ</button>
           <button data-view="users" class="nav-link">Foydalanuvchilar</button>
@@ -204,6 +205,37 @@
             </div>
           </section>
 
+          <section id="promosView" class="view" hidden>
+            <div class="toolbar">
+              <h2>Promokodlar</h2>
+              <button id="newPromoButton">Yangi promokod</button>
+            </div>
+            <div id="promosList" class="table-card"></div>
+            <div class="card form-card">
+              <h3 id="promoFormTitle">Promokod qo'shish</h3>
+              <form id="promoForm" class="grid-form">
+                <input type="hidden" id="promoId" />
+                <label>Kod<input id="promoCode" required /></label>
+                <label>Chegirma turi
+                  <select id="promoDiscountType">
+                    <option value="percent">Foiz (%)</option>
+                    <option value="fixed">Summa (UZS)</option>
+                  </select>
+                </label>
+                <label>Chegirma qiymati<input id="promoDiscountValue" type="number" required /></label>
+                <label>Min buyurtma summasi (UZS)<input id="promoMinOrder" type="number" value="0" /></label>
+                <label>Maks ishlatish (bo'sh = cheksiz)<input id="promoMaxUses" type="number" /></label>
+                <label>Amal qilish muddati<input id="promoExpiresAt" type="date" /></label>
+                <label><input id="promoIsOneTime" type="checkbox" /> Bir martalik</label>
+                <label><input id="promoIsActive" type="checkbox" checked /> Faol</label>
+                <div class="actions full">
+                  <button type="submit">Saqlash</button>
+                  <button type="button" id="promoReset" class="ghost">Bekor qilish</button>
+                </div>
+              </form>
+            </div>
+          </section>
+
           <section id="reviewsView" class="view" hidden>
             <div class="toolbar">
               <h2>Sharhlar</h2>
@@ -277,6 +309,7 @@
                 <label>Sotuvchi nomi<input id="sellerDisplayName" /></label>
                 <label>Admin Telegram ID<input id="adminTelegramId" /></label>
                 <label>Support link / username<input id="supportLink" /></label>
+                <label><input id="settingsCashbackEnabled" type="checkbox" /> Cashback yoqilgan (hammaga)</label>
                 <label>Cashback foizi<input id="settingsCashbackPercent" type="number" /></label>
                 <label>Referal bonusi (so'm)<input id="settingsReferralBonus" type="number" /></label>
                 <label>Referal foizi (%)<input id="settingsReferralPercent" type="number" /></label>

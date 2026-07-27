@@ -13,6 +13,13 @@ async function processReferralPayout(supabase, order) {
     const ref = data?.[0];
     if (!ref) return;
 
+    // Idempotentlik: shu buyurtma uchun referal bonus allaqachon to'langan bo'lsa qaytamiz
+    // (payout ham avto-to'lov, ham admin approve yo'lidan chaqirilishi mumkin).
+    const prior = await request(supabase, 'audit_logs', {
+      query: `select=id&order_id=eq.${order.id}&action=eq.referral_payout&limit=1`,
+    }).then((r) => r.data).catch(() => []);
+    if (prior && prior[0]) return;
+
     const settings = await fetchSettings(supabase);
     const referrerId = ref.referrer_telegram_id;
     const orderAmount = Number(order.base_price || order.amount || 0);
@@ -20,9 +27,10 @@ async function processReferralPayout(supabase, order) {
 
     let accrued = 0;
 
-    // Fix bonus — faqat birinchi xarid uchun
+    // Fix bonus — faqat birinchi xarid uchun.
+    // Ustun nomi settings jadvalida `referral_fixed_bonus` (eski `referral_bonus` emas).
     if (isFirstPurchase) {
-      const fixBonus = Number(settings?.referral_bonus || 0);
+      const fixBonus = Number(settings?.referral_fixed_bonus ?? settings?.referral_bonus ?? 0);
       if (fixBonus > 0) {
         await addWalletTransaction(supabase, {
           user_telegram_id: referrerId,
@@ -57,7 +65,9 @@ async function processReferralPayout(supabase, order) {
       method: 'PATCH',
       query: `referred_telegram_id=eq.${telegramId}`,
       body: {
-        status: 'paid',
+        // 'rewarded' — referrals.status CHECK constraint faqat
+        // ('registered','rewarded','cancelled') qabul qiladi ('paid' emas).
+        status: 'rewarded',
         first_order_id: ref.first_order_id || order.id,
         total_earned: Number(ref.total_earned || 0) + accrued,
         purchase_count: Number(ref.purchase_count || 0) + 1,
