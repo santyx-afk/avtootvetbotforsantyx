@@ -13,6 +13,7 @@ const views = {
   users: document.getElementById('usersView'),
   messages: document.getElementById('messagesView'),
   settings: document.getElementById('settingsView'),
+  help: document.getElementById('helpView'),
 };
 
 async function api(url, options = {}) {
@@ -342,6 +343,17 @@ async function loadOrders() {
     <button class="ghost order-action" data-action="retry_delivery" data-id="${o.id}">Retry</button>
     <button class="ghost order-action" data-action="complete" data-id="${o.id}">Complete</button>
   </td></tr>`;}).join('')}</tbody></table>`;
+  renderRecentOrders();
+}
+
+// Dashboard uchun so'nggi 6 ta buyurtma (faqat ko'rish)
+function renderRecentOrders() {
+  const root = document.getElementById('recentOrders');
+  if (!root) return;
+  const recent = state.orders.slice(0, 6);
+  if (!recent.length) { root.innerHTML = '<p>Buyurtmalar yo\'q</p>'; return; }
+  root.innerHTML = `<table><thead><tr><th>№</th><th>User</th><th>Reja</th><th>Summa</th><th>Status</th><th>Vaqt</th></tr></thead><tbody>${recent.map((o) => `
+    <tr><td>${o.order_number}</td><td>${o.user_telegram_id}</td><td>${o.plan_name || '-'}</td><td>${Number(o.amount || 0).toLocaleString('uz-UZ')}</td><td><span class="badge">${o.status}</span></td><td>${new Date(o.created_at).toLocaleString('uz-UZ')}</td></tr>`).join('')}</tbody></table>`;
 }
 
 async function loadInventory() {
@@ -423,10 +435,12 @@ async function initApp() {
   document.getElementById('loginError').textContent = '';
   const session = await fetch('/api/admin-session');
   if (!session.ok) {
+    document.body.classList.remove('authed');
     document.getElementById('loginView').hidden = false;
     document.getElementById('appView').hidden = true;
     return;
   }
+  document.body.classList.add('authed');
   document.getElementById('loginView').hidden = true;
   document.getElementById('appView').hidden = false;
   await Promise.all([loadDashboard(), loadData(), loadSettings(), loadBanners(), loadPromos(), loadReviews(), loadFaq(), loadUsers()]);
@@ -439,13 +453,9 @@ function setupImageUpload(fileInputId, urlInputId, previewId, uploadBtnId) {
   const preview = document.getElementById(previewId);
   const btn = document.getElementById(uploadBtnId);
 
-  btn?.addEventListener('click', () => fileInput.click());
-  urlInput?.addEventListener('input', () => {
-    if (urlInput.value) { preview.src = urlInput.value; preview.style.display = 'block'; }
-    else { preview.style.display = 'none'; }
-  });
-  fileInput?.addEventListener('change', async () => {
-    const file = fileInput.files[0];
+  const row = urlInput?.closest('.image-upload-row');
+
+  async function handleFile(file) {
     if (!file) return;
     btn.disabled = true;
     btn.textContent = '...';
@@ -461,7 +471,28 @@ function setupImageUpload(fileInputId, urlInputId, previewId, uploadBtnId) {
       btn.textContent = 'Yuklash';
       fileInput.value = '';
     }
+  }
+
+  btn?.addEventListener('click', () => fileInput.click());
+  urlInput?.addEventListener('input', () => {
+    if (urlInput.value) { preview.src = urlInput.value; preview.style.display = 'block'; }
+    else { preview.style.display = 'none'; }
   });
+  fileInput?.addEventListener('change', () => handleFile(fileInput.files[0]));
+
+  // Drag-and-drop
+  if (row) {
+    ['dragover', 'dragenter'].forEach((ev) => row.addEventListener(ev, (e) => {
+      e.preventDefault();
+      row.classList.add('dragover');
+    }));
+    ['dragleave', 'dragend', 'drop'].forEach((ev) => row.addEventListener(ev, () => row.classList.remove('dragover')));
+    row.addEventListener('drop', (e) => {
+      e.preventDefault();
+      const file = e.dataTransfer?.files?.[0];
+      if (file) handleFile(file);
+    });
+  }
 }
 
 // --- Login ---
@@ -481,7 +512,12 @@ document.getElementById('logoutButton').addEventListener('click', async () => {
   await initApp();
 });
 
-document.querySelectorAll('.nav-link').forEach((button) => button.addEventListener('click', () => switchView(button.dataset.view)));
+document.querySelectorAll('.nav-link').forEach((button) => button.addEventListener('click', () => {
+  switchView(button.dataset.view);
+  const title = document.getElementById('topbarTitle');
+  if (title) title.textContent = button.textContent.trim();
+  closeSidebar();
+}));
 document.getElementById('newCategoryButton').addEventListener('click', () => fillCategoryForm());
 document.getElementById('newPlanButton').addEventListener('click', () => fillPlanForm());
 document.getElementById('categoryReset').addEventListener('click', () => fillCategoryForm());
@@ -790,6 +826,69 @@ document.getElementById('inventoryList')?.addEventListener('click', async (event
 // --- Image upload setup ---
 setupImageUpload('planImageFile', 'planImageUrl', 'planImagePreview', 'planImageUploadBtn');
 setupImageUpload('bannerImageFile', 'bannerImageUrl', 'bannerImagePreview', 'bannerImageUploadBtn');
+
+// --- Responsive jadvallar: mobil (<768px) da qatorlar kartochkaga aylanadi ---
+// Har bir <td> ga ustun sarlavhasini data-label qilib yozamiz (CSS ::before ishlatadi).
+// app.js render funksiyalarini o'zgartirmasdan, har qanday qayta chizishdan keyin ishlaydi.
+function labelizeTables() {
+  document.querySelectorAll('.table-card table').forEach((table) => {
+    const heads = [...table.querySelectorAll('thead th')].map((th) => th.textContent.trim());
+    if (!heads.length) return;
+    table.querySelectorAll('tbody tr').forEach((tr) => {
+      [...tr.children].forEach((td, i) => {
+        if (heads[i]) td.setAttribute('data-label', heads[i]);
+      });
+    });
+  });
+}
+const contentEl = document.querySelector('.content');
+if (contentEl) {
+  new MutationObserver(() => window.requestAnimationFrame(labelizeTables)).observe(contentEl, { childList: true, subtree: true });
+}
+
+// --- Mobil sidebar (hamburger menu) ---
+const sidebarEl = document.getElementById('sidebar');
+const backdropEl = document.getElementById('sidebarBackdrop');
+function closeSidebar() { sidebarEl?.classList.remove('open'); backdropEl?.classList.remove('show'); }
+function openSidebar() { sidebarEl?.classList.add('open'); backdropEl?.classList.add('show'); }
+document.getElementById('menuToggle')?.addEventListener('click', () => {
+  if (sidebarEl?.classList.contains('open')) closeSidebar(); else openSidebar();
+});
+backdropEl?.addEventListener('click', closeSidebar);
+
+// --- Yordam (Help) bo'limi: akkordeon ---
+const HELP_ITEMS = [
+  { icon: '📊', title: 'Dashboard', body: 'Umumiy statistika: foydalanuvchilar soni, buyurtmalar, tushum grafigi. Bu yerda hech narsa o’zgartirish mumkin emas, faqat ko’rish uchun.' },
+  { icon: '🗂️', title: 'Kategoriyalar', body: 'Mahsulotlar guruhlari. Masalan "Video tahrirlash", "AI asboblar". Kategoriya qo’shsangiz katalogda filtr sifatida chiqadi. Tartib raqami kichik bo’lgani birinchi ko’rinadi.' },
+  { icon: '📦', title: 'Rejalar (Mahsulotlar)', body: 'Sotiladigan obunalar. Har bir rejada: nomi, tavsifi, narxi, chegirma narxi, kategoriyasi, muddat (kunlarda), stok soni. Stok 0 bo’lsa "Tugagan" ko’rinadi. Rasm yuklash mumkin.' },
+  { icon: '🔑', title: 'Inventory', body: 'Avtomatik yetkaziladigan rejalar uchun akkaunt/kalitlar zaxirasi. Har bir sotuvda bittasi avtomatik foydalanuvchiga yuboriladi. Zaxira kamayganda ogohlantirish keladi.' },
+  { icon: '🖼️', title: 'Bannerlar', body: 'Katalog tepasida aylanadigan reklama bannerlari. Sarlavha, matn, tugma, havola va gradient yoki rasm qo’shish mumkin. Havola sifatida ichki action (topup, catalog) yoki tashqi URL yozish mumkin.' },
+  { icon: '❓', title: 'FAQ', body: 'Profil sahifasida ko’rinadigan savol-javoblar. Savol va javob yozing, tartibini (↑/↓) belgilang.' },
+  { icon: '🎟️', title: 'Promokodlar', body: 'Chegirma kodlari. Kod, chegirma turi (foiz/summa), qiymati, minimal buyurtma summasi, amal muddati. Foydalanuvchi checkout’da kiritadi.' },
+  { icon: '⭐', title: 'Sharhlar', body: 'Foydalanuvchilar yozgan sharhlar. Tasdiqlash, rad etish yoki o’chirish mumkin. Faqat tasdiqlangan sharhlar mahsulotda ko’rinadi.' },
+  { icon: '👥', title: 'Foydalanuvchilar', body: 'Ro’yxatdan o’tgan barcha foydalanuvchilar. Qidiruv, bloklash/blokdan chiqarish mumkin. Bloklangan foydalanuvchi botni ham, Mini App’ni ham ishlata olmaydi.' },
+  { icon: '🛒', title: 'Buyurtmalar', body: 'Barcha xaridlar. Statuslar: kutilmoqda, tasdiqlangan, rad etilgan, tugallangan. Admin approve/reject qiladi. CSV export mumkin.' },
+  { icon: '✉️', title: 'Xabar yuborish', body: 'Foydalanuvchilarga Telegram orqali xabar. Individual (bitta Telegram ID ga) yoki Broadcast (hammaga). Broadcast 25 talab parallel yuboriladi.' },
+  { icon: '⚙️', title: 'Sozlamalar', body: 'Karta raqami, cashback foizi, referal bonus, min topup, welcome text, contact text, umumiy qoidalar. Bu yerda o’zgartirilgan narsa butun botga ta’sir qiladi.' },
+];
+function renderHelp() {
+  const root = document.getElementById('helpAccordion');
+  if (!root) return;
+  root.innerHTML = HELP_ITEMS.map((h) => `
+    <div class="accordion-item">
+      <button type="button" class="accordion-header">
+        <span class="accordion-title"><span class="accordion-ico">${h.icon}</span>${h.title}</span>
+        <span class="accordion-caret">▸</span>
+      </button>
+      <div class="accordion-body">${h.body}</div>
+    </div>`).join('');
+}
+document.getElementById('helpAccordion')?.addEventListener('click', (event) => {
+  const header = event.target.closest('.accordion-header');
+  if (!header) return;
+  header.parentElement.classList.toggle('open');
+});
+renderHelp();
 
 initApp().catch((error) => {
   document.getElementById('loginError').textContent = error.message;
