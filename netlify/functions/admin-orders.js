@@ -12,6 +12,7 @@ const {
   fetchPlan,
 } = require('../../shared/db');
 const { processApprovedDelivery } = require('../../shared/delivery-service');
+const { processReferralPayout } = require('../../shared/referral-service');
 
 function json(statusCode, body) {
   return { statusCode, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
@@ -49,6 +50,8 @@ exports.handler = async (event) => {
         if (!delivery?.ok) {
           return json(500, { ok: false, error: delivery?.admin_message || delivery?.message || 'Delivery xatosi', order: await getOrderById(supabase, orderId), delivery });
         }
+        // Referal bonusi (idempotent — avto-to'lov yo'li allaqachon to'lagan bo'lsa qaytadi)
+        await processReferralPayout(supabase, approved.order).catch((e) => console.warn('referral payout warn:', e?.message));
         return json(200, { ...approved, delivery });
       }
       if (action === 'reject') {

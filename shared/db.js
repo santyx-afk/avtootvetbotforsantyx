@@ -350,6 +350,7 @@ async function validatePromoCode(client, code, basePrice) {
   if (!promo) return { ok: false, reason: 'not_found' };
   if (promo.expires_at && new Date(promo.expires_at).getTime() < Date.now()) return { ok: false, reason: 'expired', promo };
   if (promo.max_uses && Number(promo.used_count || 0) >= Number(promo.max_uses)) return { ok: false, reason: 'usage_limit', promo };
+  if (promo.min_order_amount && Number(basePrice || 0) < Number(promo.min_order_amount)) return { ok: false, reason: 'min_order', promo };
   const discount = calculatePromoDiscount(basePrice, promo);
   return { ok: true, promo, discount };
 }
