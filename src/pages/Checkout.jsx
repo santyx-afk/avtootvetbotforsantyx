@@ -54,6 +54,9 @@ export default function Checkout() {
   const balance = cart?.balance || 0;
   const balanceApplied = useBalance ? Math.min(balance, Math.max(0, yourSum - promoDiscount)) : 0;
   const amountPreview = Math.max(0, yourSum - promoDiscount - balanceApplied);
+  // Qoidalar bo'lsagina rozilik talab qilinadi; bo'lmasa blok umuman ko'rinmaydi
+  const hasRules = items.some((i) => i.rules) || Boolean(cart?.general_terms);
+  const canPay = hasRules ? agreed : true;
 
   const applyPromo = async () => {
     const code = promoInput.trim();
@@ -79,7 +82,7 @@ export default function Checkout() {
   };
 
   const place = async () => {
-    if (!agreed || placing) return;
+    if (!canPay || placing) return;
     haptic.impact('medium');
     setPlacing(true);
     try {
@@ -226,10 +229,10 @@ export default function Checkout() {
             {promoError && <div className={styles.promoErr}>{t('checkout.promoInvalid')}</div>}
           </div>
 
-          {/* Qoidalar */}
-          <div className={styles.card}>
-            <div className={styles.cardTitle}>{t('checkout.rulesTitle')}</div>
-            {items.some((i) => i.rules) || cart?.general_terms ? (
+          {/* Qoidalar — faqat admin qoida kiritgan bo'lsa ko'rinadi */}
+          {hasRules && (
+            <div className={styles.card}>
+              <div className={styles.cardTitle}>{t('checkout.rulesTitle')}</div>
               <div className={styles.rulesText}>
                 {items
                   .filter((i) => i.rules)
@@ -240,20 +243,20 @@ export default function Checkout() {
                   ))}
                 {cart?.general_terms ? <p className={styles.generalTerms}>{cart.general_terms}</p> : null}
               </div>
-            ) : null}
-            <label className={styles.agreeRow}>
-              <span
-                className={`${styles.checkbox} ${agreed ? styles.checkboxOn : ''}`}
-                onClick={() => {
-                  haptic.selection();
-                  setAgreed((v) => !v);
-                }}
-              >
-                {agreed && <Icon name="check" size={15} strokeWidth={3} />}
-              </span>
-              <span className={styles.agreeText}>{t('checkout.rulesAgree')}</span>
-            </label>
-          </div>
+              <label className={styles.agreeRow}>
+                <span
+                  className={`${styles.checkbox} ${agreed ? styles.checkboxOn : ''}`}
+                  onClick={() => {
+                    haptic.selection();
+                    setAgreed((v) => !v);
+                  }}
+                >
+                  {agreed && <Icon name="check" size={15} strokeWidth={3} />}
+                </span>
+                <span className={styles.agreeText}>{t('checkout.rulesAgree')}</span>
+              </label>
+            </div>
+          )}
 
           {/* Yakuniy narx */}
           <div className={styles.totals}>
@@ -281,7 +284,7 @@ export default function Checkout() {
             type="button"
             className={styles.payBtn}
             onClick={place}
-            disabled={!agreed || placing}
+            disabled={!canPay || placing}
           >
             {placing ? (
               <Spinner size={18} stroke={2} />
@@ -316,6 +319,7 @@ export default function Checkout() {
           <CopyField
             label={t('checkout.amountToPay')}
             value={formatPrice(order.amount, currency)}
+            copyValue={String(order.amount)}
             big
           />
           <div style={{ height: 10 }} />

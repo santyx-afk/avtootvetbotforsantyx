@@ -94,7 +94,7 @@ export default function Catalog() {
     return (
       <>
         <PageHeader title={t('pages.catalog.title')} />
-        <div className={styles.grid}>
+        <div className="app-container">
           <SkeletonGrid count={6} />
         </div>
       </>
@@ -115,7 +115,16 @@ export default function Catalog() {
 
   const recentIds = getRecentlyViewed();
   const recentProducts = recentIds.map((id) => productsById[id]).filter(Boolean);
-  const showSections = !q && selectedCat === 'all';
+  // "Hammasi" rejimi: qidiruv yo'q va kategoriya tanlanmagan
+  const showAllMode = !q && selectedCat === 'all';
+  const selectedCatName = categoriesWithProducts.find((c) => c.id === selectedCat)?.name || '';
+
+  // Ko'rsatiladigan mahsulotlar (kategoriya bo'yicha filtrlangan) — keyin saralanadi
+  const visibleProducts =
+    q || selectedCat === 'all'
+      ? filtered
+      : filtered.filter((p) => p.category_id === selectedCat);
+  const sortedProducts = sortProducts(visibleProducts, sort);
 
   const renderCard = (p) => (
     <ProductCard
@@ -126,12 +135,6 @@ export default function Catalog() {
       onAddToCart={handleAddToCart}
     />
   );
-
-  const catProducts = (catId) =>
-    sortProducts(
-      filtered.filter((p) => p.category_id === catId),
-      sort,
-    );
 
   return (
     <>
@@ -176,8 +179,8 @@ export default function Catalog() {
         />
       ) : (
         <div className="app-container">
-          {/* Oxirgi ko'rilganlar */}
-          {showSections && recentProducts.length > 0 && (
+          {/* Oxirgi ko'rilganlar — faqat "Hammasi" rejimida */}
+          {showAllMode && recentProducts.length > 0 && (
             <section className={styles.section}>
               <h2 className={styles.sectionTitle}>{t('catalog.recentlyViewed')}</h2>
               <div className={styles.hScroll}>
@@ -190,25 +193,13 @@ export default function Catalog() {
             </section>
           )}
 
-          {showSections ? (
-            categoriesWithProducts.map((c) => {
-              const list = catProducts(c.id);
-              if (!list.length) return null;
-              return (
-                <section key={c.id} className={styles.section}>
-                  <h2 className={styles.sectionTitle}>{c.name}</h2>
-                  <div className={styles.grid}>{list.map(renderCard)}</div>
-                </section>
-              );
-            })
-          ) : (
-            <div className={styles.grid}>
-              {sortProducts(
-                selectedCat === 'all' ? filtered : filtered.filter((p) => p.category_id === selectedCat),
-                sort,
-              ).map(renderCard)}
-            </div>
+          {/* Kategoriya nomi — faqat alohida kategoriya tanlanganda */}
+          {!showAllMode && !q && selectedCatName && (
+            <h2 className={styles.sectionTitle}>{selectedCatName}</h2>
           )}
+
+          {/* Yagona tekis grid — saralash butun ro'yxatga qo'llanadi */}
+          <div className={styles.grid}>{sortedProducts.map(renderCard)}</div>
         </div>
       )}
 
