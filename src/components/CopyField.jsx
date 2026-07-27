@@ -29,12 +29,14 @@ async function copyText(text) {
 }
 
 // Bir tap bilan nusxalanadigan maydon (karta raqami, summa, kredensiallar).
-export default function CopyField({ label, value, big = false }) {
+// copyValue berilsa — clipboard'ga o'sha tushadi (masalan raqam "240000"),
+// value esa faqat ko'rsatish uchun (masalan "240 000 UZS").
+export default function CopyField({ label, value, copyValue, big = false }) {
   const { t } = useI18n();
   const [copied, setCopied] = useState(false);
 
   const onCopy = async () => {
-    const ok = await copyText(String(value));
+    const ok = await copyText(String(copyValue ?? value));
     if (ok) {
       haptic.notification('success');
       setCopied(true);

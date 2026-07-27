@@ -4,7 +4,9 @@ import { haptic } from '../telegram/webapp.js';
 import Icon from './Icon.jsx';
 import styles from './LanguageSwitcher.module.css';
 
-const FLAGS = { uz: '🇺🇿', ru: '🇷🇺', en: '🇬🇧' };
+// Inglizcha uchun bayroq emoji (🇬🇧) ba'zi qurilmalarda "GB" bo'lib ko'rinadi —
+// shuning uchun "EN" matn kodi ishlatiladi.
+const FLAGS = { uz: '🇺🇿', ru: '🇷🇺', en: 'EN' };
 
 // Til tanlash ro'yxati (Profil / Sozlamalar uchun).
 export default function LanguageSwitcher() {

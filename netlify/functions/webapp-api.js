@@ -19,6 +19,7 @@ const {
   getInventoryItemById,
   createOrder,
   generateUniquePrice,
+  expireOrder,
 } = require('../../shared/db');
 const {
   processApprovedOrderDelivery,
@@ -145,6 +146,23 @@ function reviewShape(row) {
   };
 }
 
+// Foydalanuvchining muddati o'tgan tugallanmagan to'lovlarini "expired" ga o'tkazadi.
+// Mini App har ochilganda (init) chaqiriladi — shunda "Kutilmoqda" holatda
+// osilib qolgan buyurtma tarixda "Rad etilgan" bo'lib ko'rinadi.
+async function expireStalePendingOrders(supabase, telegramId) {
+  try {
+    const now = new Date().toISOString();
+    const { data } = await request(supabase, 'orders', {
+      query: `select=*&user_telegram_id=eq.${telegramId}&status=in.(waiting_payment,pending_payment)&expires_at=lt.${encodeURIComponent(now)}`,
+    });
+    for (const order of data || []) {
+      await expireOrder(supabase, order).catch((e) => console.warn('expireOrder warn:', e?.message));
+    }
+  } catch (e) {
+    console.warn('expireStalePendingOrders warn:', e?.message);
+  }
+}
+
 // Buyurtma holatini foydalanuvchi uchun 3 toifaga keltiradi.
 function statusCategory(s) {
   if (['completed', 'approved'].includes(s)) return 'confirmed';
@@ -194,6 +212,8 @@ exports.handler = async (event) => {
     }
 
     if (body.action === 'init') {
+      // Muddati o'tgan tugallanmagan to'lovlarni avtomatik rad etamiz
+      await expireStalePendingOrders(supabase, telegramId);
       const hasPhone = Boolean(userRow?.phone);
       return json(200, {
         ok: true,
@@ -234,8 +254,12 @@ exports.handler = async (event) => {
 
       const [bannersRes, categoriesRes, plansRes, reviewsRes, wishlistRes] = await Promise.all([
         request(supabase, 'banners', {
-          query: 'select=id,title,image_url,link,expires_at&is_active=eq.true&order=sort_order.asc',
-        }).catch(() => ({ data: [] })),
+          query: 'select=id,title,subtitle,btn_text,image_url,link,gradient,expires_at&is_active=eq.true&order=sort_order.asc',
+        }).catch(() =>
+          request(supabase, 'banners', {
+            query: 'select=id,title,image_url,link,expires_at&is_active=eq.true&order=sort_order.asc',
+          }).catch(() => ({ data: [] })),
+        ),
         request(supabase, 'categories', {
           query: 'select=id,name,button_label,sort_order&is_active=eq.true&order=sort_order.asc,created_at.asc',
         }),
@@ -270,9 +294,9 @@ exports.handler = async (event) => {
             inStock,
             rating: ratingMap[p.id] || { avg: 0, count: 0 },
           });
-        })
-        // stock = 0 (auto-yetkazish) obunalar yashiriladi
-        .filter((p) => p.in_stock);
+        });
+      // Eslatma: stok tugagan mahsulotlar ham ko'rsatiladi (ProductCard "Tugagan"
+      // disabled tugmani chiqaradi). Avval bu yerda .filter((p) => p.in_stock) bor edi.
 
       return json(200, {
         ok: true,

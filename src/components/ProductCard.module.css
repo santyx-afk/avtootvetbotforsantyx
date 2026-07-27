@@ -6,6 +6,18 @@
   overflow: hidden;
   color: var(--app-text);
   box-shadow: var(--app-shadow);
+  border: 1px solid transparent;
+}
+
+/* Dark temada kartochka fonga qo'shilib ketmasligi uchun nozik chegara */
+:global([data-theme='dark']) .card {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :global(html:not([data-theme='light'])) .card {
+    border-color: rgba(255, 255, 255, 0.1);
+  }
 }
 
 .card:active {
@@ -76,10 +88,10 @@
 
 .heart {
   position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 32px;
-  height: 32px;
+  top: 8px;
+  right: 8px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -88,6 +100,7 @@
   backdrop-filter: blur(4px);
   color: #fff;
   transition: transform 0.1s ease;
+  z-index: 2;
 }
 
 .heart:active {
@@ -163,4 +176,14 @@
 .addBtnDone {
   background: color-mix(in srgb, #34c759 16%, transparent);
   color: #34c759;
+}
+
+.addBtnDisabled {
+  background: var(--app-separator);
+  color: var(--app-hint);
+  cursor: not-allowed;
+}
+
+.addBtnDisabled:active {
+  transform: none;
 }

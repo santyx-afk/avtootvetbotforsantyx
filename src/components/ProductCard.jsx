@@ -22,6 +22,7 @@ export default function ProductCard({ product, inWishlist, onToggleWishlist, onA
   const { t } = useI18n();
   const [added, setAdded] = useState(false);
   const off = discountPercent(product.old_price, product.price);
+  const outOfStock = product.in_stock === false;
 
   const stop = (e) => {
     e.preventDefault();
@@ -36,6 +37,7 @@ export default function ProductCard({ product, inWishlist, onToggleWishlist, onA
 
   const handleAdd = (e) => {
     stop(e);
+    if (outOfStock) return;
     haptic.impact('medium');
     onAddToCart?.(product);
     setAdded(true);
@@ -78,14 +80,20 @@ export default function ProductCard({ product, inWishlist, onToggleWishlist, onA
             {off > 0 && <span className={styles.oldPrice}>{formatPrice(product.old_price)}</span>}
           </div>
         </div>
-        <button
-          type="button"
-          className={`${styles.addBtn} ${added ? styles.addBtnDone : ''}`}
-          onClick={handleAdd}
-        >
-          <Icon name={added ? 'check' : 'cart'} size={16} strokeWidth={2} />
-          {added ? t('catalog.added') : t('catalog.addToCart')}
-        </button>
+        {outOfStock ? (
+          <button type="button" className={`${styles.addBtn} ${styles.addBtnDisabled}`} onClick={stop} disabled>
+            {t('product.outOfStock')}
+          </button>
+        ) : (
+          <button
+            type="button"
+            className={`${styles.addBtn} ${added ? styles.addBtnDone : ''}`}
+            onClick={handleAdd}
+          >
+            <Icon name={added ? 'check' : 'cart'} size={16} strokeWidth={2} />
+            {added ? t('catalog.added') : t('catalog.addToCart')}
+          </button>
+        )}
       </div>
     </Link>
   );

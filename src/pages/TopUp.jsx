@@ -157,7 +157,7 @@ export default function TopUp() {
               </div>
               {cashbackAmt > 0 && (
                 <div className={styles.previewRow}>
-                  <span>{t('topup.bonus')}</span>
+                  <span>{t('topup.cashbackRow', { percent: config.cashbackPercent })}</span>
                   <span className={styles.bonus}>+{formatPrice(cashbackAmt, currency)}</span>
                 </div>
               )}
@@ -196,7 +196,7 @@ export default function TopUp() {
             <span className={styles.timer}>{mmss}</span>
           </div>
 
-          <CopyField label={t('checkout.amountToPay')} value={formatPrice(order.amount, currency)} big />
+          <CopyField label={t('checkout.amountToPay')} value={formatPrice(order.amount, currency)} copyValue={String(order.amount)} big />
           <div style={{ height: 10 }} />
           <CopyField label={t('checkout.cardNumber')} value={order.card_number} />
 
