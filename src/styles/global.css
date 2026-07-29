@@ -66,6 +66,32 @@
   }
 }
 
+/* Brauzer manual tema toggle (Telegram tashqarisida). data-theme prefers-color-scheme'ni bekor qiladi. */
+:root[data-theme='dark']:not([data-tg-theme]) {
+  --tg-theme-bg-color: #1c1c1e;
+  --tg-theme-text-color: #ffffff;
+  --tg-theme-hint-color: #98989e;
+  --tg-theme-link-color: #6ab3f3;
+  --tg-theme-button-color: #2ea6ff;
+  --tg-theme-button-text-color: #ffffff;
+  --tg-theme-secondary-bg-color: #000000;
+  --tg-theme-section-bg-color: #1c1c1e;
+  --tg-theme-section-separator-color: #2c2c2e;
+  --tg-theme-subtitle-text-color: #98989e;
+}
+:root[data-theme='light']:not([data-tg-theme]) {
+  --tg-theme-bg-color: #ffffff;
+  --tg-theme-text-color: #0f0f0f;
+  --tg-theme-hint-color: #8e8e93;
+  --tg-theme-link-color: #2481cc;
+  --tg-theme-button-color: #2481cc;
+  --tg-theme-button-text-color: #ffffff;
+  --tg-theme-secondary-bg-color: #f1f2f5;
+  --tg-theme-section-bg-color: #ffffff;
+  --tg-theme-section-separator-color: #e6e7ea;
+  --tg-theme-subtitle-text-color: #8e8e93;
+}
+
 * {
   box-sizing: border-box;
   -webkit-tap-highlight-color: transparent;
