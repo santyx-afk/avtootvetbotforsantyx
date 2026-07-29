@@ -11,6 +11,8 @@ import { apiCall } from '../lib/api.js';
 import { useCountdown } from '../hooks/useCountdown.js';
 import { formatPrice } from '../utils/format.js';
 import { haptic } from '../telegram/webapp.js';
+import ReviewModal from '../components/ReviewModal.jsx';
+import { readStorage, writeStorage } from '../utils/storage.js';
 import styles from './Checkout.module.css';
 
 export default function Checkout() {
@@ -31,6 +33,7 @@ export default function Checkout() {
   const [phase, setPhase] = useState('form');
   const [order, setOrder] = useState(null);
   const [statusData, setStatusData] = useState(null);
+  const [showReview, setShowReview] = useState(false); // xariddan keyingi sharh modali
 
   const loadCart = useCallback(async () => {
     setStatus('loading');
@@ -142,6 +145,24 @@ export default function Checkout() {
       haptic.notification('warning');
     }
   }, [phase, statusData?.delivered, statusData?.waiting_stock, statusData?.manual, statusData?.expired]);
+
+  // Muvaffaqiyatli xariddan keyin sharh modalini (shu buyurtma uchun BIR marta) ko'rsatamiz
+  useEffect(() => {
+    if (phase !== 'result' || !order?.order_id || !items[0]?.plan_id) return undefined;
+    const success =
+      statusData &&
+      !statusData.expired &&
+      (statusData.paid || statusData.delivered || statusData.waiting_stock || statusData.manual);
+    if (!success) return undefined;
+    if (readStorage(`reviewedOrder:${order.order_id}`, false)) return undefined;
+    const timer = setTimeout(() => setShowReview(true), 1500);
+    return () => clearTimeout(timer);
+  }, [phase, order, items, statusData?.paid, statusData?.delivered, statusData?.waiting_stock, statusData?.manual, statusData?.expired]);
+
+  const closeReview = () => {
+    setShowReview(false);
+    if (order?.order_id) writeStorage(`reviewedOrder:${order.order_id}`, true);
+  };
 
   /* ---------- Renderlar ---------- */
 
@@ -428,6 +449,10 @@ export default function Checkout() {
           {t('checkout.backToCatalog')}
         </button>
       </div>
+
+      {showReview && (
+        <ReviewModal planId={items[0]?.plan_id} orderId={order?.order_id} onClose={closeReview} />
+      )}
     </div>
   );
 }

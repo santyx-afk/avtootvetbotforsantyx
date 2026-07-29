@@ -26,7 +26,32 @@ export default {
     cart: 'Savat',
     wishlist: 'Sevimli',
     history: 'Tarix',
+    vacancies: 'Vakansiyalar',
     profile: 'Profil',
+  },
+  // --- Vakansiyalar bo'limi (vaqtinchalik — vacancies/feedback prefiksi bilan guruhlangan) ---
+  vacancies: {
+    title: 'Tez orada yangiliklar!',
+    desc: 'Vakansiyalar bo\'limi ustida ish olib borilmoqda. Yangiliklar haqida birinchi bo\'lib xabardor bo\'lish uchun kuzatib boring.',
+  },
+  feedback: {
+    title: 'Fikr va takliflar',
+    desc: 'Bizga o\'z fikringizni, taklifingizni yoki shikoyatingizni yuboring',
+    placeholder: 'Xabaringizni yozing...',
+    send: 'Yuborish',
+    success: 'Xabaringiz yuborildi! Rahmat.',
+    error: 'Xatolik yuz berdi. Qayta urinib ko\'ring.',
+    empty: 'Iltimos, xabar yozing.',
+  },
+  // --- Xariddan keyingi sharh modali (vaqtinchalik/olib tashlanadigan) ---
+  review: {
+    title: 'Xaridingiz uchun rahmat! 🎉',
+    subtitle: 'Xizmatimiz haqida fikringizni bildiring',
+    placeholder: 'Fikringizni yozing... (ixtiyoriy)',
+    submit: 'Yuborish',
+    later: 'Keyinroq',
+    success: 'Fikringiz uchun rahmat! ⭐',
+    selectRating: 'Iltimos, baho qo\'ying',
   },
   onboarding: {
     skip: 'O\'tkazib yuborish',

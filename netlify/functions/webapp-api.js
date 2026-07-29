@@ -28,11 +28,28 @@ const {
 } = require('../../shared/delivery-service');
 const { authenticate, signJwt } = require('../../shared/webapp-auth');
 const { verifyWebLoginCode } = require('../../shared/web-auth-service');
+const { sendMessage } = require('../../shared/telegram');
 
 const PAYMENT_WARN_SUPPORT = (process.env.SUPPORT_USERNAME || '@santyx').replace(/^@?/, '@');
 
 function cardNumber(settings) {
   return settings?.seller_card_number || process.env.PAYMENT_CARD_NUMBER || '';
+}
+
+// Admin Telegram chat ID larini sozlama va env dan yig'adi.
+function adminChatIds(settings) {
+  return [
+    ...new Set(
+      [
+        settings?.admin_telegram_id,
+        process.env.ADMIN_CHAT_ID,
+        process.env.ADMIN_TELEGRAM_ID,
+        ...(process.env.ADMIN_TELEGRAM_IDS || '').split(','),
+      ]
+        .map((x) => String(x || '').trim())
+        .filter(Boolean),
+    ),
+  ];
 }
 
 // Yetkazilgan buyurtma elementlaridan kredensiallarni (deshifrlangan) chiqaradi.
@@ -477,20 +494,50 @@ exports.handler = async (event) => {
       if (!productId) return json(400, { ok: false, error: 'no_product_id' });
       if (!(rating >= 1 && rating <= 5)) return json(400, { ok: false, error: 'bad_rating' });
 
+      const orderId = body.orderId || null;
       const userName = acctUser.first_name || 'Foydalanuvchi';
-      const { data } = await request(supabase, 'reviews', {
-        method: 'POST',
-        query: 'on_conflict=plan_id,user_telegram_id',
-        headers: { Prefer: 'return=representation,resolution=merge-duplicates' },
-        body: {
-          plan_id: productId,
-          user_telegram_id: telegramId,
-          user_name: userName,
-          rating,
-          text,
-          updated_at: new Date().toISOString(),
-        },
-      });
+      // on_conflict=(plan_id,user_telegram_id) — bir foydalanuvchi bir reja uchun bitta sharh
+      // (qayta yuborilsa yangilanadi) => amalda "buyurtma uchun 1 ta sharh" cheklovi.
+      const reviewBody = {
+        plan_id: productId,
+        user_telegram_id: telegramId,
+        user_name: userName,
+        rating,
+        text,
+        updated_at: new Date().toISOString(),
+      };
+      if (orderId) reviewBody.order_id = orderId;
+      let data;
+      try {
+        ({ data } = await request(supabase, 'reviews', {
+          method: 'POST',
+          query: 'on_conflict=plan_id,user_telegram_id',
+          headers: { Prefer: 'return=representation,resolution=merge-duplicates' },
+          body: reviewBody,
+        }));
+      } catch (e) {
+        // order_id ustuni hali qo'shilmagan bo'lishi mumkin — usiz qayta urinamiz
+        delete reviewBody.order_id;
+        ({ data } = await request(supabase, 'reviews', {
+          method: 'POST',
+          query: 'on_conflict=plan_id,user_telegram_id',
+          headers: { Prefer: 'return=representation,resolution=merge-duplicates' },
+          body: reviewBody,
+        }));
+      }
+
+      // Adminга Telegram xabari (best-effort — sharhni bloklamaydi)
+      try {
+        const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const who = acctUser.username ? `@${acctUser.username}` : userName;
+        const settings = await fetchSettings(supabase).catch(() => null);
+        const admins = adminChatIds(settings);
+        const msg = `⭐ Yangi sharh (${rating}/5): ${esc(who)}${text ? ` — ${esc(text)}` : ''}`;
+        await Promise.all(admins.map((id) => sendMessage(id, msg, null).catch(() => {})));
+      } catch {
+        /* ignore */
+      }
+
       return json(200, { ok: true, review: data?.[0] ? reviewShape(data[0]) : null });
     }
 
@@ -920,6 +967,26 @@ exports.handler = async (event) => {
       // Wishlistda stock=0 obunalar ham ko'rsatiladi (foydalanuvchi o'chira olishi uchun).
 
       return json(200, { ok: true, items });
+    }
+
+    // Vaqtinchalik "Vakansiyalar" bo'limi — fikr/taklif yuborish (adminга Telegram xabari).
+    if (body.action === 'send-feedback') {
+      const message = String(body.message || '').trim().slice(0, 1000);
+      if (!message) return json(400, { ok: false, error: 'empty_message' });
+
+      const esc = (s) =>
+        String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const uname = acctUser.username ? `@${acctUser.username}` : acctUser.first_name || 'Foydalanuvchi';
+      const text = `📝 Yangi fikr:\nFoydalanuvchi: ${esc(uname)} (ID: ${telegramId})\nXabar: ${esc(message)}`;
+
+      const settings = await fetchSettings(supabase).catch(() => null);
+      const admins = adminChatIds(settings);
+      await Promise.all(
+        admins.map((id) =>
+          sendMessage(id, text, null).catch((e) => console.warn('feedback send warn:', e?.message)),
+        ),
+      );
+      return json(200, { ok: true });
     }
 
     return json(400, { ok: false, error: 'unknown_action' });

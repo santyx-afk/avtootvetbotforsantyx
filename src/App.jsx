@@ -14,6 +14,7 @@ import TopUp from './pages/TopUp.jsx';
 import Wishlist from './pages/Wishlist.jsx';
 import History from './pages/History.jsx';
 import Profile from './pages/Profile.jsx';
+import Vacancies from './pages/Vacancies.jsx'; // vaqtinchalik bo'lim
 import Landing from './pages/Landing.jsx';
 import WebLogin from './pages/WebLogin.jsx';
 import { useTelegram } from './telegram/TelegramProvider.jsx';
@@ -128,6 +129,7 @@ export default function App() {
           <Route path="/cart" element={<Cart />} />
           <Route path="/wishlist" element={<Wishlist />} />
           <Route path="/history" element={<History />} />
+          <Route path="/vacancies" element={<Vacancies />} /> {/* vaqtinchalik bo'lim */}
           <Route path="/profile" element={<Profile />} />
         </Route>
         <Route path="/" element={<Navigate to="/catalog" replace />} />
