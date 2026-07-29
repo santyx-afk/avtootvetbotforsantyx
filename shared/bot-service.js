@@ -505,6 +505,24 @@ async function handleStart({ supabase, message }) {
     trackEvent(supabase, { eventType: 'start_used', telegramId: message.from.id }).catch(() => {}),
   ];
 
+  const startPayload = String(message.text || '').split(/\s+/)[1] || '';
+
+  // Brauzer orqali login: foydalanuvchiga 6 xonali tasdiqlash kodini yuboramiz.
+  if (startPayload === 'web_login') {
+    const { generateWebLoginCode } = require('./web-auth-service');
+    tasks.push(
+      generateWebLoginCode(supabase, message.from.id)
+        .then((code) =>
+          sendMessage(
+            message.chat.id,
+            ['🔐 <b>Saytga kirish kodi</b>', '', `Kod: <code>${code}</code>`, '', 'Shu kodni brauzerdagi saytga kiriting. Kod 5 daqiqa ichida amal qiladi.'].join('\n'),
+            null,
+          ),
+        )
+        .catch((e) => console.warn('web_login code warn:', e?.message)),
+    );
+  }
+
   const ref = String(message.text || '').match(/^\/start\s+ref_(\d+)/);
   if (ref && ref[1] !== String(message.from.id)) {
     const { request } = require('./db');
