@@ -28,11 +28,28 @@ const {
 } = require('../../shared/delivery-service');
 const { authenticate, signJwt } = require('../../shared/webapp-auth');
 const { verifyWebLoginCode } = require('../../shared/web-auth-service');
+const { sendMessage } = require('../../shared/telegram');
 
 const PAYMENT_WARN_SUPPORT = (process.env.SUPPORT_USERNAME || '@santyx').replace(/^@?/, '@');
 
 function cardNumber(settings) {
   return settings?.seller_card_number || process.env.PAYMENT_CARD_NUMBER || '';
+}
+
+// Admin Telegram chat ID larini sozlama va env dan yig'adi.
+function adminChatIds(settings) {
+  return [
+    ...new Set(
+      [
+        settings?.admin_telegram_id,
+        process.env.ADMIN_CHAT_ID,
+        process.env.ADMIN_TELEGRAM_ID,
+        ...(process.env.ADMIN_TELEGRAM_IDS || '').split(','),
+      ]
+        .map((x) => String(x || '').trim())
+        .filter(Boolean),
+    ),
+  ];
 }
 
 // Yetkazilgan buyurtma elementlaridan kredensiallarni (deshifrlangan) chiqaradi.
@@ -920,6 +937,26 @@ exports.handler = async (event) => {
       // Wishlistda stock=0 obunalar ham ko'rsatiladi (foydalanuvchi o'chira olishi uchun).
 
       return json(200, { ok: true, items });
+    }
+
+    // Vaqtinchalik "Vakansiyalar" bo'limi — fikr/taklif yuborish (adminга Telegram xabari).
+    if (body.action === 'send-feedback') {
+      const message = String(body.message || '').trim().slice(0, 1000);
+      if (!message) return json(400, { ok: false, error: 'empty_message' });
+
+      const esc = (s) =>
+        String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const uname = acctUser.username ? `@${acctUser.username}` : acctUser.first_name || 'Foydalanuvchi';
+      const text = `📝 Yangi fikr:\nFoydalanuvchi: ${esc(uname)} (ID: ${telegramId})\nXabar: ${esc(message)}`;
+
+      const settings = await fetchSettings(supabase).catch(() => null);
+      const admins = adminChatIds(settings);
+      await Promise.all(
+        admins.map((id) =>
+          sendMessage(id, text, null).catch((e) => console.warn('feedback send warn:', e?.message)),
+        ),
+      );
+      return json(200, { ok: true });
     }
 
     return json(400, { ok: false, error: 'unknown_action' });

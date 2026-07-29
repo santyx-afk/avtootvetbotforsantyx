@@ -125,6 +125,13 @@ const PATHS = {
       <path d="M12 7v5l3 2" />
     </>
   ),
+  briefcase: (
+    <>
+      <rect x="3" y="7" width="18" height="13" rx="2" />
+      <path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+      <path d="M3 12.5h18" />
+    </>
+  ),
 };
 
 export default function Icon({ name, size = 24, strokeWidth = 1.9, filled = false, style, className }) {

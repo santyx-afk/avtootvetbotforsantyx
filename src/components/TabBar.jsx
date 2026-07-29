@@ -10,6 +10,7 @@ const TABS = [
   { to: '/cart', icon: 'cart', key: 'cart' },
   { to: '/wishlist', icon: 'wishlist', key: 'wishlist' },
   { to: '/history', icon: 'history', key: 'history' },
+  { to: '/vacancies', icon: 'briefcase', key: 'vacancies' }, // vaqtinchalik bo'lim
   { to: '/profile', icon: 'profile', key: 'profile' },
 ];
 

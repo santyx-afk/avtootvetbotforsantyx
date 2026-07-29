@@ -26,7 +26,22 @@ export default {
     cart: 'Cart',
     wishlist: 'Wishlist',
     history: 'History',
+    vacancies: 'Vacancies',
     profile: 'Profile',
+  },
+  // --- Vacancies section (temporary — grouped under vacancies/feedback) ---
+  vacancies: {
+    title: 'Coming soon!',
+    desc: 'The vacancies section is under development. Stay tuned for updates.',
+  },
+  feedback: {
+    title: 'Feedback',
+    desc: 'Send us your feedback, suggestions or complaints',
+    placeholder: 'Write your message...',
+    send: 'Send',
+    success: 'Message sent! Thank you.',
+    error: 'Something went wrong. Please try again.',
+    empty: 'Please write a message.',
   },
   onboarding: {
     skip: 'Skip',
