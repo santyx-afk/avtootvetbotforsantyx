@@ -10,6 +10,7 @@ import Skeleton from '../components/Skeleton.jsx';
 import { useI18n } from '../i18n/I18nProvider.jsx';
 import { useTelegram } from '../telegram/TelegramProvider.jsx';
 import { apiCall } from '../lib/api.js';
+import { readCache, writeCache } from '../lib/cache.js';
 import { openTelegramLink, haptic } from '../telegram/webapp.js';
 import { formatPrice, formatDate } from '../utils/format.js';
 import styles from './Profile.module.css';
@@ -31,13 +32,22 @@ export default function Profile() {
   const [data, setData] = useState(null);
 
   const load = useCallback(async () => {
-    setStatus('loading');
+    // Cache til bo'yicha (profil javobi tilga bog'liq — FAQ va h.k.).
+    const cacheKey = `profile:${lang}`;
+    const cached = readCache(cacheKey);
+    if (cached) {
+      setData(cached);
+      setStatus('ready');
+    } else {
+      setStatus('loading');
+    }
     try {
       const res = await apiCall('profile', { lang });
       setData(res);
       setStatus('ready');
+      writeCache(cacheKey, res);
     } catch {
-      setStatus('error');
+      if (!cached) setStatus('error');
     }
   }, [lang]);
 
