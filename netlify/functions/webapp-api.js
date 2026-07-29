@@ -805,9 +805,22 @@ exports.handler = async (event) => {
     if (body.action === 'order-status') {
       const orderId = body.orderId;
       if (!orderId) return json(400, { ok: false, error: 'no_order_id' });
-      const order = await getOrderById(supabase, orderId);
+      let order = await getOrderById(supabase, orderId);
       if (!order || String(order.user_telegram_id) !== telegramId) {
         return json(404, { ok: false, error: 'not_found' });
+      }
+      // Taymer tugagan bo'lsa — darhol "expired" qilamiz va band qilingan inventarni
+      // "available" ga qaytaramiz (har daqiqalik maintenance cron'ini kutmasdan).
+      if (
+        ['waiting_payment', 'pending_payment'].includes(order.status) &&
+        order.expires_at &&
+        new Date(order.expires_at).getTime() < Date.now()
+      ) {
+        const expired = await expireOrder(supabase, order).catch((e) => {
+          console.warn('order-status expire warn:', e?.message);
+          return null;
+        });
+        if (expired) order = expired;
       }
       const paid = ['payment_detected', 'delivering', 'completed'].includes(order.status);
       const delivered = order.delivery_status === 'delivered' || order.status === 'completed';
