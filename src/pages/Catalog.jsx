@@ -10,6 +10,7 @@ import BottomSheet from '../components/BottomSheet.jsx';
 import Icon from '../components/Icon.jsx';
 import { useI18n } from '../i18n/I18nProvider.jsx';
 import { apiCall } from '../lib/api.js';
+import { readCache, writeCache } from '../lib/cache.js';
 import { useProductActions } from '../hooks/useProductActions.js';
 import { getRecentlyViewed } from '../utils/storage.js';
 import { haptic } from '../telegram/webapp.js';
@@ -43,14 +44,24 @@ export default function Catalog() {
   const [sheetOpen, setSheetOpen] = useState(false);
 
   const load = useCallback(async () => {
-    setStatus('loading');
+    // Cache bo'lsa — darhol ko'rsatamiz (spinnersiz), keyin fonda yangilaymiz.
+    const cached = readCache('catalog');
+    if (cached) {
+      setData(cached);
+      setWishlist(new Set(cached.wishlist || []));
+      setStatus('ready');
+    } else {
+      setStatus('loading');
+    }
     try {
       const res = await apiCall('catalog');
       setData(res);
       setWishlist(new Set(res.wishlist || []));
       setStatus('ready');
+      writeCache('catalog', res);
     } catch {
-      setStatus('error');
+      // Cache bor bo'lsa eski ma'lumot qoladi, xato ko'rsatmaymiz.
+      if (!cached) setStatus('error');
     }
   }, []);
 

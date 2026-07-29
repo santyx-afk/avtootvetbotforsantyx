@@ -17,6 +17,13 @@
   framework = "#custom"
   autoLaunch = false
 
+# Vite hash bilan nomlangan (o'zgarmas) asset'lar — uzoq muddat cache.
+# Shu tufayli Telegram webview JS/CSS ni har ochilishda qayta yuklamaydi.
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
 # API chaqiruvlari Netlify funksiyalariga
 [[redirects]]
   from = "/api/*"
