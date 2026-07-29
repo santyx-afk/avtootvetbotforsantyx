@@ -14,9 +14,11 @@ import TopUp from './pages/TopUp.jsx';
 import Wishlist from './pages/Wishlist.jsx';
 import History from './pages/History.jsx';
 import Profile from './pages/Profile.jsx';
+import Landing from './pages/Landing.jsx';
+import WebLogin from './pages/WebLogin.jsx';
 import { useTelegram } from './telegram/TelegramProvider.jsx';
 import { useI18n } from './i18n/I18nProvider.jsx';
-import { apiCall } from './lib/api.js';
+import { apiCall, getToken, clearToken } from './lib/api.js';
 import {
   isOnboarded,
   setOnboarded,
@@ -29,26 +31,36 @@ const SUPPORT = `@${(import.meta.env.VITE_SUPPORT_USERNAME || 'santyx').replace(
 export default function App() {
   const { isTelegram } = useTelegram();
   const { t } = useI18n();
-  const [booting, setBooting] = useState(() => isTelegram);
+
+  // Ilova (to'liq funksiya) faqat Telegram Mini App'da YOKI brauzerda JWT bo'lsa ishlaydi.
+  const [authed, setAuthed] = useState(() => isTelegram || Boolean(getToken()));
+  const [booting, setBooting] = useState(() => isTelegram || Boolean(getToken()));
   const [blocked, setBlocked] = useState(false);
   const [onboarded, setOnboardedState] = useState(() => isOnboarded());
   const [contactSaved, setContactSavedState] = useState(() => isContactSaved());
 
   useEffect(() => {
+    if (!authed) {
+      setBooting(false);
+      return undefined;
+    }
     let active = true;
+    setBooting(true);
     const timer = setTimeout(() => active && setBooting(false), 6000);
     (async () => {
-      if (isTelegram) {
-        try {
-          const res = await apiCall('init');
-          if (active && res?.hasPhone) {
-            setContactSaved(true);
-            setContactSavedState(true);
-          }
-        } catch (err) {
-          if (active && (err?.status === 403 || err?.message === 'blocked')) {
-            setBlocked(true);
-          }
+      try {
+        const res = await apiCall('init');
+        if (active && res?.hasPhone) {
+          setContactSaved(true);
+          setContactSavedState(true);
+        }
+      } catch (err) {
+        if (active && (err?.status === 403 || err?.message === 'blocked')) {
+          setBlocked(true);
+        } else if (active && err?.status === 401 && !isTelegram) {
+          // JWT yaroqsiz — login sahifasiga qaytamiz
+          clearToken();
+          setAuthed(false);
         }
       }
       if (active) {
@@ -60,7 +72,17 @@ export default function App() {
       active = false;
       clearTimeout(timer);
     };
-  }, [isTelegram]);
+  }, [authed, isTelegram]);
+
+  // Brauzer, hali login qilinmagan → Landing / Login sahifalari
+  if (!authed) {
+    return (
+      <Routes>
+        <Route path="/login" element={<WebLogin onSuccess={() => setAuthed(true)} />} />
+        <Route path="*" element={<Landing />} />
+      </Routes>
+    );
+  }
 
   if (booting) return <FullScreenLoader />;
 
@@ -87,7 +109,8 @@ export default function App() {
     );
   }
 
-  if (isTelegram && !contactSaved) {
+  // Kontakt (telefon) — Telegram'da ham, brauzerda ham so'raladi (ContactGate ichida moslashadi).
+  if (!contactSaved) {
     return <ContactGate onDone={() => setContactSavedState(true)} />;
   }
 

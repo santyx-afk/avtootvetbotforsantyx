@@ -93,3 +93,19 @@
   font-size: 15px;
   color: var(--app-hint);
 }
+
+.phoneInput {
+  width: 100%;
+  padding: 15px 16px;
+  border-radius: var(--app-radius);
+  border: 1px solid var(--app-separator);
+  background: var(--app-surface-2);
+  color: var(--app-text);
+  font-size: 16px;
+  text-align: center;
+}
+
+.phoneInput:focus {
+  outline: none;
+  border-color: var(--app-accent);
+}

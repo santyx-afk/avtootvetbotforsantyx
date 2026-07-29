@@ -2,7 +2,7 @@ import { useState } from 'react';
 import Icon from './Icon.jsx';
 import Spinner from './Spinner.jsx';
 import { useI18n } from '../i18n/I18nProvider.jsx';
-import { requestContact, haptic } from '../telegram/webapp.js';
+import { requestContact, haptic, isTelegram } from '../telegram/webapp.js';
 import { apiCall } from '../lib/api.js';
 import { setContactSaved } from '../utils/storage.js';
 import styles from './ContactGate.module.css';
@@ -19,9 +19,24 @@ function extractPhone(payload) {
 }
 
 // Birinchi ochilishda telefon raqam so'raydi va backend orqali Supabase'ga saqlaydi.
+// Telegram'da: requestContact (kontakt ulashish). Brauzerda: telefon input maydoni.
 export default function ContactGate({ onDone }) {
   const { t } = useI18n();
+  const inTelegram = isTelegram();
   const [status, setStatus] = useState('idle'); // idle | saving | error | denied
+  const [phoneInput, setPhoneInput] = useState('');
+
+  const saveAndFinish = async (phone, raw = null) => {
+    try {
+      await apiCall('save-contact', { phone, raw });
+      setContactSaved(true);
+      haptic.notification('success');
+      onDone?.();
+    } catch {
+      haptic.notification('error');
+      setStatus('error');
+    }
+  };
 
   const handleShare = async () => {
     haptic.impact('medium');
@@ -32,18 +47,19 @@ export default function ContactGate({ onDone }) {
       setStatus('denied');
       return;
     }
-    try {
-      const phone = extractPhone(res.payload);
-      await apiCall('save-contact', { phone, raw: res.payload || null });
-      setContactSaved(true);
-      haptic.notification('success');
-      onDone?.();
-    } catch {
-      // requestContact bo'lsa ham, kontakt botga yuboriladi (webhook ushlaydi),
-      // shuning uchun bloklamaymiz — lekin xatoni ko'rsatamiz va davom etishga ruxsat beramiz.
-      haptic.notification('error');
-      setStatus('error');
+    await saveAndFinish(extractPhone(res.payload), res.payload || null);
+  };
+
+  const handleBrowserSubmit = async (e) => {
+    e.preventDefault();
+    const digits = phoneInput.replace(/\D/g, '');
+    if (digits.length < 7) {
+      setStatus('denied');
+      return;
     }
+    haptic.impact('medium');
+    setStatus('saving');
+    await saveAndFinish(`+${digits}`);
   };
 
   const proceedAnyway = () => {
@@ -68,20 +84,45 @@ export default function ContactGate({ onDone }) {
 
       <div className={styles.footer}>
         <p className={styles.why}>{t('contact.why')}</p>
-        <button
-          type="button"
-          className={`${styles.cta} pressable`}
-          onClick={handleShare}
-          disabled={saving}
-        >
-          {saving ? (
-            <>
-              <Spinner size={18} stroke={2} /> {t('contact.saving')}
-            </>
-          ) : (
-            t('contact.shareButton')
-          )}
-        </button>
+
+        {inTelegram ? (
+          <button
+            type="button"
+            className={`${styles.cta} pressable`}
+            onClick={handleShare}
+            disabled={saving}
+          >
+            {saving ? (
+              <>
+                <Spinner size={18} stroke={2} /> {t('contact.saving')}
+              </>
+            ) : (
+              t('contact.shareButton')
+            )}
+          </button>
+        ) : (
+          <form onSubmit={handleBrowserSubmit} style={{ display: 'grid', gap: 10, width: '100%', maxWidth: 400 }}>
+            <input
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel"
+              className={styles.phoneInput}
+              placeholder="+998 90 123 45 67"
+              value={phoneInput}
+              onChange={(e) => setPhoneInput(e.target.value)}
+            />
+            <button type="submit" className={`${styles.cta} pressable`} disabled={saving}>
+              {saving ? (
+                <>
+                  <Spinner size={18} stroke={2} /> {t('contact.saving')}
+                </>
+              ) : (
+                t('contact.shareButton')
+              )}
+            </button>
+          </form>
+        )}
+
         {status === 'error' && (
           <button type="button" className={styles.secondary} onClick={proceedAnyway}>
             {t('common.continue')}

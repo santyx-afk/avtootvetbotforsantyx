@@ -45,8 +45,9 @@ export function applyThemeVars(wa) {
       if (value) root.style.setProperty(`--tg-theme-${key.replace(/_/g, '-')}`, value);
     });
   }
-  const scheme = wa?.colorScheme || 'light';
-  root.setAttribute('data-theme', scheme);
+  // Telegram ichida bo'lsagina data-theme'ni Telegram sxemasidan o'rnatamiz.
+  // Brauzerda data-theme'ni theme.js boshqaradi — bu yerda tegmaymiz.
+  if (wa?.colorScheme) root.setAttribute('data-theme', wa.colorScheme);
 
   // Header/background rangini sahifa foniga moslash
   try {
@@ -113,6 +114,32 @@ export function openLink(url) {
   const wa = getWebApp();
   if (wa?.openLink) wa.openLink(url);
   else window.open(url, '_blank');
+}
+
+// Universal ulashish: Telegram'da t.me/share, brauzerda navigator.share yoki clipboard.
+export async function shareUrl(url, text = '') {
+  const wa = getWebApp();
+  if (wa?.openTelegramLink) {
+    wa.openTelegramLink(
+      `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`,
+    );
+    return { ok: true, via: 'telegram' };
+  }
+  try {
+    if (navigator.share) {
+      await navigator.share({ url, text });
+      return { ok: true, via: 'native' };
+    }
+  } catch {
+    /* foydalanuvchi bekor qildi yoki qo'llab-quvvatlanmaydi */
+  }
+  try {
+    await navigator.clipboard.writeText(url);
+    return { ok: true, via: 'clipboard' };
+  } catch {
+    window.open(url, '_blank');
+    return { ok: true, via: 'window' };
+  }
 }
 
 /* ---------------- Kontakt (telefon) so'rash ---------------- */

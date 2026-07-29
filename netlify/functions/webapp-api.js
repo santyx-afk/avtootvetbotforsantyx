@@ -26,7 +26,8 @@ const {
   resolveAutoAccount,
   resolveLicenseKey,
 } = require('../../shared/delivery-service');
-const { validateInitData } = require('../../shared/webapp-auth');
+const { authenticate, signJwt } = require('../../shared/webapp-auth');
+const { verifyWebLoginCode } = require('../../shared/web-auth-service');
 
 const PAYMENT_WARN_SUPPORT = (process.env.SUPPORT_USERNAME || '@santyx').replace(/^@?/, '@');
 
@@ -170,6 +171,41 @@ function statusCategory(s) {
   return 'waiting';
 }
 
+// Brauzer (Landing page) uchun auth TALAB QILMAYDIGAN katalog.
+// Faqat faol mahsulotlar; foydalanuvchiga xos ma'lumot (wishlist/savat) YO'Q.
+async function handlePublicCatalog(supabase) {
+  const [categoriesRes, plansRes, reviewsRes] = await Promise.all([
+    request(supabase, 'categories', {
+      query: 'select=id,name,button_label,sort_order&is_active=eq.true&order=sort_order.asc,created_at.asc',
+    }).catch(() => ({ data: [] })),
+    request(supabase, 'plans', {
+      query: 'select=*&is_active=eq.true&order=sort_order.asc,created_at.asc',
+    }),
+    request(supabase, 'reviews', { query: 'select=plan_id,rating&is_hidden=eq.false&status=neq.rejected' })
+      .catch(() => request(supabase, 'reviews', { query: 'select=plan_id,rating&is_hidden=eq.false' }).catch(() => ({ data: [] }))),
+  ]);
+
+  const plans = plansRes.data || [];
+  const ratingMap = aggregateRatings(reviewsRes.data || []);
+  const stockMap = await availableStockByPlan(supabase).catch(() => ({}));
+
+  const parentIds = new Set(plans.map((p) => p.parent_plan_id).filter(Boolean));
+  const products = plans
+    .filter((p) => !parentIds.has(p.id))
+    .map((p) => {
+      const auto = AUTO_DELIVERY.includes(p.delivery_type);
+      const stock = auto ? stockMap[p.id] || 0 : null;
+      const inStock = auto ? stock > 0 : true;
+      return productShape(p, { stock, inStock, rating: ratingMap[p.id] || { avg: 0, count: 0 } });
+    });
+
+  return json(200, {
+    ok: true,
+    categories: (categoriesRes.data || []).map((c) => ({ id: c.id, name: c.button_label || c.name, sort_order: c.sort_order })),
+    products,
+  });
+}
+
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') return json(405, { ok: false, error: 'method_not_allowed' });
 
@@ -180,27 +216,46 @@ exports.handler = async (event) => {
     return json(400, { ok: false, error: 'invalid_json' });
   }
 
-  const initData =
-    event.headers['x-telegram-init-data'] ||
-    event.headers['X-Telegram-Init-Data'] ||
-    body.initData ||
-    '';
+  const supabase = getAdminClient();
 
-  const auth = validateInitData(initData);
+  // ---- Public amallar (auth talab qilinmaydi — brauzer Landing/login uchun) ----
+  if (body.action === 'public-catalog') {
+    try {
+      return await handlePublicCatalog(supabase);
+    } catch (error) {
+      console.error('public-catalog error', error);
+      return json(500, { ok: false, error: 'server_error' });
+    }
+  }
+  if (body.action === 'verify-web-code') {
+    try {
+      const result = await verifyWebLoginCode(supabase, body.code);
+      if (!result.ok) return json(400, { ok: false, error: result.reason });
+      const token = signJwt({ telegram_id: result.telegram_id });
+      return json(200, { ok: true, token, telegram_id: result.telegram_id });
+    } catch (error) {
+      console.error('verify-web-code error', error);
+      return json(500, { ok: false, error: 'server_error' });
+    }
+  }
+
+  // ---- Autentifikatsiya: Telegram initData (Mini App) YOKI JWT (brauzer) ----
+  const auth = authenticate(event.headers, body);
   if (!auth.ok) return json(401, { ok: false, error: 'unauthorized', reason: auth.reason });
 
-  const supabase = getAdminClient();
+  const isTelegramSource = auth.source === 'telegram';
   const tgUser = auth.user;
   const telegramId = String(tgUser.id);
 
   try {
-    // Foydalanuvchini yangilash (phone/is_blocked ga tegmaydi) va blok holatini
-    // o'qishni PARALLEL bajaramiz — ular bir-biriga bog'liq emas, shuning uchun
-    // xavfsiz va har so'rovda bitta round-trip tejaydi.
+    // Telegram manbadan kelganda foydalanuvchini yangilaymiz (JWT'da profil ma'lumoti yo'q).
+    // Blok holati + profil ma'lumotini o'qishni parallel bajaramiz.
     const [, userRowRes] = await Promise.all([
-      upsertUser(supabase, tgUser).catch((e) => console.warn('upsertUser warn:', e?.message)),
+      isTelegramSource
+        ? upsertUser(supabase, tgUser).catch((e) => console.warn('upsertUser warn:', e?.message))
+        : Promise.resolve(),
       request(supabase, 'users', {
-        query: `select=phone,is_blocked&telegram_id=eq.${telegramId}&limit=1`,
+        query: `select=phone,is_blocked,full_name,username,language_code,photo_url&telegram_id=eq.${telegramId}&limit=1`,
       }).catch((e) => {
         console.warn('user row read warn:', e?.message);
         return { data: [] };
@@ -211,6 +266,19 @@ exports.handler = async (event) => {
       return json(403, { ok: false, error: 'blocked' });
     }
 
+    // Ko'rsatish uchun foydalanuvchi obyekti: Telegram'da to'g'ridan-to'g'ri,
+    // brauzerda (JWT) users jadvalidagi ma'lumotdan quramiz.
+    const acctUser = isTelegramSource
+      ? tgUser
+      : {
+          id: telegramId,
+          first_name: (userRow?.full_name || '').trim().split(/\s+/)[0] || null,
+          last_name: (userRow?.full_name || '').trim().split(/\s+/).slice(1).join(' ') || null,
+          username: userRow?.username || null,
+          language_code: userRow?.language_code || null,
+          photo_url: userRow?.photo_url || null,
+        };
+
     if (body.action === 'init') {
       // Muddati o'tgan tugallanmagan to'lovlarni avtomatik rad etamiz
       await expireStalePendingOrders(supabase, telegramId);
@@ -220,10 +288,10 @@ exports.handler = async (event) => {
         hasPhone,
         user: {
           id: telegramId,
-          first_name: tgUser.first_name || null,
-          last_name: tgUser.last_name || null,
-          username: tgUser.username || null,
-          language_code: tgUser.language_code || null,
+          first_name: acctUser.first_name || null,
+          last_name: acctUser.last_name || null,
+          username: acctUser.username || null,
+          language_code: acctUser.language_code || null,
         },
       });
     }
@@ -409,7 +477,7 @@ exports.handler = async (event) => {
       if (!productId) return json(400, { ok: false, error: 'no_product_id' });
       if (!(rating >= 1 && rating <= 5)) return json(400, { ok: false, error: 'bad_rating' });
 
-      const userName = tgUser.first_name || 'Foydalanuvchi';
+      const userName = acctUser.first_name || 'Foydalanuvchi';
       const { data } = await request(supabase, 'reviews', {
         method: 'POST',
         query: 'on_conflict=plan_id,user_telegram_id',
@@ -661,12 +729,12 @@ exports.handler = async (event) => {
       return json(200, {
         ok: true,
         user: {
-          first_name: tgUser.first_name || null,
-          last_name: tgUser.last_name || null,
-          username: tgUser.username || null,
+          first_name: acctUser.first_name || null,
+          last_name: acctUser.last_name || null,
+          username: acctUser.username || null,
           phone: u.phone || null,
           birthday: u.birthday || null,
-          photo_url: u.photo_url || tgUser.photo_url || null,
+          photo_url: u.photo_url || acctUser.photo_url || null,
         },
         balance: Number(wallet?.balance || 0),
         transactions: (txRes.data || []).map((tx) => ({
@@ -737,9 +805,22 @@ exports.handler = async (event) => {
     if (body.action === 'order-status') {
       const orderId = body.orderId;
       if (!orderId) return json(400, { ok: false, error: 'no_order_id' });
-      const order = await getOrderById(supabase, orderId);
+      let order = await getOrderById(supabase, orderId);
       if (!order || String(order.user_telegram_id) !== telegramId) {
         return json(404, { ok: false, error: 'not_found' });
+      }
+      // Taymer tugagan bo'lsa — darhol "expired" qilamiz va band qilingan inventarni
+      // "available" ga qaytaramiz (har daqiqalik maintenance cron'ini kutmasdan).
+      if (
+        ['waiting_payment', 'pending_payment'].includes(order.status) &&
+        order.expires_at &&
+        new Date(order.expires_at).getTime() < Date.now()
+      ) {
+        const expired = await expireOrder(supabase, order).catch((e) => {
+          console.warn('order-status expire warn:', e?.message);
+          return null;
+        });
+        if (expired) order = expired;
       }
       const paid = ['payment_detected', 'delivering', 'completed'].includes(order.status);
       const delivered = order.delivery_status === 'delivered' || order.status === 'completed';
