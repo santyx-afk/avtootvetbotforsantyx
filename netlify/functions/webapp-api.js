@@ -494,20 +494,50 @@ exports.handler = async (event) => {
       if (!productId) return json(400, { ok: false, error: 'no_product_id' });
       if (!(rating >= 1 && rating <= 5)) return json(400, { ok: false, error: 'bad_rating' });
 
+      const orderId = body.orderId || null;
       const userName = acctUser.first_name || 'Foydalanuvchi';
-      const { data } = await request(supabase, 'reviews', {
-        method: 'POST',
-        query: 'on_conflict=plan_id,user_telegram_id',
-        headers: { Prefer: 'return=representation,resolution=merge-duplicates' },
-        body: {
-          plan_id: productId,
-          user_telegram_id: telegramId,
-          user_name: userName,
-          rating,
-          text,
-          updated_at: new Date().toISOString(),
-        },
-      });
+      // on_conflict=(plan_id,user_telegram_id) — bir foydalanuvchi bir reja uchun bitta sharh
+      // (qayta yuborilsa yangilanadi) => amalda "buyurtma uchun 1 ta sharh" cheklovi.
+      const reviewBody = {
+        plan_id: productId,
+        user_telegram_id: telegramId,
+        user_name: userName,
+        rating,
+        text,
+        updated_at: new Date().toISOString(),
+      };
+      if (orderId) reviewBody.order_id = orderId;
+      let data;
+      try {
+        ({ data } = await request(supabase, 'reviews', {
+          method: 'POST',
+          query: 'on_conflict=plan_id,user_telegram_id',
+          headers: { Prefer: 'return=representation,resolution=merge-duplicates' },
+          body: reviewBody,
+        }));
+      } catch (e) {
+        // order_id ustuni hali qo'shilmagan bo'lishi mumkin — usiz qayta urinamiz
+        delete reviewBody.order_id;
+        ({ data } = await request(supabase, 'reviews', {
+          method: 'POST',
+          query: 'on_conflict=plan_id,user_telegram_id',
+          headers: { Prefer: 'return=representation,resolution=merge-duplicates' },
+          body: reviewBody,
+        }));
+      }
+
+      // Adminга Telegram xabari (best-effort — sharhni bloklamaydi)
+      try {
+        const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const who = acctUser.username ? `@${acctUser.username}` : userName;
+        const settings = await fetchSettings(supabase).catch(() => null);
+        const admins = adminChatIds(settings);
+        const msg = `⭐ Yangi sharh (${rating}/5): ${esc(who)}${text ? ` — ${esc(text)}` : ''}`;
+        await Promise.all(admins.map((id) => sendMessage(id, msg, null).catch(() => {})));
+      } catch {
+        /* ignore */
+      }
+
       return json(200, { ok: true, review: data?.[0] ? reviewShape(data[0]) : null });
     }
 

@@ -43,6 +43,16 @@ export default {
     error: 'Something went wrong. Please try again.',
     empty: 'Please write a message.',
   },
+  // --- Post-purchase review modal (temporary/removable) ---
+  review: {
+    title: 'Thank you for your purchase! 🎉',
+    subtitle: 'Share your feedback about our service',
+    placeholder: 'Write your review... (optional)',
+    submit: 'Submit',
+    later: 'Later',
+    success: 'Thank you for your feedback! ⭐',
+    selectRating: 'Please rate your experience',
+  },
   onboarding: {
     skip: 'Skip',
     start: 'Get started',

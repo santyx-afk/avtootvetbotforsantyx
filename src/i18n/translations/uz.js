@@ -43,6 +43,16 @@ export default {
     error: 'Xatolik yuz berdi. Qayta urinib ko\'ring.',
     empty: 'Iltimos, xabar yozing.',
   },
+  // --- Xariddan keyingi sharh modali (vaqtinchalik/olib tashlanadigan) ---
+  review: {
+    title: 'Xaridingiz uchun rahmat! 🎉',
+    subtitle: 'Xizmatimiz haqida fikringizni bildiring',
+    placeholder: 'Fikringizni yozing... (ixtiyoriy)',
+    submit: 'Yuborish',
+    later: 'Keyinroq',
+    success: 'Fikringiz uchun rahmat! ⭐',
+    selectRating: 'Iltimos, baho qo\'ying',
+  },
   onboarding: {
     skip: 'O\'tkazib yuborish',
     start: 'Boshlash',
