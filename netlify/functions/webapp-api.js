@@ -194,19 +194,19 @@ exports.handler = async (event) => {
   const telegramId = String(tgUser.id);
 
   try {
-    // Foydalanuvchini har doim ro'yxatga olamiz/yangilaymiz (phone ga tegmaydi)
-    await upsertUser(supabase, tgUser).catch((e) => console.warn('upsertUser warn:', e?.message));
-
-    // Bloklangan foydalanuvchini tekshirish
-    let userRow = null;
-    try {
-      const { data } = await request(supabase, 'users', {
+    // Foydalanuvchini yangilash (phone/is_blocked ga tegmaydi) va blok holatini
+    // o'qishni PARALLEL bajaramiz — ular bir-biriga bog'liq emas, shuning uchun
+    // xavfsiz va har so'rovda bitta round-trip tejaydi.
+    const [, userRowRes] = await Promise.all([
+      upsertUser(supabase, tgUser).catch((e) => console.warn('upsertUser warn:', e?.message)),
+      request(supabase, 'users', {
         query: `select=phone,is_blocked&telegram_id=eq.${telegramId}&limit=1`,
-      });
-      userRow = data?.[0] || null;
-    } catch (e) {
-      console.warn('user row read warn:', e?.message);
-    }
+      }).catch((e) => {
+        console.warn('user row read warn:', e?.message);
+        return { data: [] };
+      }),
+    ]);
+    const userRow = userRowRes?.data?.[0] || null;
     if (userRow?.is_blocked) {
       return json(403, { ok: false, error: 'blocked' });
     }
