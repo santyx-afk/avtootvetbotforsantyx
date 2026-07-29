@@ -136,8 +136,10 @@ function parsePromoOptions(tokens = []) {
 
 
 async function showCategories({ supabase, chatId, messageId, telegramId, asEdit = false }) {
-  const settings = await fetchSettings(supabase);
-  const categories = await fetchCategories(supabase);
+  const [settings, categories] = await Promise.all([
+    fetchSettings(supabase),
+    fetchCategories(supabase),
+  ]);
   const text = `${welcomeText(settings)}\n\n${categoriesText()}`;
   const keyboardRows = [
     ...categories.map((category) => [{ text: category.buttonLabel, callback_data: `category:${category.id}` }])
@@ -181,13 +183,16 @@ async function showPlanOrVariants({ supabase, chatId, messageId, telegramId, pla
 }
 
 async function showPayment({ supabase, chatId, telegramId, planId }) {
-  const plan = await fetchPlan(supabase, planId);
+  // Plan va settings mustaqil — birga olamiz.
+  const [plan, settings] = await Promise.all([
+    fetchPlan(supabase, planId),
+    fetchSettings(supabase),
+  ]);
   if (!plan) {
     await sendMessage(chatId, genericOrderErrorText(), null);
     return;
   }
 
-  const settings = await fetchSettings(supabase);
   const order = await createCheckoutOrder(supabase, {
     user_telegram_id: telegramId,
     items: [{ plan_id: plan.id, plan, quantity: 1 }],
@@ -217,14 +222,16 @@ async function showPayment({ supabase, chatId, telegramId, planId }) {
 
 async function handleReceipt({ supabase, message }) {
   const telegramId = message.from.id;
-  const userState = await fetchUserState(supabase, telegramId);
+  const [userState, settings] = await Promise.all([
+    fetchUserState(supabase, telegramId),
+    fetchSettings(supabase),
+  ]);
   if (!userState?.awaiting_receipt || !userState?.current_order_id) {
     await sendMessage(message.chat.id, noActiveOrderForReceiptText(), null);
     return;
   }
 
   const orderId = userState.current_order_id;
-  const settings = await fetchSettings(supabase);
   const adminChatIds = resolveAdminChatIds(settings);
 
   const fileId = message.photo?.[message.photo.length - 1]?.file_id || message.document?.file_id;
@@ -270,6 +277,11 @@ async function handleCallback({ supabase, callbackQuery }) {
   const messageId = callbackQuery.message.message_id;
   const telegramId = callbackQuery.from.id;
   const data = String(callbackQuery.data || '');
+
+  // Admin amallar o'z natija matnini o'zi yuboradi; navigatsiya tugmalari uchun esa
+  // "yuklanmoqda" belgisini zudlik bilan to'xtatamiz — tugma darhol javob bergandek bo'ladi.
+  const isAdminAction = data.startsWith('admin:');
+  if (!isAdminAction) answerCallbackQuery(callbackQuery.id).catch(() => {});
 
   try {
     if (data.startsWith('admin:approve:')) {
@@ -334,8 +346,10 @@ async function handleCallback({ supabase, callbackQuery }) {
         break;
       case 'category':
         {
-          const plans = await fetchPlansByCategory(supabase, id, null);
-          const category = await fetchCategory(supabase, id);
+          const [plans, category] = await Promise.all([
+            fetchPlansByCategory(supabase, id, null),
+            fetchCategory(supabase, id),
+          ]);
           const text = planListText(category);
           const rows = [
             ...plans.map((plan) => [{ text: plan.buttonLabel, callback_data: `plan:${plan.id}` }]),
@@ -351,13 +365,13 @@ async function handleCallback({ supabase, callbackQuery }) {
         await showPayment({ supabase, chatId, telegramId, planId: id });
         break;
       default:
-        await answerCallbackQuery(callbackQuery.id, 'Noma’lum amal');
-        return;
+        answerCallbackQuery(callbackQuery.id, 'Noma’lum amal').catch(() => {});
+        break;
     }
-    await answerCallbackQuery(callbackQuery.id, 'Bajarildi');
+    // Navigatsiya javobini boshida berdik — takroriy 'Bajarildi' shart emas.
   } catch (error) {
     console.error('Callback error', error);
-    await answerCallbackQuery(callbackQuery.id, 'Xatolik yuz berdi');
+    answerCallbackQuery(callbackQuery.id, 'Xatolik yuz berdi').catch(() => {});
   }
 }
 
@@ -483,14 +497,21 @@ async function handleTextCommand({ supabase, message }) {
 }
 
 async function handleStart({ supabase, message }) {
-  await upsertUser(supabase, message.from);
+  // Bookkeeping (foydalanuvchi, analitika, referal) ni kategoriyalarni ko'rsatish
+  // bilan PARALLEL bajaramiz. Promise.all barcha yozuvlarni kutadi (serverless'da
+  // yo'qolmaydi), lekin ketma-ket emas — shuning uchun user tezroq javob oladi.
+  const tasks = [
+    upsertUser(supabase, message.from).catch((e) => console.warn('upsertUser warn:', e?.message)),
+    trackEvent(supabase, { eventType: 'start_used', telegramId: message.from.id }).catch(() => {}),
+  ];
+
   const ref = String(message.text || '').match(/^\/start\s+ref_(\d+)/);
   if (ref && ref[1] !== String(message.from.id)) {
-    await createAuditLog(supabase, { user_telegram_id: message.from.id, action: 'referral_registered', status: 'created', metadata: { referrer: ref[1] } });
-    // Referal yozuvini yaratamiz (referred_telegram_id unique — takror e'tiborsiz).
-    try {
-      const { request } = require('./db');
-      await request(supabase, 'referrals', {
+    const { request } = require('./db');
+    tasks.push(
+      createAuditLog(supabase, { user_telegram_id: message.from.id, action: 'referral_registered', status: 'created', metadata: { referrer: ref[1] } }).catch(() => {}),
+      // Referal yozuvini yaratamiz (referred_telegram_id unique — takror e'tiborsiz).
+      request(supabase, 'referrals', {
         method: 'POST',
         query: 'on_conflict=referred_telegram_id',
         headers: { Prefer: 'resolution=ignore-duplicates' },
@@ -499,13 +520,12 @@ async function handleStart({ supabase, message }) {
           referred_telegram_id: String(message.from.id),
           status: 'registered',
         },
-      });
-    } catch (error) {
-      console.warn('referral insert warn:', error?.message);
-    }
+      }).catch((error) => console.warn('referral insert warn:', error?.message)),
+    );
   }
-  await trackEvent(supabase, { eventType: 'start_used', telegramId: message.from.id });
-  await showCategories({ supabase, chatId: message.chat.id, telegramId: message.from.id, asEdit: false });
+
+  tasks.push(showCategories({ supabase, chatId: message.chat.id, telegramId: message.from.id, asEdit: false }));
+  await Promise.all(tasks);
 }
 
 module.exports = {
