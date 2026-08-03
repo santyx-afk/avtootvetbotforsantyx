@@ -18,7 +18,7 @@ exports.handler = async (event) => {
 
   const supabase = getAdminClient();
   try {
-    const [totalUsers, totalClicks, totalPaymentOpens, categoryRows, planRows, paymentRows, eventLogs, categories, plans, ordersResp, inventoryResp] = await Promise.all([
+    const [totalUsers, totalClicks, totalPaymentOpens, categoryRows, planRows, paymentRows, eventLogs, categories, plans, ordersResp, inventoryResp, referralsResp] = await Promise.all([
       countRows(supabase, 'users'),
       countRows(supabase, 'analytics_events'),
       countRows(supabase, 'analytics_events', 'event_type=eq.payment_opened'),
@@ -30,9 +30,13 @@ exports.handler = async (event) => {
       listTable(supabase, 'plans'),
       request(supabase, 'orders', { query: toQuery({ select: 'id,amount,status,plan_id,created_at,delivery_status', limit: 500, order: 'created_at.desc' }) }),
       request(supabase, 'inventory_items', { query: toQuery({ select: 'plan_id,status', limit: 2000 }) }),
+      request(supabase, 'referrals', { query: 'select=total_earned' }).catch(() => ({ data: [] })),
     ]);
     const orders = ordersResp.data || [];
     const inventory = inventoryResp.data || [];
+    const referrals = referralsResp.data || [];
+    const totalReferrals = referrals.length;
+    const referralBonusTotal = referrals.reduce((s, r) => s + Number(r.total_earned || 0), 0);
     const now = new Date();
     const startDay = new Date(now); startDay.setHours(0, 0, 0, 0);
     const startWeek = new Date(now); startWeek.setDate(now.getDate() - 7);
@@ -75,6 +79,8 @@ exports.handler = async (event) => {
           totalUsers,
           totalClicks,
           totalPaymentOpens,
+          totalReferrals,
+          referralBonusTotal,
           mostViewedCategories,
           mostViewedPlans,
           mostPaymentClicks,

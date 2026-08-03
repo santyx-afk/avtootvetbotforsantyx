@@ -525,20 +525,44 @@ async function handleStart({ supabase, message }) {
 
   const ref = String(message.text || '').match(/^\/start\s+ref_(\d+)/);
   if (ref && ref[1] !== String(message.from.id)) {
-    const { request } = require('./db');
+    const referrerId = ref[1];
+    const referredId = String(message.from.id);
     tasks.push(
-      createAuditLog(supabase, { user_telegram_id: message.from.id, action: 'referral_registered', status: 'created', metadata: { referrer: ref[1] } }).catch(() => {}),
-      // Referal yozuvini yaratamiz (referred_telegram_id unique — takror e'tiborsiz).
-      request(supabase, 'referrals', {
-        method: 'POST',
-        query: 'on_conflict=referred_telegram_id',
-        headers: { Prefer: 'resolution=ignore-duplicates' },
-        body: {
-          referrer_telegram_id: String(ref[1]),
-          referred_telegram_id: String(message.from.id),
-          status: 'registered',
-        },
-      }).catch((error) => console.warn('referral insert warn:', error?.message)),
+      createAuditLog(supabase, { user_telegram_id: referredId, action: 'referral_registered', status: 'created', metadata: { referrer: referrerId } }).catch(() => {}),
+      (async () => {
+        try {
+          const { request, addWalletTransaction } = require('./db');
+          // return=representation + ignore-duplicates: yangi qo'shilsa qatorni qaytaradi,
+          // mavjud bo'lsa bo'sh => signup bonus takror berilmaydi.
+          const { data } = await request(supabase, 'referrals', {
+            method: 'POST',
+            query: 'on_conflict=referred_telegram_id',
+            headers: { Prefer: 'return=representation,resolution=ignore-duplicates' },
+            body: { referrer_telegram_id: referrerId, referred_telegram_id: referredId, status: 'registered' },
+          });
+          if (!data?.[0]) return; // allaqachon mavjud
+
+          // Signup bonus: referal havola orqali yangi foydalanuvchi qo'shilganda referrerga
+          const settings = await fetchSettings(supabase).catch(() => null);
+          const signupBonus = Number(settings?.referral_fixed_bonus || 0);
+          if (signupBonus > 0) {
+            await addWalletTransaction(supabase, {
+              user_telegram_id: referrerId,
+              amount: signupBonus,
+              type: 'referral',
+              description: `Referal signup bonus (#${referredId})`,
+            });
+            await request(supabase, 'referrals', {
+              method: 'PATCH',
+              query: `referred_telegram_id=eq.${referredId}`,
+              body: { total_earned: signupBonus, updated_at: new Date().toISOString() },
+            }).catch(() => {});
+            await sendMessage(referrerId, `🎉 Sizning referal havolangiz orqali yangi foydalanuvchi qo'shildi! +${signupBonus.toLocaleString('uz-UZ')} UZS`).catch(() => {});
+          }
+        } catch (error) {
+          console.warn('referral signup warn:', error?.message);
+        }
+      })(),
     );
   }
 

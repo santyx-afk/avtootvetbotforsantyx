@@ -27,22 +27,8 @@ async function processReferralPayout(supabase, order) {
 
     let accrued = 0;
 
-    // Fix bonus — faqat birinchi xarid uchun.
-    // Ustun nomi settings jadvalida `referral_fixed_bonus` (eski `referral_bonus` emas).
-    if (isFirstPurchase) {
-      const fixBonus = Number(settings?.referral_fixed_bonus ?? settings?.referral_bonus ?? 0);
-      if (fixBonus > 0) {
-        await addWalletTransaction(supabase, {
-          user_telegram_id: referrerId,
-          order_id: order.id,
-          amount: fixBonus,
-          type: 'credit',
-          description: `Referal bonus (yangi foydalanuvchi #${telegramId})`,
-        });
-        accrued += fixBonus;
-        await sendMessage(referrerId, `🎁 Sizning referalingiz birinchi xarid qildi! Balansingizga +${fixBonus.toLocaleString('uz-UZ')} UZS qo'shildi.`).catch(() => {});
-      }
-    }
+    // Eslatma: fix (signup) bonus endi bot /start ref_ da beriladi (ro'yxatdan o'tganda).
+    // Bu yerda faqat har xarid uchun foizli bonus.
 
     // Foizli bonus — har bir xarid uchun
     const percent = Number(settings?.referral_percent || 0);
@@ -53,10 +39,11 @@ async function processReferralPayout(supabase, order) {
           user_telegram_id: referrerId,
           order_id: order.id,
           amount: percentBonus,
-          type: 'credit',
+          type: 'referral',
           description: `Referal ${percent}% (#${telegramId} xaridi)`,
         });
         accrued += percentBonus;
+        await sendMessage(referrerId, `🎁 Referalingiz xarid qildi! Balansingizga +${percentBonus.toLocaleString('uz-UZ')} UZS (${percent}%) qo'shildi.`).catch(() => {});
       }
     }
 

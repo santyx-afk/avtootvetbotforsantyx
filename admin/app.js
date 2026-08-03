@@ -58,6 +58,8 @@ function renderStats(stats) {
     ['Bugungi tushum', Number(stats.revenueToday || 0).toLocaleString('uz-UZ')],
     ['Haftalik tushum', Number(stats.revenueWeek || 0).toLocaleString('uz-UZ')],
     ['Oylik tushum', Number(stats.revenueMonth || 0).toLocaleString('uz-UZ')],
+    ['Referallar', stats.totalReferrals || 0],
+    ['Referal bonuslari', Number(stats.referralBonusTotal || 0).toLocaleString('uz-UZ')],
   ];
   document.getElementById('statsCards').innerHTML = cards.map(([label, value]) => `<div class="card"><h3>${label}</h3><strong>${value}</strong></div>`).join('');
   document.getElementById('topCategories').innerHTML = stats.mostViewedCategories.map((item) => `<li>${item.name}: ${item.total}</li>`).join('') || '<li>Ma\'lumot yo\'q</li>';
