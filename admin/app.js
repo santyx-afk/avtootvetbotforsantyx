@@ -299,15 +299,17 @@ function renderUsers(filter = '') {
     (u.full_name || '').toLowerCase().includes(q)
   ) : state.users;
   const root = document.getElementById('usersList');
-  root.innerHTML = `<table><thead><tr><th>Telegram ID</th><th>Username</th><th>Ism</th><th>Telefon</th><th>Til</th><th>Blocked</th><th></th></tr></thead><tbody>${filtered.slice(0, 100).map((u) => `
+  root.innerHTML = `<table><thead><tr><th>Telegram ID</th><th>Username</th><th>Ism</th><th>Balans</th><th>Xaridlar</th><th>Faollik</th><th>Blocked</th><th></th></tr></thead><tbody>${filtered.slice(0, 100).map((u) => `
     <tr>
       <td>${u.telegram_id}</td>
       <td>${u.username || '-'}</td>
       <td>${u.full_name || '-'}</td>
-      <td>${u.phone || '-'}</td>
-      <td>${u.language_code || '-'}</td>
+      <td>${Number(u.balance || 0).toLocaleString('uz-UZ')}</td>
+      <td>${u.purchases || 0}</td>
+      <td>${u.last_activity ? new Date(u.last_activity).toLocaleDateString('uz-UZ') : '-'}</td>
       <td>${u.is_blocked ? '🚫' : '-'}</td>
       <td>
+        <button class="ghost user-detail" data-id="${u.telegram_id}">Batafsil</button>
         <button class="ghost user-action" data-action="${u.is_blocked ? 'unblock' : 'block'}" data-id="${u.telegram_id}">${u.is_blocked ? 'Unblock' : 'Block'}</button>
         <button class="ghost user-msg" data-id="${u.telegram_id}">Xabar</button>
       </td>
@@ -739,6 +741,11 @@ document.getElementById('faqList')?.addEventListener('click', async (event) => {
 document.getElementById('reloadUsersButton')?.addEventListener('click', () => loadUsers());
 document.getElementById('userSearch')?.addEventListener('input', (e) => renderUsers(e.target.value));
 document.getElementById('usersList')?.addEventListener('click', async (event) => {
+  const detailBtn = event.target.closest('.user-detail');
+  if (detailBtn) {
+    openUserModal(detailBtn.dataset.id).catch((e) => alert(e.message));
+    return;
+  }
   const actionBtn = event.target.closest('.user-action');
   if (actionBtn) {
     await api('admin-users', { method: 'POST', body: JSON.stringify({ action: actionBtn.dataset.action, telegram_id: actionBtn.dataset.id }) });
@@ -753,6 +760,59 @@ document.getElementById('usersList')?.addEventListener('click', async (event) =>
     document.getElementById('messageTelegramIdLabel').hidden = false;
   }
 });
+
+// --- Foydalanuvchi tafsilotlari modali (FIX 6): balans + xaridlar + balans tarixi ---
+let currentUserId = null;
+const PURCHASE_STATUS = { completed: 'Tasdiqlangan', approved: 'Tasdiqlangan', payment_detected: 'Kutilmoqda', delivering: 'Yetkazilmoqda', waiting_payment: 'Kutilmoqda', pending_payment: 'Kutilmoqda', payment_uploaded: 'Tekshirilmoqda', checking: 'Tekshirilmoqda', rejected: 'Bekor qilingan', expired: 'Muddat tugagan', cancelled: 'Bekor qilingan', failed: 'Xato' };
+
+function renderUserDetail(data) {
+  document.getElementById('userBalance').textContent = Number(data.balance || 0).toLocaleString('uz-UZ');
+  const purchases = data.purchases || [];
+  document.getElementById('userPurchases').innerHTML = purchases.length
+    ? `<table><thead><tr><th>Sana</th><th>Obuna</th><th>Narx</th><th>Status</th><th>Promo</th></tr></thead><tbody>${purchases.map((p) => `<tr><td>${new Date(p.created_at).toLocaleString('uz-UZ')}</td><td>${p.plan_name}</td><td>${Number(p.amount).toLocaleString('uz-UZ')}</td><td><span class="badge">${PURCHASE_STATUS[p.status] || p.status}</span></td><td>${p.promo_code || '-'}</td></tr>`).join('')}</tbody></table>`
+    : '<p style="padding:10px">Xaridlar yo\'q</p>';
+  const hist = data.balanceHistory || [];
+  document.getElementById('userBalanceHistory').innerHTML = hist.length
+    ? `<table><thead><tr><th>Sana</th><th>Tur</th><th>Summa</th><th>Izoh</th></tr></thead><tbody>${hist.map((h) => `<tr><td>${new Date(h.created_at).toLocaleString('uz-UZ')}</td><td>${h.type}</td><td>${Number(h.amount).toLocaleString('uz-UZ')}</td><td>${h.description || '-'}</td></tr>`).join('')}</tbody></table>`
+    : '<p style="padding:10px">Balans tarixi yo\'q</p>';
+}
+
+async function openUserModal(userId) {
+  currentUserId = userId;
+  document.getElementById('userModalTitle').textContent = `Foydalanuvchi ${userId}`;
+  document.getElementById('balanceMsg').textContent = '';
+  document.getElementById('balanceAmount').value = '';
+  document.getElementById('balanceReason').value = '';
+  document.getElementById('userPurchases').innerHTML = '';
+  document.getElementById('userBalanceHistory').innerHTML = '';
+  document.getElementById('userModal').hidden = false;
+  renderUserDetail(await api(`admin-users?user_id=${encodeURIComponent(userId)}`));
+}
+
+async function adjustBalance(direction) {
+  if (!currentUserId) return;
+  const msg = document.getElementById('balanceMsg');
+  const amount = Number(document.getElementById('balanceAmount').value || 0);
+  if (!(amount > 0)) { msg.style.color = 'var(--danger)'; msg.textContent = 'Summa kiriting'; return; }
+  const reason = document.getElementById('balanceReason').value;
+  try {
+    const res = await api('admin-users', { method: 'POST', body: JSON.stringify({ action: 'adjust-balance', telegram_id: currentUserId, amount, direction, reason }) });
+    msg.style.color = 'var(--success, #16a34a)';
+    msg.textContent = `Yangi balans: ${Number(res.balance || 0).toLocaleString('uz-UZ')} UZS`;
+    document.getElementById('balanceAmount').value = '';
+    document.getElementById('balanceReason').value = '';
+    renderUserDetail(await api(`admin-users?user_id=${encodeURIComponent(currentUserId)}`));
+    await loadUsers();
+  } catch (e) {
+    msg.style.color = 'var(--danger)';
+    msg.textContent = e.message;
+  }
+}
+
+document.getElementById('userModalClose')?.addEventListener('click', () => { document.getElementById('userModal').hidden = true; });
+document.getElementById('userModal')?.addEventListener('click', (e) => { if (e.target.id === 'userModal') document.getElementById('userModal').hidden = true; });
+document.getElementById('balanceAdd')?.addEventListener('click', () => adjustBalance('add'));
+document.getElementById('balanceSub')?.addEventListener('click', () => adjustBalance('subtract'));
 
 // --- Messages ---
 document.getElementById('messageType')?.addEventListener('change', (e) => {

@@ -392,8 +392,12 @@ async function adjustWalletBalance(client, telegramId, delta) {
 // Tranzaksiya yozuvi user_wallets.balance ni o'zi yangilamaydi, shuning uchun ikkalasi shu yerda birga bajariladi
 async function addWalletTransaction(client, item) {
   const amount = Math.abs(Number(item.amount || 0));
-  const { data } = await request(client, 'wallet_transactions', { method: 'POST', headers: { Prefer: 'return=representation' }, body: { user_telegram_id: String(item.user_telegram_id), order_id: item.order_id || null, amount, type: item.type, description: item.description || null } });
-  const wallet = await adjustWalletBalance(client, item.user_telegram_id, item.type === 'debit' ? -amount : amount);
+  const body = { user_telegram_id: String(item.user_telegram_id), order_id: item.order_id || null, amount, type: item.type, description: item.description || null };
+  if (item.admin_id) body.admin_id = String(item.admin_id);
+  const { data } = await request(client, 'wallet_transactions', { method: 'POST', headers: { Prefer: 'return=representation' }, body });
+  // debit va admin_debit balansni kamaytiradi; qolganlari oshiradi
+  const negative = item.type === 'debit' || item.type === 'admin_debit';
+  const wallet = await adjustWalletBalance(client, item.user_telegram_id, negative ? -amount : amount);
   return { ...(data?.[0] || {}), wallet };
 }
 
