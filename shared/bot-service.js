@@ -135,15 +135,13 @@ function parsePromoOptions(tokens = []) {
 }
 
 
+// Bosh menyu: inline katalog o'rniga bitta "Mini ilovani ochish" (WebApp) tugmasi.
+const MINI_APP_URL = process.env.APP_BASE_URL || 'https://santyx.uz';
+
 async function showCategories({ supabase, chatId, messageId, telegramId, asEdit = false }) {
-  const [settings, categories] = await Promise.all([
-    fetchSettings(supabase),
-    fetchCategories(supabase),
-  ]);
-  const text = `${welcomeText(settings)}\n\n${categoriesText()}`;
-  const keyboardRows = [
-    ...categories.map((category) => [{ text: category.buttonLabel, callback_data: `category:${category.id}` }])
-  ];
+  const settings = await fetchSettings(supabase);
+  const text = `${welcomeText(settings)}\n\n🚀 Barcha obunalarni ko'rish va xarid qilish uchun Mini ilovani oching:`;
+  const keyboardRows = [[{ text: '🚀 Mini ilovani ochish', web_app: { url: MINI_APP_URL } }]];
   if (asEdit && messageId) {
     return editMessage(chatId, messageId, text, inlineKeyboard(keyboardRows));
   }
@@ -337,37 +335,9 @@ async function handleCallback({ supabase, callbackQuery }) {
       return;
     }
 
-    const [action, id] = data.split(':');
-    switch (action) {
-      case 'nav':
-        if (id === 'home') {
-          await showCategories({ supabase, chatId, messageId, telegramId, asEdit: true });
-        }
-        break;
-      case 'category':
-        {
-          const [plans, category] = await Promise.all([
-            fetchPlansByCategory(supabase, id, null),
-            fetchCategory(supabase, id),
-          ]);
-          const text = planListText(category);
-          const rows = [
-            ...plans.map((plan) => [{ text: plan.buttonLabel, callback_data: `plan:${plan.id}` }]),
-            [{ text: '🏠 Bosh menyu', callback_data: 'nav:home' }],
-          ];
-          await editMessage(chatId, messageId, text, inlineKeyboard(rows));
-        }
-        break;
-      case 'plan':
-        await showPlanOrVariants({ supabase, chatId, messageId, telegramId, planId: id, asEdit: true });
-        break;
-      case 'buy':
-        await showPayment({ supabase, chatId, telegramId, planId: id });
-        break;
-      default:
-        answerCallbackQuery(callbackQuery.id, 'Noma’lum amal').catch(() => {});
-        break;
-    }
+    // Eski inline katalog oqimi olib tashlandi: har qanday navigatsiya callback'i
+    // (nav/category/plan/buy — jumladan eski xabarlardagilar) endi Mini ilova tugmasini ko'rsatadi.
+    await showCategories({ supabase, chatId, messageId, telegramId, asEdit: true });
     // Navigatsiya javobini boshida berdik — takroriy 'Bajarildi' shart emas.
   } catch (error) {
     console.error('Callback error', error);
