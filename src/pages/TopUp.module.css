@@ -225,19 +225,21 @@
   gap: 10px;
   align-items: flex-start;
   margin-top: 14px;
-  padding: 14px;
+  padding: 16px;
   border-radius: var(--app-radius);
-  background: color-mix(in srgb, #ff9500 12%, transparent);
-  color: #b26a00;
+  background: #fee2e2;
+  border: 2px solid #ef4444;
+  color: #dc2626;
 }
 
 .warning :global(svg) {
   flex-shrink: 0;
-  color: #ff9500;
+  color: #dc2626;
 }
 
 .warning p {
-  font-size: 13px;
+  font-size: 16px;
+  font-weight: 600;
   line-height: 1.5;
 }
 
