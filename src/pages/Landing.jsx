@@ -126,7 +126,7 @@ export default function Landing() {
           <p className={styles.heroText}>
             Adobe, CapCut, Gemini AI va boshqa professional dasturlar uchun sifatli obunalar.
           </p>
-          <button type="button" className={styles.cta} onClick={scrollToProducts}>
+          <button type="button" className={styles.cta} onClick={() => navigate('/login')}>
             Obunalarni ko‘rish
           </button>
         </div>

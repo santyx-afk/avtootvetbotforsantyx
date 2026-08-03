@@ -162,6 +162,7 @@ export default {
     promo: 'Promokod',
     promoPlaceholder: 'Promokod kiriting',
     promoApplied: 'Promokod qo\'llandi',
+    promoCashback: 'Cashback {amount} — to\'lovdan keyin balansga qaytadi',
     promoInvalid: 'Promokod yaroqsiz yoki muddati tugagan',
     discount: 'Chegirma',
     fromBalance: 'Balansdan',

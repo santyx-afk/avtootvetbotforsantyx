@@ -101,21 +101,32 @@
   gap: 12px;
 }
 
-.codeInput {
+.codeBoxes {
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.codeBox {
   width: 100%;
-  padding: 16px;
+  aspect-ratio: 1 / 1.15;
+  min-width: 0;
+  padding: 0;
   border-radius: 12px;
-  border: 1px solid var(--app-separator);
+  border: 1.5px solid var(--app-separator);
   background: var(--app-surface-2);
   color: var(--app-text);
   font-size: 24px;
-  letter-spacing: 8px;
   text-align: center;
   font-weight: 700;
 }
-.codeInput:focus {
+.codeBox:focus {
   outline: none;
   border-color: #3b82f6;
+  box-shadow: 0 0 0 3px color-mix(in srgb, #3b82f6 20%, transparent);
+}
+.codeBox:disabled {
+  opacity: 0.6;
 }
 
 .error {

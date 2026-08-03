@@ -641,6 +641,7 @@ exports.handler = async (event) => {
         valid: true,
         code: result.promo.code,
         discount: result.discount,
+        cashback: result.cashback || 0,
         discount_type: result.promo.discount_type,
         discount_value: Number(result.promo.discount_value),
       });
@@ -659,11 +660,13 @@ exports.handler = async (event) => {
       // Promo tekshirish
       let promo = null;
       let discount = 0;
+      let cashback = 0;
       if (body.promoCode) {
         const res = await validatePromoCode(supabase, String(body.promoCode).trim(), basePrice);
         if (res.ok) {
           promo = res.promo;
           discount = res.discount;
+          cashback = res.cashback || 0;
         }
       }
 
@@ -680,6 +683,7 @@ exports.handler = async (event) => {
         items: cartItems,
         promo,
         balanceUsed,
+        cashbackAmount: cashback,
         expiresMinutes: Number(process.env.WEBAPP_CHECKOUT_MINUTES || 10),
       });
 
@@ -716,6 +720,7 @@ exports.handler = async (event) => {
         order_number: order.order_number,
         base_price: Number(order.base_price || basePrice),
         discount,
+        cashback,
         balance_used: balanceUsed,
         amount: Number(order.unique_price || 0),
         card_number: cardNumber(settings),

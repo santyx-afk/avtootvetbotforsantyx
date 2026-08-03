@@ -70,7 +70,7 @@ export default function Checkout() {
     try {
       const res = await apiCall('promo-validate', { code });
       if (res.valid) {
-        setPromo({ code: res.code, discount: res.discount });
+        setPromo({ code: res.code, discount: res.discount, cashback: res.cashback || 0 });
         haptic.notification('success');
       } else {
         setPromo(null);
@@ -246,7 +246,12 @@ export default function Checkout() {
                 {promoChecking ? <Spinner size={16} stroke={2} /> : <Icon name="chevronRight" size={20} strokeWidth={2.4} />}
               </button>
             </div>
-            {promo && <div className={styles.promoOk}>✓ {t('checkout.promoApplied')} (−{formatPrice(promoDiscount, currency)})</div>}
+            {promo &&
+              (promo.cashback > 0 ? (
+                <div className={styles.promoOk}>✓ {t('checkout.promoCashback', { amount: formatPrice(promo.cashback, currency) })}</div>
+              ) : (
+                <div className={styles.promoOk}>✓ {t('checkout.promoApplied')} (−{formatPrice(promoDiscount, currency)})</div>
+              ))}
             {promoError && <div className={styles.promoErr}>{t('checkout.promoInvalid')}</div>}
           </div>
 

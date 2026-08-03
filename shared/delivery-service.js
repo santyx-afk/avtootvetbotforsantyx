@@ -13,6 +13,7 @@ const {
   getInventoryCountsByPlan,
   fetchSettings,
   enqueueDeliveryRetry,
+  creditOrderCashback,
 } = require('./db');
 const { sendMessage } = require('./telegram');
 const { decryptText } = require('./encryption');
@@ -229,6 +230,7 @@ async function processApprovedOrderDelivery({ supabase, order, adminTelegramId =
   await updateOrderStatus(supabase, order.id, 'completed', { delivery_status: 'delivered', delivered_at: new Date().toISOString(), completed_at: new Date().toISOString() });
   await createAuditLog(supabase, { order_id: order.id, user_telegram_id: order.user_telegram_id, action: 'order_completed', status: 'completed' });
   await processReferralPayout(supabase, order).catch((e) => console.warn('referral payout warn:', e?.message));
+  await creditOrderCashback(supabase, order).catch((e) => console.warn('cashback warn:', e?.message));
   return { ok: true, code: 'DELIVERED', message: 'Barcha mahsulotlar yetkazildi', results };
 }
 

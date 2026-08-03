@@ -162,6 +162,7 @@ export default {
     promo: 'Промокод',
     promoPlaceholder: 'Введите промокод',
     promoApplied: 'Промокод применён',
+    promoCashback: 'Кэшбэк {amount} — вернётся на баланс после оплаты',
     promoInvalid: 'Промокод недействителен или истёк',
     discount: 'Скидка',
     fromBalance: 'С баланса',

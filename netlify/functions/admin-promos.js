@@ -9,7 +9,9 @@ function normalize(payload = {}) {
   const out = {};
   if (payload.code !== undefined) out.code = String(payload.code || '').trim().toUpperCase();
   if (payload.discount_type !== undefined) {
-    out.discount_type = payload.discount_type === 'percent' ? 'percent' : 'fixed';
+    out.discount_type = ['percent', 'fixed', 'cashback_percent'].includes(payload.discount_type)
+      ? payload.discount_type
+      : 'fixed';
   }
   if (payload.discount_value !== undefined) out.discount_value = Number(payload.discount_value || 0);
   if (payload.min_order_amount !== undefined) out.min_order_amount = Number(payload.min_order_amount || 0);

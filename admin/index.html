@@ -240,8 +240,9 @@
                   <label>Kod<input id="promoCode" required /></label>
                   <label>Chegirma turi
                     <select id="promoDiscountType">
-                      <option value="percent">Foiz (%)</option>
-                      <option value="fixed">Summa (UZS)</option>
+                      <option value="percent">Chegirma % (Foiz)</option>
+                      <option value="fixed">Chegirma summa (UZS)</option>
+                      <option value="cashback_percent">Cashback % (balansga qaytadi)</option>
                     </select>
                   </label>
                   <label>Chegirma qiymati<input id="promoDiscountValue" type="number" required /></label>
@@ -342,6 +343,32 @@
               <p class="accordion-intro">Har bir bo'lim nima uchun kerakligini bilish uchun ustiga bosing.</p>
               <div id="helpAccordion" class="accordion"></div>
             </section>
+
+            <!-- Foydalanuvchi tafsilotlari modali (FIX 6) -->
+            <div id="userModal" class="modal-overlay" hidden>
+              <div class="modal-card">
+                <div class="modal-head">
+                  <h3 id="userModalTitle">Foydalanuvchi</h3>
+                  <button type="button" id="userModalClose" class="ghost">✕</button>
+                </div>
+                <div class="user-balance-box">
+                  <div class="balance-now">Joriy balans: <strong id="userBalance">0</strong> UZS</div>
+                  <div class="balance-controls">
+                    <input id="balanceAmount" type="number" placeholder="Summa (UZS)" />
+                    <input id="balanceReason" placeholder="Sabab (Cashback, Refund, Bonus...)" />
+                    <div class="balance-btns">
+                      <button type="button" id="balanceAdd">➕ Qo'shish</button>
+                      <button type="button" id="balanceSub" class="ghost danger">➖ Ayirish</button>
+                    </div>
+                  </div>
+                  <p id="balanceMsg" class="success-text"></p>
+                </div>
+                <h4>Xaridlar tarixi</h4>
+                <div id="userPurchases" class="table-card"></div>
+                <h4>Balans tarixi</h4>
+                <div id="userBalanceHistory" class="table-card"></div>
+              </div>
+            </div>
           </div>
         </main>
       </div>

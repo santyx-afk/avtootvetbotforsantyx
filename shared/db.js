@@ -258,6 +258,10 @@ async function createOrder(client, order) {
   if (order.topup_credit !== undefined && order.topup_credit !== null) {
     payload.topup_credit = Number(order.topup_credit);
   }
+  // cashback_amount ham shunga o'xshash — faqat berilganda (ustun mavjud bo'lsa)
+  if (order.cashback_amount !== undefined && order.cashback_amount !== null && Number(order.cashback_amount) > 0) {
+    payload.cashback_amount = Number(order.cashback_amount);
+  }
   const { data } = await request(client, 'orders', {
     method: 'POST',
     headers: { Prefer: 'return=representation' },
@@ -271,7 +275,14 @@ function calculatePromoDiscount(basePrice, promo = {}) {
   if (!promo) return 0;
   const value = Number(promo.discount_value || 0);
   if (promo.discount_type === 'percent') return Math.min(Number(basePrice || 0), Math.floor(Number(basePrice || 0) * value / 100));
-  return Math.min(Number(basePrice || 0), value);
+  if (promo.discount_type === 'fixed') return Math.min(Number(basePrice || 0), value);
+  return 0; // cashback_percent yoki noma'lum — darhol chegirma yo'q
+}
+
+// Cashback promokod: to'lov to'liq narxda, keyin shu summa balansga qaytadi.
+function calculatePromoCashback(basePrice, promo = {}) {
+  if (!promo || promo.discount_type !== 'cashback_percent') return 0;
+  return Math.floor((Number(basePrice || 0) * Number(promo.discount_value || 0)) / 100);
 }
 
 
@@ -352,7 +363,8 @@ async function validatePromoCode(client, code, basePrice) {
   if (promo.max_uses && Number(promo.used_count || 0) >= Number(promo.max_uses)) return { ok: false, reason: 'usage_limit', promo };
   if (promo.min_order_amount && Number(basePrice || 0) < Number(promo.min_order_amount)) return { ok: false, reason: 'min_order', promo };
   const discount = calculatePromoDiscount(basePrice, promo);
-  return { ok: true, promo, discount };
+  const cashback = calculatePromoCashback(basePrice, promo);
+  return { ok: true, promo, discount, cashback };
 }
 
 async function getUserBalance(client, telegramId) {
@@ -380,8 +392,12 @@ async function adjustWalletBalance(client, telegramId, delta) {
 // Tranzaksiya yozuvi user_wallets.balance ni o'zi yangilamaydi, shuning uchun ikkalasi shu yerda birga bajariladi
 async function addWalletTransaction(client, item) {
   const amount = Math.abs(Number(item.amount || 0));
-  const { data } = await request(client, 'wallet_transactions', { method: 'POST', headers: { Prefer: 'return=representation' }, body: { user_telegram_id: String(item.user_telegram_id), order_id: item.order_id || null, amount, type: item.type, description: item.description || null } });
-  const wallet = await adjustWalletBalance(client, item.user_telegram_id, item.type === 'debit' ? -amount : amount);
+  const body = { user_telegram_id: String(item.user_telegram_id), order_id: item.order_id || null, amount, type: item.type, description: item.description || null };
+  if (item.admin_id) body.admin_id = String(item.admin_id);
+  const { data } = await request(client, 'wallet_transactions', { method: 'POST', headers: { Prefer: 'return=representation' }, body });
+  // debit va admin_debit balansni kamaytiradi; qolganlari oshiradi
+  const negative = item.type === 'debit' || item.type === 'admin_debit';
+  const wallet = await adjustWalletBalance(client, item.user_telegram_id, negative ? -amount : amount);
   return { ...(data?.[0] || {}), wallet };
 }
 
@@ -420,13 +436,13 @@ async function generateUniquePrice(client, basePrice) {
   throw new Error('No unique payment suffix available');
 }
 
-async function createCheckoutOrder(client, { user_telegram_id, items, expiresMinutes = Number(process.env.PAYMENT_EXPIRES_MINUTES || 30), promo = null, balanceUsed = 0 }) {
+async function createCheckoutOrder(client, { user_telegram_id, items, expiresMinutes = Number(process.env.PAYMENT_EXPIRES_MINUTES || 30), promo = null, balanceUsed = 0, cashbackAmount = 0 }) {
   const basePrice = items.reduce((sum, item) => sum + Number(item.plan?.price || item.price || 0) * Number(item.quantity || 1), 0);
   const discount = promo ? calculatePromoDiscount(basePrice, promo) : 0;
   const payableBase = Math.max(0, basePrice - discount - Number(balanceUsed || 0));
   const uniquePrice = payableBase > 0 ? await generateUniquePrice(client, payableBase) : 0;
   const expiresAt = new Date(Date.now() + expiresMinutes * 60 * 1000).toISOString();
-  const order = await createOrder(client, { user_telegram_id, plan_id: items[0]?.plan_id || items[0]?.plan?.id || null, amount: uniquePrice, base_price: basePrice, unique_price: uniquePrice, expires_at: expiresAt, status: uniquePrice > 0 ? 'waiting_payment' : 'payment_detected', delivery_status: 'waiting_approval', payment_method: 'humo_card_bot', payment_source: uniquePrice > 0 ? 'humo_card_bot' : 'balance', promo_code: promo?.code || null, discount_amount: discount, balance_used: Number(balanceUsed || 0) });
+  const order = await createOrder(client, { user_telegram_id, plan_id: items[0]?.plan_id || items[0]?.plan?.id || null, amount: uniquePrice, base_price: basePrice, unique_price: uniquePrice, expires_at: expiresAt, status: uniquePrice > 0 ? 'waiting_payment' : 'payment_detected', delivery_status: 'waiting_approval', payment_method: 'humo_card_bot', payment_source: uniquePrice > 0 ? 'humo_card_bot' : 'balance', promo_code: promo?.code || null, discount_amount: discount, balance_used: Number(balanceUsed || 0), cashback_amount: Number(cashbackAmount || 0) });
   if (promo?.id) {
     await request(client, 'promo_codes', { method: 'PATCH', query: toQuery({ id: `eq.${promo.id}` }), body: { used_count: Number(promo.used_count || 0) + 1 } });
   }
@@ -439,6 +455,37 @@ async function createCheckoutOrder(client, { user_telegram_id, items, expiresMin
   return order;
 }
 
+
+// Promokod cashback summasini balansga qaytaradi (bir marta — audit_logs guard).
+// To'lov tasdiqlangach (yetkazish/approve) chaqiriladi.
+async function creditOrderCashback(client, order) {
+  try {
+    const amount = Number(order?.cashback_amount || 0);
+    if (!(amount > 0)) return false;
+    const prior = await request(client, 'audit_logs', {
+      query: `select=id&order_id=eq.${order.id}&action=eq.promo_cashback&limit=1`,
+    }).then((r) => r.data).catch(() => []);
+    if (prior && prior[0]) return false;
+    await addWalletTransaction(client, {
+      user_telegram_id: order.user_telegram_id,
+      order_id: order.id,
+      amount,
+      type: 'cashback',
+      description: `Promokod cashback #${order.order_number}`,
+    });
+    await createAuditLog(client, { order_id: order.id, user_telegram_id: order.user_telegram_id, action: 'promo_cashback', status: 'completed', metadata: { amount } });
+    try {
+      const { sendMessage } = require('./telegram');
+      await sendMessage(order.user_telegram_id, `🎁 Sizga ${new Intl.NumberFormat('uz-UZ').format(amount)} UZS cashback tushdi!`, null);
+    } catch {
+      /* xabar ketmasa ham cashback berilgan */
+    }
+    return true;
+  } catch (e) {
+    console.warn('creditOrderCashback warn:', e?.message);
+    return false;
+  }
+}
 
 async function confirmPaymentNotification(client, { amount, source = 'humo_card_bot', messageKey, rawPayload = {} }) {
   try {
@@ -847,6 +894,7 @@ module.exports = {
   removeCartItem,
   clearCart,
   createCheckoutOrder,
+  creditOrderCashback,
   generateUniquePrice,
   confirmPaymentNotification,
   enqueueDeliveryRetry,
