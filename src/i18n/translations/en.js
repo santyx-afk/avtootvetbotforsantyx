@@ -162,6 +162,7 @@ export default {
     promo: 'Promo code',
     promoPlaceholder: 'Enter promo code',
     promoApplied: 'Promo code applied',
+    promoCashback: 'Cashback {amount} — credited to balance after payment',
     promoInvalid: 'Promo code is invalid or expired',
     discount: 'Discount',
     fromBalance: 'From balance',

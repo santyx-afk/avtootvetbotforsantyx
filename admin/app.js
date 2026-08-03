@@ -217,7 +217,7 @@ function renderPromos() {
   root.innerHTML = `<table><thead><tr><th>Kod</th><th>Chegirma</th><th>Min buyurtma</th><th>Ishlatildi</th><th>Muddat</th><th>Holat</th><th></th></tr></thead><tbody>${state.promos.map((p) => `
     <tr>
       <td><strong>${p.code}</strong>${p.is_one_time ? ' <span class="badge">1x</span>' : ''}</td>
-      <td>${Number(p.discount_value || 0).toLocaleString('uz-UZ')}${p.discount_type === 'percent' ? '%' : ' UZS'}</td>
+      <td>${Number(p.discount_value || 0).toLocaleString('uz-UZ')}${p.discount_type === 'fixed' ? ' UZS' : p.discount_type === 'cashback_percent' ? '% cashback' : '%'}</td>
       <td>${Number(p.min_order_amount || 0).toLocaleString('uz-UZ')}</td>
       <td>${p.used_count || 0}${p.max_uses ? `/${p.max_uses}` : ''}</td>
       <td>${p.expires_at ? String(p.expires_at).slice(0, 10) : '-'}</td>
