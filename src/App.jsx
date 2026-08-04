@@ -14,7 +14,11 @@ import TopUp from './pages/TopUp.jsx';
 import Wishlist from './pages/Wishlist.jsx';
 import History from './pages/History.jsx';
 import Profile from './pages/Profile.jsx';
-import Vacancies from './pages/Vacancies.jsx'; // vaqtinchalik bo'lim
+import VacancyLayout from './components/VacancyLayout.jsx';
+import VacancyHome from './pages/vacancy/VacancyHome.jsx';
+import VacancyChats from './pages/vacancy/VacancyChats.jsx';
+import VacancyOrders from './pages/vacancy/VacancyOrders.jsx';
+import VacancyProfile from './pages/vacancy/VacancyProfile.jsx';
 import Landing from './pages/Landing.jsx';
 import WebLogin from './pages/WebLogin.jsx';
 import { useTelegram } from './telegram/TelegramProvider.jsx';
@@ -123,14 +127,20 @@ export default function App() {
         <Route path="/catalog/:id" element={<ProductDetail />} />
         <Route path="/checkout" element={<Checkout />} />
         <Route path="/profile/topup" element={<TopUp />} />
-        {/* Tab barli sahifalar */}
+        {/* Do'kon (obuna) rejimi — tab barli sahifalar */}
         <Route element={<Layout />}>
           <Route path="/catalog" element={<Catalog />} />
           <Route path="/cart" element={<Cart />} />
           <Route path="/wishlist" element={<Wishlist />} />
           <Route path="/history" element={<History />} />
-          <Route path="/vacancies" element={<Vacancies />} /> {/* vaqtinchalik bo'lim */}
           <Route path="/profile" element={<Profile />} />
+        </Route>
+        {/* Vakansiya (super-app) rejimi — mustaqil navigatsiya */}
+        <Route element={<VacancyLayout />}>
+          <Route path="/vacancy" element={<VacancyHome />} />
+          <Route path="/vacancy/chats" element={<VacancyChats />} />
+          <Route path="/vacancy/orders" element={<VacancyOrders />} />
+          <Route path="/vacancy/profile" element={<VacancyProfile />} />
         </Route>
         <Route path="/" element={<Navigate to="/catalog" replace />} />
         <Route path="*" element={<Navigate to="/catalog" replace />} />

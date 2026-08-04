@@ -12,7 +12,6 @@ const {
   clearCart,
   createCheckoutOrder,
   expirePendingOrders,
-  reserveInventoryForOrder,
   createAuditLog,
   validatePromoCode,
   getUserBalance,
@@ -196,7 +195,7 @@ async function showPayment({ supabase, chatId, telegramId, planId }) {
     items: [{ plan_id: plan.id, plan, quantity: 1 }],
   });
 
-  await reserveInventoryForOrder(supabase, order.id);
+  // Reserved inventory OLIB TASHLANDI — stock faqat to'lovdan keyin tekshiriladi.
   await setUserAwaitingReceipt(supabase, telegramId, { current_order_id: order.id });
 
   const text = autoPaymentInstructionsText({

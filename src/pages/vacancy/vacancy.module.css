@@ -1,0 +1,159 @@
+.page {
+  padding: 0 var(--app-pad);
+}
+
+/* Vakansiya bo'limi urg'u rangi (binafsha) — do'kondan farqli */
+.accent {
+  color: #7c5cff;
+}
+
+/* Bosh sahifa hero */
+.hero {
+  padding: 26px 4px 18px;
+}
+.heroTitle {
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--app-text);
+}
+.heroSub {
+  margin-top: 6px;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--app-hint);
+}
+
+/* Kategoriya kartalari */
+.cats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 4px;
+}
+.cat {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 18px 16px;
+  border-radius: var(--app-radius-lg);
+  background: var(--app-surface);
+  border: 1px solid var(--app-separator);
+  box-shadow: var(--app-shadow);
+  text-align: left;
+  overflow: hidden;
+}
+.cat::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(124, 92, 255, 0.14), transparent 60%);
+  pointer-events: none;
+}
+.catEmoji {
+  font-size: 30px;
+  line-height: 1;
+}
+.catName {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--app-text);
+}
+.catDesc {
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--app-hint);
+}
+
+/* Info / "tez kunda" banner */
+.soon {
+  margin-top: 18px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: var(--app-radius-lg);
+  background: color-mix(in srgb, #7c5cff 12%, var(--app-surface));
+  border: 1px solid color-mix(in srgb, #7c5cff 30%, transparent);
+}
+.soonEmoji {
+  font-size: 24px;
+}
+.soonText {
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--app-text);
+}
+
+/* Bo'sh holat (chat / order) */
+.empty {
+  text-align: center;
+  padding: 64px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+.emptyEmoji {
+  font-size: 52px;
+  line-height: 1;
+}
+.emptyTitle {
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--app-text);
+}
+.emptyDesc {
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--app-hint);
+  max-width: 320px;
+}
+
+/* Profil — ishchi bo'lish CTA */
+.profileCard {
+  margin-top: 8px;
+  padding: 24px 20px;
+  border-radius: var(--app-radius-lg);
+  background: linear-gradient(140deg, #7c5cff, #5b3fd6);
+  color: #fff;
+  box-shadow: 0 10px 30px -12px rgba(124, 92, 255, 0.6);
+}
+.profileEmoji {
+  font-size: 34px;
+}
+.profileTitle {
+  margin-top: 10px;
+  font-size: 20px;
+  font-weight: 800;
+}
+.profileDesc {
+  margin-top: 6px;
+  font-size: 14px;
+  line-height: 1.5;
+  opacity: 0.92;
+}
+.cta {
+  margin-top: 16px;
+  width: 100%;
+  padding: 14px;
+  border-radius: var(--app-radius);
+  border: none;
+  background: #fff;
+  color: #5b3fd6;
+  font-size: 16px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+}
+.cta:disabled {
+  opacity: 0.85;
+  cursor: default;
+}
+.note {
+  margin-top: 14px;
+  font-size: 12.5px;
+  text-align: center;
+  color: var(--app-hint);
+}

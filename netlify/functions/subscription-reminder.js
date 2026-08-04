@@ -1,5 +1,5 @@
 const { schedule } = require('@netlify/functions');
-const { getAdminClient, request, releaseInventoryForOrder } = require('../../shared/db');
+const { getAdminClient, request } = require('../../shared/db');
 const { sendMessage, inlineKeyboard } = require('../../shared/telegram');
 
 module.exports.handler = schedule('0 9 * * *', async (event) => {

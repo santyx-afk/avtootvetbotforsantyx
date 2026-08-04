@@ -311,39 +311,13 @@ async function updateOrderItem(client, orderItemId, patch) {
   return data?.[0] || null;
 }
 
-async function reserveInventoryForOrder(client, orderId) {
-  const order = await getOrderById(client, orderId);
-  const items = await getOrderItems(client, orderId);
-  const reserved = [];
-  for (const item of items) {
-    const plan = item.plan || await fetchPlan(client, item.plan_id);
-    const deliveryType = plan?.delivery_type || 'manual';
-    if (!['auto_account', 'license_key'].includes(deliveryType)) continue;
-    if (item.inventory_item_id || item.delivery_status === 'reserved') continue;
-    for (let i = 0; i < Number(item.quantity || 1); i += 1) {
-      const inventory = await claimInventoryItemForOrder(client, item.plan_id, orderId, order.user_telegram_id, deliveryType);
-      if (!inventory) {
-        await createAuditLog(client, { order_id: orderId, user_telegram_id: order.user_telegram_id, action: 'inventory_unavailable', status: 'failed', metadata: { planId: item.plan_id, deliveryType } });
-        continue;
-      }
-      reserved.push(inventory);
-      await updateOrderItem(client, item.id, { inventory_item_id: inventory.id, delivery_status: 'reserved' });
-      await createAuditLog(client, { order_id: orderId, user_telegram_id: order.user_telegram_id, action: 'inventory_reserved', status: 'reserved', metadata: { planId: item.plan_id, inventoryItemId: inventory.id } });
-    }
-  }
-  return reserved;
-}
-
-async function releaseInventoryForOrder(client, orderId) {
-  const { data } = await request(client, 'inventory_items', { query: toQuery({ select: '*', assigned_order_id: `eq.${orderId}`, status: 'eq.reserved' }) });
-  for (const item of data || []) await markInventoryDelivered(client, item.id, 'available');
-  await createAuditLog(client, { order_id: orderId, action: 'inventory_released', status: 'available', metadata: { count: (data || []).length } });
-  return data || [];
-}
+// Reserved inventory tizimi olib tashlandi: checkout endi inventarni band QILMAYDI.
+// Stock faqat to'lov tasdiqlangach (yetkazish paytida, claimInventoryItemForOrder)
+// tekshiriladi. Shu sabab reserveInventoryForOrder / releaseInventoryForOrder yo'q.
+// expireOrder faqat unique_price'ni qayta ishlatish uchun qoladi (HumoCardBot aniqlash).
 
 async function expireOrder(client, order) {
   const now = new Date().toISOString();
-  await releaseInventoryForOrder(client, order.id);
   const { data } = await request(client, 'orders', { method: 'PATCH', query: toQuery({ id: `eq.${order.id}`, status: 'in.(waiting_payment,pending_payment)' }), headers: { Prefer: 'return=representation' }, body: { status: 'expired', delivery_status: 'failed', updated_at: now, admin_comment: 'Payment timeout' } });
   const expired = data?.[0] || null;
   await createAuditLog(client, { order_id: order.id, user_telegram_id: order.user_telegram_id, action: 'order_expired', status: 'expired', metadata: { expiresAt: order.expires_at } });
@@ -881,8 +855,6 @@ module.exports = {
   createAuditLog,
   getInventoryItemById,
   updateOrderItem,
-  reserveInventoryForOrder,
-  releaseInventoryForOrder,
   expireOrder,
   validatePromoCode,
   getUserBalance,
