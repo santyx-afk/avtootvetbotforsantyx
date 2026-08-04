@@ -132,6 +132,16 @@ const PATHS = {
       <path d="M3 12.5h18" />
     </>
   ),
+  chat: (
+    <path d="M20 4H4a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h3v4l5-4h8a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1z" />
+  ),
+  clipboard: (
+    <>
+      <rect x="4" y="5" width="16" height="16" rx="2" />
+      <path d="M9 5V4a3 3 0 0 1 6 0v1" />
+      <path d="M8 11h8M8 15h5" />
+    </>
+  ),
 };
 
 export default function Icon({ name, size = 24, strokeWidth = 1.9, filled = false, style, className }) {
