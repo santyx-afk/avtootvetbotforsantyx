@@ -11,7 +11,6 @@ const {
   validatePromoCode,
   getUserBalance,
   createCheckoutOrder,
-  reserveInventoryForOrder,
   setUserAwaitingReceipt,
   addWalletTransaction,
   getOrderById,
@@ -687,9 +686,8 @@ exports.handler = async (event) => {
         expiresMinutes: Number(process.env.WEBAPP_CHECKOUT_MINUTES || 10),
       });
 
-      await reserveInventoryForOrder(supabase, order.id).catch((e) =>
-        console.warn('reserve warn:', e?.message),
-      );
+      // Reserved inventory OLIB TASHLANDI — checkout inventarni band qilmaydi.
+      // Stock faqat to'lov tasdiqlangach tekshiriladi (processApprovedOrderDelivery).
       await setUserAwaitingReceipt(supabase, telegramId, { current_order_id: order.id }).catch(
         () => {},
       );
@@ -857,23 +855,18 @@ exports.handler = async (event) => {
     if (body.action === 'order-status') {
       const orderId = body.orderId;
       if (!orderId) return json(400, { ok: false, error: 'no_order_id' });
-      let order = await getOrderById(supabase, orderId);
+      const order = await getOrderById(supabase, orderId);
       if (!order || String(order.user_telegram_id) !== telegramId) {
         return json(404, { ok: false, error: 'not_found' });
       }
-      // Taymer tugagan bo'lsa — darhol "expired" qilamiz va band qilingan inventarni
-      // "available" ga qaytaramiz (har daqiqalik maintenance cron'ini kutmasdan).
-      if (
-        ['waiting_payment', 'pending_payment'].includes(order.status) &&
-        order.expires_at &&
-        new Date(order.expires_at).getTime() < Date.now()
-      ) {
-        const expired = await expireOrder(supabase, order).catch((e) => {
-          console.warn('order-status expire warn:', e?.message);
-          return null;
-        });
-        if (expired) order = expired;
-      }
+      // Taymer tugaganda SERVER holatini o'zgartirmaymiz (band qiladigan narsa yo'q).
+      // "Muddat o'tdi"ni expires_at asosida hisoblab qaytaramiz; haqiqiy "expired"
+      // holatini har daqiqalik maintenance cron va init tozalash qo'yadi.
+      const isExpiredNow =
+        order.status === 'expired' ||
+        (['waiting_payment', 'pending_payment'].includes(order.status) &&
+          order.expires_at &&
+          new Date(order.expires_at).getTime() < Date.now());
       const paid = ['payment_detected', 'delivering', 'completed'].includes(order.status);
       const delivered = order.delivery_status === 'delivered' || order.status === 'completed';
       const deliveries = delivered ? await collectDeliveries(supabase, orderId).catch(() => []) : [];
@@ -885,7 +878,7 @@ exports.handler = async (event) => {
         delivered,
         waiting_stock: order.delivery_status === 'waiting_stock',
         manual: order.delivery_status === 'manual_required',
-        expired: order.status === 'expired',
+        expired: isExpiredNow,
         order_number: order.order_number,
         amount: Number(order.unique_price || 0),
         expires_at: order.expires_at,

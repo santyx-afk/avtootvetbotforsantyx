@@ -14,6 +14,7 @@ const {
   fetchSettings,
   enqueueDeliveryRetry,
   creditOrderCashback,
+  request,
 } = require('./db');
 const { sendMessage } = require('./telegram');
 const { decryptText } = require('./encryption');
@@ -98,6 +99,74 @@ async function notifyLowInventoryIfNeeded(supabase, plan) {
   }
 }
 
+function escapeHtml(value) {
+  return String(value == null ? '' : value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+// Zaxira tugaganda (to'lov qabul qilingan, lekin akkaunt yo'q) adminlarni ogohlantiradi.
+// Xabar ichida "Foydalanuvchiga yozish" havolasi bor: username bo'lsa t.me/username
+// (chat to'g'ridan-to'g'ri ochiladi), aks holda tg://user?id=<id> (profil kartasi).
+async function notifyAdminsOutOfStock(supabase, { order, plan, userChatId }) {
+  const settings = await fetchSettings(supabase).catch(() => null);
+  const admins = resolveAdminChatIds(settings);
+  if (!admins.length) return;
+
+  let userName = String(userChatId);
+  let username = null;
+  try {
+    const { data } = await request(supabase, 'users', {
+      query: `select=username,full_name&telegram_id=eq.${userChatId}&limit=1`,
+    });
+    const u = data?.[0];
+    if (u) {
+      userName = u.full_name || u.username || String(userChatId);
+      username = u.username || null;
+    }
+  } catch {
+    /* ism topilmasa telegram_id ishlatiladi */
+  }
+
+  const link = username ? `https://t.me/${username}` : `tg://user?id=${userChatId}`;
+  const amount = new Intl.NumberFormat('uz-UZ').format(
+    Number(order.base_price || order.unique_price || order.amount || 0),
+  );
+  const text = [
+    '⚠️ <b>Zaxirada akkaunt qolmadi!</b>',
+    '',
+    `📦 Obuna: ${escapeHtml(plan.name)}`,
+    `👤 Mijoz: ${escapeHtml(userName)}`,
+    `🆔 ID: <code>${escapeHtml(userChatId)}</code>`,
+    `💰 To‘langan: ${amount} UZS`,
+    '',
+    `👤 <a href="${link}">Foydalanuvchiga yozish</a>`,
+  ].join('\n');
+
+  for (const adminChatId of admins) {
+    await safeSendMessage(adminChatId, text, { oosAlert: true, orderId: order.id });
+  }
+}
+
+// "Zaxira tugadi" bildirishnomasi (mijoz + admin) buyurtma bo'yicha FAQAT BIR marta
+// yuborilishini kafolatlaydi. waiting_stock buyurtma har maintenance siklida qayta
+// urinilgani uchun (resumeStuckDeliveries) — bu guard admin/mijozni spam qilmaydi.
+// true → birinchi marta (yuborish kerak); false → allaqachon yuborilgan.
+async function markOutOfStockNotifiedOnce(supabase, orderId) {
+  try {
+    const prior = await request(supabase, 'audit_logs', {
+      query: `select=id&order_id=eq.${orderId}&action=eq.out_of_stock_notified&limit=1`,
+    }).then((r) => r.data).catch(() => []);
+    if (prior && prior[0]) return false;
+    await createAuditLog(supabase, { order_id: orderId, action: 'out_of_stock_notified', status: 'waiting_stock' });
+    return true;
+  } catch (e) {
+    console.warn('markOutOfStockNotifiedOnce warn:', e?.message);
+    return true; // shubhali holatda mijozni xabarsiz qoldirmaymiz
+  }
+}
+
 async function safeSendMessage(chatId, text, ctx = {}) {
   try {
     const result = await sendMessage(chatId, text, null);
@@ -147,10 +216,20 @@ async function processApprovedDelivery({ supabase, order, adminTelegramId = 'web
     : await claimInventoryItemForOrder(supabase, plan.id, order.id, userChatId, deliveryType);
   console.log('Selected inventory item', { orderId: order.id, deliveryType, itemId: item?.id, itemType: item?.type, login: item?.login || null });
   if (!item) {
+    // To'lov qabul qilindi, lekin zaxirada akkaunt yo'q → mijozga xabar + adminga alert.
     await updateOrderStatus(supabase, order.id, 'delivering', { delivery_status: 'waiting_stock' });
-    const sent = await safeSendMessage(userChatId, 'To‘lovingiz tasdiqlandi. Obunangiz ulanish jarayonida. Tez orada ma’lumot yuboriladi.', { orderId: order.id, deliveryType, noStock: true });
     await createDeliveryLog(supabase, { order_id: order.id, user_telegram_id: userChatId, plan_id: plan.id, delivery_type: deliveryType, admin_telegram_id: String(adminTelegramId), status: 'waiting_stock' });
-    if (!sent.ok) return { ok: false, code: 'DELIVERY_SEND_FAILED', message: mapTelegramSendError(sent.error) };
+    // Bildirishnoma buyurtma bo'yicha bir marta (retry'lar spam qilmasligi uchun).
+    const firstTime = await markOutOfStockNotifiedOnce(supabase, order.id);
+    if (firstTime) {
+      const sent = await safeSendMessage(
+        userChatId,
+        '⏳ Zaxirada akkaunt qolmagani sababli hozircha bera olmadik.\nAdmin tez orada siz bilan bog‘lanadi va obunani taqdim etadi.',
+        { orderId: order.id, deliveryType, noStock: true },
+      );
+      await notifyAdminsOutOfStock(supabase, { order, plan, userChatId }).catch((e) => console.warn('oos admin alert warn:', e?.message));
+      if (!sent.ok) return { ok: false, code: 'DELIVERY_SEND_FAILED', message: mapTelegramSendError(sent.error) };
+    }
     return { ok: false, code: 'NO_STOCK', message: 'Zaxira tugagan' };
   }
 
