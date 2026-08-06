@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { vacancyCall } from '../../lib/vacancyApi.js';
 import WorkerProfileSheet from './WorkerProfileSheet.jsx';
 import styles from './vacancy.module.css';
@@ -30,6 +31,7 @@ export default function VacancyHome() {
   const [listings, setListings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [openWorkerId, setOpenWorkerId] = useState(null);
+  const navigate = useNavigate();
 
   const load = useCallback(
     async (signal) => {
@@ -107,11 +109,13 @@ export default function VacancyHome() {
 
       <div className={styles.listingGrid}>
         {listings.map((item) => (
-          <button
+          <div
             key={item.id}
-            type="button"
             className={styles.listingCard}
+            role="button"
+            tabIndex={0}
             onClick={() => setOpenWorkerId(item.worker.id)}
+            onKeyDown={(e) => e.key === 'Enter' && setOpenWorkerId(item.worker.id)}
           >
             <div className={styles.listingTop}>
               <span className={styles.listingName}>{item.worker.name}</span>
@@ -125,11 +129,17 @@ export default function VacancyHome() {
               <span className={styles.listingPrice}>{money(item.min_price)} UZS dan</span>
               <span className={styles.listingDone}>{item.worker.completed_orders} ish ✓</span>
             </div>
-          </button>
+          </div>
         ))}
       </div>
 
-      {openWorkerId && <WorkerProfileSheet workerId={openWorkerId} onClose={() => setOpenWorkerId(null)} />}
+      {openWorkerId && (
+        <WorkerProfileSheet
+          workerId={openWorkerId}
+          onClose={() => setOpenWorkerId(null)}
+          onOpenChat={(chatId) => navigate('/vacancy/chats', { state: { openChat: chatId } })}
+        />
+      )}
     </div>
   );
 }

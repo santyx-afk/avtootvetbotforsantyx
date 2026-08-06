@@ -9,14 +9,35 @@ const DAYS = [
   ['fri', 'Ju'], ['sat', 'Sha'], ['sun', 'Ya'],
 ];
 
+const CHAT_ERRORS = {
+  self_chat: 'O’zingizga yoza olmaysiz',
+  worker_busy: 'Ishchi hozir band',
+  worker_banned: 'Ishchi mavjud emas',
+};
+
 function money(value) {
   return new Intl.NumberFormat('uz-UZ').format(Number(value || 0));
 }
 
 // Ishchining ochiq profili — e'lonlari, ish vaqti va sharhlari.
-export default function WorkerProfileSheet({ workerId, onClose }) {
+export default function WorkerProfileSheet({ workerId, onClose, onOpenChat }) {
   const [data, setData] = useState(null);
   const [allReviews, setAllReviews] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [chatError, setChatError] = useState('');
+
+  async function startChat(listingId) {
+    setStarting(true);
+    setChatError('');
+    try {
+      const res = await vacancyCall('chat-start', { listing_id: listingId });
+      onOpenChat?.(res.chat_id);
+    } catch (err) {
+      setChatError(CHAT_ERRORS[err.message] || 'Chat ochilmadi.');
+    } finally {
+      setStarting(false);
+    }
+  }
 
   useEffect(() => {
     let alive = true;
@@ -92,7 +113,17 @@ export default function WorkerProfileSheet({ workerId, onClose }) {
                   <div key={l.id} className={styles.miniListing}>
                     <div className={styles.miniListingTitle}>{l.title}</div>
                     <div className={styles.miniListingDesc}>{l.description}</div>
-                    <div className={styles.listingPrice}>{money(l.min_price)} UZS dan</div>
+                    <div className={styles.listingFoot}>
+                      <span className={styles.listingPrice}>{money(l.min_price)} UZS dan</span>
+                      <button
+                        type="button"
+                        className={styles.writeBtn}
+                        disabled={starting}
+                        onClick={() => startChat(l.id)}
+                      >
+                        Yozish
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -115,7 +146,7 @@ export default function WorkerProfileSheet({ workerId, onClose }) {
               </div>
             )}
 
-            <p className={styles.note}>Chat va buyurtma keyingi bosqichda ochiladi.</p>
+            {chatError && <div className={styles.regError}>{chatError}</div>}
           </>
         )}
       </div>

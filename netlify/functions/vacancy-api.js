@@ -428,6 +428,280 @@ async function handleWorkerPublic(supabase, body) {
   });
 }
 
+/* ---------------- Chat ---------------- */
+
+// Chat media'si yopiq bucket'da saqlanadi — faqat qisqa muddatli imzolangan
+// havola beriladi (to'g'ridan-to'g'ri yuklab olinadigan URL berilmaydi).
+const MEDIA_BUCKET = process.env.VACANCY_MEDIA_BUCKET || 'vacancy-media';
+const SIGNED_URL_TTL = 60 * 30; // 30 daqiqa
+const MAX_MEDIA_BYTES = 4 * 1024 * 1024;
+const MEDIA_TYPES = {
+  'image/jpeg': { ext: 'jpg', kind: 'image' },
+  'image/png': { ext: 'png', kind: 'image' },
+  'image/webp': { ext: 'webp', kind: 'image' },
+  'video/mp4': { ext: 'mp4', kind: 'video' },
+  'video/quicktime': { ext: 'mov', kind: 'video' },
+};
+
+function storageBase() {
+  return process.env.SUPABASE_URL.replace(/\/$/, '');
+}
+
+async function uploadMedia(buffer, contentType, path) {
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const res = await fetch(`${storageBase()}/storage/v1/object/${MEDIA_BUCKET}/${path}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${key}`, apikey: key, 'Content-Type': contentType, 'x-upsert': 'true' },
+    body: buffer,
+  });
+  if (!res.ok) throw new Error(`storage_upload_failed: ${await res.text()}`);
+  return path;
+}
+
+async function signMedia(path) {
+  if (!path) return null;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  try {
+    const res = await fetch(`${storageBase()}/storage/v1/object/sign/${MEDIA_BUCKET}/${path}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${key}`, apikey: key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ expiresIn: SIGNED_URL_TTL }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data?.signedURL ? `${storageBase()}/storage/v1${data.signedURL}` : null;
+  } catch {
+    return null;
+  }
+}
+
+async function messageShape(row) {
+  return {
+    id: row.id,
+    chat_id: row.chat_id,
+    sender_id: row.sender_id,
+    message_type: row.message_type || 'text',
+    content: row.content || '',
+    media_url: await signMedia(row.media_url),
+    reply_to_id: row.reply_to_id || null,
+    is_reported: Boolean(row.is_reported),
+    created_at: row.created_at,
+  };
+}
+
+async function getChatForUser(supabase, chatId, telegramId) {
+  const { data } = await request(supabase, 'chats', { query: `select=*&id=eq.${Number(chatId)}&limit=1` });
+  const chat = data?.[0];
+  if (!chat) return null;
+  if (chat.client_id !== telegramId && chat.worker_user_id !== telegramId) return null;
+  return chat;
+}
+
+// Mavjud chatni topadi yoki e'lon kontekstida yangisini ochadi.
+async function handleChatStart(supabase, telegramId, body) {
+  const listingId = Number(body.listing_id);
+  if (!listingId) return json(400, { ok: false, error: 'invalid_listing' });
+
+  const { data } = await request(supabase, 'listings', {
+    query: `select=*,workers!inner(*)&id=eq.${listingId}&limit=1`,
+  });
+  const listing = data?.[0];
+  if (!listing) return json(404, { ok: false, error: 'not_found' });
+
+  const workerUserId = listing.workers.user_id;
+  if (workerUserId === telegramId) return json(400, { ok: false, error: 'self_chat' });
+  if (listing.workers.is_busy) return json(400, { ok: false, error: 'worker_busy' });
+  if (listing.workers.is_banned) return json(403, { ok: false, error: 'worker_banned' });
+
+  const { data: existing } = await request(supabase, 'chats', {
+    query: `select=*&client_id=eq.${encodeURIComponent(telegramId)}&worker_user_id=eq.${encodeURIComponent(workerUserId)}&listing_id=eq.${listingId}&limit=1`,
+  });
+  if (existing?.[0]) return json(200, { ok: true, chat_id: existing[0].id, created: false });
+
+  const { data: created } = await request(supabase, 'chats', {
+    method: 'POST',
+    body: { listing_id: listingId, client_id: telegramId, worker_user_id: workerUserId },
+    headers: { Prefer: 'return=representation' },
+  });
+
+  await sendMessage(
+    workerUserId,
+    `💬 <b>Yangi suhbat</b>\n\n"${listing.title}" e'loni bo'yicha mijoz siz bilan bog'landi.`,
+  ).catch(() => null);
+
+  return json(200, { ok: true, chat_id: created[0].id, created: true });
+}
+
+// Foydalanuvchi chatlari — oxirgi xabar va faol order bilan.
+async function handleChatList(supabase, telegramId) {
+  const id = encodeURIComponent(telegramId);
+  const { data: chats } = await request(supabase, 'chats', {
+    query: `select=*&or=(client_id.eq.${id},worker_user_id.eq.${id})&order=last_message_at.desc&limit=50`,
+  });
+  if (!chats?.length) return json(200, { ok: true, chats: [] });
+
+  const ids = chats.map((c) => c.id).join(',');
+  const [lastRes, workersRes, ordersRes] = await Promise.all([
+    request(supabase, 'chat_messages', {
+      query: `select=chat_id,content,message_type,created_at&chat_id=in.(${ids})&order=created_at.desc&limit=200`,
+    }).catch(() => ({ data: [] })),
+    request(supabase, 'workers', {
+      query: `select=id,user_id,name,is_busy&user_id=in.(${chats.map((c) => c.worker_user_id).join(',')})`,
+    }).catch(() => ({ data: [] })),
+    request(supabase, 'freelance_orders', {
+      query: `select=id,chat_id,status&chat_id=in.(${ids})&status=not.in.(completed,cancelled)&order=created_at.desc`,
+    }).catch(() => ({ data: [] })),
+  ]);
+
+  const lastByChat = {};
+  for (const m of lastRes.data || []) if (!lastByChat[m.chat_id]) lastByChat[m.chat_id] = m;
+  const workerByUser = {};
+  for (const w of workersRes.data || []) workerByUser[w.user_id] = w;
+  const orderByChat = {};
+  for (const o of ordersRes.data || []) if (!orderByChat[o.chat_id]) orderByChat[o.chat_id] = o;
+
+  return json(200, {
+    ok: true,
+    chats: chats.map((c) => {
+      const isClient = c.client_id === telegramId;
+      const worker = workerByUser[c.worker_user_id];
+      const last = lastByChat[c.id];
+      return {
+        id: c.id,
+        listing_id: c.listing_id,
+        role: isClient ? 'client' : 'worker',
+        peer_name: isClient ? worker?.name || 'Ishchi' : 'Mijoz',
+        peer_id: isClient ? c.worker_user_id : c.client_id,
+        last_message: last
+          ? last.message_type === 'text'
+            ? last.content
+            : last.message_type === 'system'
+              ? last.content
+              : '📎 Media'
+          : '',
+        last_message_at: last?.created_at || c.last_message_at,
+        active_order: orderByChat[c.id] ? { id: orderByChat[c.id].id, status: orderByChat[c.id].status } : null,
+      };
+    }),
+  });
+}
+
+async function handleChatMessages(supabase, telegramId, body) {
+  const chat = await getChatForUser(supabase, body.chat_id, telegramId);
+  if (!chat) return json(404, { ok: false, error: 'not_found' });
+
+  const before = Number(body.before) || 0;
+  const filter = before ? `&id=lt.${before}` : '';
+  const { data } = await request(supabase, 'chat_messages', {
+    query: `select=*&chat_id=eq.${chat.id}${filter}&order=id.desc&limit=40`,
+  });
+
+  const rows = (data || []).reverse();
+  const messages = [];
+  for (const row of rows) messages.push(await messageShape(row));
+
+  const worker = await request(supabase, 'workers', {
+    query: `select=id,user_id,name&user_id=eq.${encodeURIComponent(chat.worker_user_id)}&limit=1`,
+  }).catch(() => ({ data: [] }));
+
+  return json(200, {
+    ok: true,
+    messages,
+    has_more: (data || []).length === 40,
+    chat: {
+      id: chat.id,
+      listing_id: chat.listing_id,
+      role: chat.client_id === telegramId ? 'client' : 'worker',
+      worker: worker.data?.[0] || null,
+    },
+  });
+}
+
+async function insertMessage(supabase, chatId, payload) {
+  const { data } = await request(supabase, 'chat_messages', {
+    method: 'POST',
+    body: { chat_id: chatId, ...payload },
+    headers: { Prefer: 'return=representation' },
+  });
+  await request(supabase, 'chats', {
+    method: 'PATCH',
+    query: `id=eq.${chatId}`,
+    body: { last_message_at: new Date().toISOString() },
+  }).catch(() => null);
+  return data[0];
+}
+
+async function handleMessageSend(supabase, telegramId, body) {
+  const chat = await getChatForUser(supabase, body.chat_id, telegramId);
+  if (!chat) return json(404, { ok: false, error: 'not_found' });
+
+  const payload = { sender_id: telegramId, reply_to_id: Number(body.reply_to_id) || null };
+
+  if (body.media) {
+    const meta = MEDIA_TYPES[body.media.type];
+    if (!meta) return json(400, { ok: false, error: 'invalid_media_type' });
+    const buffer = Buffer.from(String(body.media.data || ''), 'base64');
+    if (!buffer.length) return json(400, { ok: false, error: 'empty_media' });
+    if (buffer.length > MAX_MEDIA_BYTES) return json(400, { ok: false, error: 'media_too_large' });
+
+    const path = `chat/${chat.id}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${meta.ext}`;
+    await uploadMedia(buffer, body.media.type, path);
+    payload.message_type = meta.kind;
+    payload.media_url = path;
+    payload.content = trimText(body.content, 500);
+  } else {
+    const content = trimText(body.content, 4000);
+    if (!content) return json(400, { ok: false, error: 'empty_message' });
+    payload.message_type = 'text';
+    payload.content = content;
+  }
+
+  const row = await insertMessage(supabase, chat.id, payload);
+  const peerId = chat.client_id === telegramId ? chat.worker_user_id : chat.client_id;
+  await sendMessage(peerId, "💬 Sizga yangi xabar keldi. Mini App → Vakansiyalar → Chatlar").catch(() => null);
+
+  return json(200, { ok: true, message: await messageShape(row) });
+}
+
+async function handleMessageReport(supabase, telegramId, body) {
+  const chat = await getChatForUser(supabase, body.chat_id, telegramId);
+  if (!chat) return json(404, { ok: false, error: 'not_found' });
+
+  const reason = trimText(body.reason, 500);
+  if (reason.length < 5) return json(400, { ok: false, error: 'invalid_reason' });
+
+  const messageId = Number(body.message_id) || null;
+  let reportedId = chat.client_id === telegramId ? chat.worker_user_id : chat.client_id;
+  if (messageId) {
+    const { data } = await request(supabase, 'chat_messages', {
+      query: `select=id,sender_id,chat_id&id=eq.${messageId}&chat_id=eq.${chat.id}&limit=1`,
+    });
+    if (!data?.[0]) return json(404, { ok: false, error: 'message_not_found' });
+    reportedId = data[0].sender_id;
+    await request(supabase, 'chat_messages', {
+      method: 'PATCH',
+      query: `id=eq.${messageId}`,
+      body: { is_reported: true, report_reason: reason },
+    }).catch(() => null);
+  }
+
+  await request(supabase, 'freelance_reports', {
+    method: 'POST',
+    body: {
+      chat_id: chat.id,
+      message_id: messageId,
+      reporter_id: telegramId,
+      reported_id: reportedId,
+      reason,
+    },
+  });
+
+  for (const chatId of adminChatIds()) {
+    await sendMessage(chatId, `🚩 <b>Yangi shikoyat</b>\n\nChat #${chat.id}\nSabab: ${reason}`).catch(() => null);
+  }
+  return json(200, { ok: true });
+}
+
 /* ---------------- Admin ---------------- */
 
 async function handleAdminWorkers(supabase, body) {
@@ -557,6 +831,16 @@ exports.handler = async (event) => {
         return await handleListingUpdate(supabase, telegramId, body);
       case 'listing-delete':
         return await handleListingDelete(supabase, telegramId, body);
+      case 'chat-start':
+        return await handleChatStart(supabase, telegramId, body);
+      case 'chat-list':
+        return await handleChatList(supabase, telegramId);
+      case 'chat-messages':
+        return await handleChatMessages(supabase, telegramId, body);
+      case 'message-send':
+        return await handleMessageSend(supabase, telegramId, body);
+      case 'message-report':
+        return await handleMessageReport(supabase, telegramId, body);
       default:
         return json(400, { ok: false, error: 'unknown_action' });
     }
