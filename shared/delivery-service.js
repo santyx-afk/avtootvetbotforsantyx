@@ -42,6 +42,13 @@ function decryptOptional(value) {
   return value ? decryptText(value) : null;
 }
 
+// Akkauntning o'zidagi nuqson (format/tur/shifr) — Telegram yuborish xatosidan farqlash uchun.
+function inventoryFault(message) {
+  const error = new Error(message);
+  error.inventoryFault = true;
+  return error;
+}
+
 function parseInventoryExtraData(item = {}) {
   const encryptedExtra = decryptOptional(item.extra_data_encrypted);
   return parseExtraData(
@@ -178,6 +185,37 @@ async function safeSendMessage(chatId, text, ctx = {}) {
   }
 }
 
+// Buyurtmaga biriktirilgan inventarni qayta ishlatishdan oldin uni TEKSHIRADI.
+// Ilgari `order.inventory_item_id` bo'lsa, akkaunt holatiga qaramay o'shani yuborardi —
+// shu sababli admin `disabled` qilgan (yoki allaqachon sotilgan) akkaunt mijozga tushib qolardi.
+// Endi faqat haqiqatan ham berish mumkin bo'lgan akkaunt qayta ishlatiladi, aks holda
+// zaxiradan yangi `available` akkaunt olinadi.
+function isReusableInventoryItem(item, { order, plan, deliveryType }) {
+  if (!item) return false;
+  if (item.plan_id && plan?.id && String(item.plan_id) !== String(plan.id)) return false;
+  if (item.type && deliveryType && item.type !== deliveryType) return false;
+  if (item.status === 'available') return true;
+  // 'reserved' — faqat shu buyurtma uchun band qilingan bo'lsa (yarim yo'lda uzilgan urinish).
+  if (item.status === 'reserved' && item.assigned_order_id && String(item.assigned_order_id) === String(order.id)) return true;
+  // disabled / sold / delivered yoki boshqa buyurtma nomiga band — ishlatilmaydi.
+  return false;
+}
+
+async function resolveDeliveryItem(supabase, { order, plan, deliveryType, userChatId }) {
+  if (order.inventory_item_id) {
+    const existing = await getInventoryItemById(supabase, order.inventory_item_id);
+    if (isReusableInventoryItem(existing, { order, plan, deliveryType })) return existing;
+    console.warn('Attached inventory item is not deliverable, claiming a fresh one', {
+      orderId: order.id,
+      itemId: order.inventory_item_id,
+      itemStatus: existing?.status || 'not_found',
+    });
+    // Eskirgan biriktirmani tozalaymiz, aks holda keyingi urinish ham o'shanga yopishib qoladi.
+    await updateOrderStatus(supabase, order.id, order.status, { inventory_item_id: null }).catch((e) => console.warn('detach inventory warn:', e?.message));
+  }
+  return claimInventoryItemForOrder(supabase, plan.id, order.id, userChatId, deliveryType);
+}
+
 async function processApprovedDelivery({ supabase, order, adminTelegramId = 'web_admin' }) {
   if (!order) return { ok: false, code: 'ORDER_NOT_FOUND', message: 'Buyurtma topilmadi' };
   if (order.delivery_status === 'delivered') return { ok: true, code: 'ALREADY_DELIVERED', message: 'Buyurtma oldin yetkazilgan' };
@@ -211,9 +249,7 @@ async function processApprovedDelivery({ supabase, order, adminTelegramId = 'web
     return { ok: false, code: 'MISSING_ENCRYPTION_KEY', message: 'INVENTORY_ENCRYPTION_KEY o‘rnatilmagan' };
   }
 
-  const item = order.inventory_item_id
-    ? await getInventoryItemById(supabase, order.inventory_item_id)
-    : await claimInventoryItemForOrder(supabase, plan.id, order.id, userChatId, deliveryType);
+  const item = await resolveDeliveryItem(supabase, { order, plan, deliveryType, userChatId });
   console.log('Selected inventory item', { orderId: order.id, deliveryType, itemId: item?.id, itemType: item?.type, login: item?.login || null });
   if (!item) {
     // To'lov qabul qilindi, lekin zaxirada akkaunt yo'q → mijozga xabar + adminga alert.
@@ -235,19 +271,19 @@ async function processApprovedDelivery({ supabase, order, adminTelegramId = 'web
 
   try {
     if (item.type && item.type !== deliveryType) {
-      throw new Error(`Inventory type mismatch: expected ${deliveryType}, got ${item.type}`);
+      throw inventoryFault(`Inventory type mismatch: expected ${deliveryType}, got ${item.type}`);
     }
 
     if (deliveryType === 'auto_account') {
       const { login, password } = resolveAutoAccount(item);
       if (!login || !password) {
-        throw new Error('Inventory account format noto‘g‘ri: login/email/username va password topilmadi');
+        throw inventoryFault('Inventory account format noto‘g‘ri: login/email/username va password topilmadi');
       }
       const sent = await safeSendMessage(userChatId, `To‘lovingiz tasdiqlandi.\n\nObuna: ${plan.name}\nBuyurtma: #${order.order_number}\n\nKirish ma’lumotlari:\nLogin: ${login}\nParol: ${password}\n\nMuhim: ma’lumotlarni hech kimga yubormang.`, { orderId: order.id, deliveryType });
       if (!sent.ok) throw sent.error;
     } else if (deliveryType === 'license_key') {
       const key = resolveLicenseKey(item);
-      if (!key) throw new Error('Inventory key format noto‘g‘ri: key/license_key topilmadi');
+      if (!key) throw inventoryFault('Inventory key format noto‘g‘ri: key/license_key topilmadi');
       const sent = await safeSendMessage(userChatId, `To‘lovingiz tasdiqlandi.\n\nObuna: ${plan.name}\nBuyurtma: #${order.order_number}\n\nAktivatsiya kodi:\n${key}\n\nQo‘llanma:\n${plan.deliveryInstructions || '-'}`, { orderId: order.id, deliveryType });
       if (!sent.ok) throw sent.error;
     }
@@ -255,9 +291,14 @@ async function processApprovedDelivery({ supabase, order, adminTelegramId = 'web
     console.error('Delivery send/decrypt error', { orderId: order.id, error: error?.message, stack: error?.stack });
     const userError = mapTelegramSendError(error);
     await createDeliveryLog(supabase, { order_id: order.id, user_telegram_id: userChatId, plan_id: plan.id, inventory_item_id: item.id, delivery_type: deliveryType, admin_telegram_id: String(adminTelegramId), status: 'error', error_message: String(error?.message || 'decrypt_or_send_failed') });
-    await markInventoryDelivered(supabase, item.id, 'available');
+    // Akkauntning o'zi buzuq bo'lsa (format/shifr xatosi) — zaxiraga qaytarmaymiz, karantinga olamiz,
+    // aks holda o'sha buzuq akkaunt keyingi mijozga ham tushib qolaveradi. Telegram tomonidagi
+    // xatolarda esa akkaunt aybdor emas — 'available' ga qaytariladi.
+    const brokenItem = error?.inventoryFault === true;
+    await markInventoryDelivered(supabase, item.id, brokenItem ? 'disabled' : 'available');
     const nextCount = Number(order.delivery_attempts || 0) + 1;
-    await updateOrderStatus(supabase, order.id, 'delivering', { inventory_item_id: item.id, delivery_status: 'failed', delivery_error: String(error?.message || 'delivery_failed'), delivery_attempts: nextCount });
+    // Buyurtmaga akkauntni yopishtirib qo'ymaymiz — keyingi urinish zaxiradan yangisini oladi.
+    await updateOrderStatus(supabase, order.id, 'delivering', { inventory_item_id: null, delivery_status: 'failed', delivery_error: String(error?.message || 'delivery_failed'), delivery_attempts: nextCount });
     if (hasRetriesLeft(nextCount)) {
       await enqueueDeliveryRetry(supabase, { order_id: order.id, reason: 'delivery_send_failed', retry_count: nextCount, next_retry_at: nextRetryAt(nextCount), metadata: { error: String(error?.message || 'delivery_failed') } });
     }
