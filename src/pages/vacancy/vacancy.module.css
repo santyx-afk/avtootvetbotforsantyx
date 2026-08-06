@@ -841,6 +841,55 @@
   opacity: 0.5;
   cursor: default;
 }
+/* ---------- Order tafsilotlari / to'lov ---------- */
+.orderStatusBadge {
+  display: inline-block;
+  margin-top: 10px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: color-mix(in srgb, #7c5cff 14%, var(--app-surface));
+  border: 1px solid color-mix(in srgb, #7c5cff 32%, transparent);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #7c5cff;
+}
+.timerBox {
+  width: 100%;
+  margin-bottom: 6px;
+  text-align: center;
+}
+.orderLink {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #7c5cff;
+  font-size: 12.5px;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.paymentWarning {
+  margin-top: 14px;
+  padding: 14px;
+  border-radius: var(--app-radius);
+  background: color-mix(in srgb, #ff4d4f 14%, var(--app-surface));
+  border: 1px solid color-mix(in srgb, #ff4d4f 45%, transparent);
+  font-size: 13.5px;
+  line-height: 1.5;
+  font-weight: 600;
+  color: #ff4d4f;
+  text-align: left;
+}
+.waitingRow {
+  margin-top: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-size: 14px;
+  color: var(--app-hint);
+}
+
 .writeBtn {
   padding: 8px 16px;
   border-radius: 999px;

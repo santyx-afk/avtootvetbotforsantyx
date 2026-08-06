@@ -1,6 +1,15 @@
 const { getAdminClient, request, isAdminTelegramId } = require('../../shared/db');
 const { authenticate } = require('../../shared/webapp-auth');
 const { sendMessage } = require('../../shared/telegram');
+const {
+  formatUzs,
+  formatDateTime,
+  calculateOrderMoney,
+  patchOrder,
+  openPaymentWindow,
+  startWork,
+  applyDeadlinePenalty,
+} = require('../../shared/vacancy-order-service');
 
 // Vakansiyalar (freelance marketplace) moduli uchun API.
 // Obuna do'koni API'sidan (webapp-api) mustaqil — alohida funksiya, alohida jadvallar.
@@ -712,7 +721,6 @@ async function handleMessageReport(supabase, telegramId, body) {
 
 const ORDER_FORMATS = ['reels_9_16', 'youtube_16_9', 'story_9_16', 'post_1_1', 'banner', 'logo', 'other'];
 const MAX_COUNTER_OFFERS = 3;
-const COMMISSION_RATE = 0.1;
 const ACTIVE_ORDER_STATUSES =
   'created,accepted,payment_pending,first_paid,materials_pending,in_progress,result_sent,reviewing,revising,final_payment_pending';
 
@@ -739,9 +747,20 @@ function orderShape(row) {
     first_payment_status: row.first_payment_status,
     second_payment_status: row.second_payment_status,
     has_source_materials: Boolean(row.has_source_materials),
+    source_materials_sent: Boolean(row.source_materials_sent),
     counter_offer_count: Number(row.counter_offer_count || 0),
     parent_order_id: row.parent_order_id || null,
     status: row.status,
+    // Order flow maydonlari — to'lov oynasi va deadline holati (frontend shularga qarab
+    // to'lov sahifasi / "muddat o'tdi" tanlovini ko'rsatadi).
+    payment_stage: row.payment_stage || null,
+    payment_expires_at: row.payment_expires_at || null,
+    deadline_expired: Boolean(row.deadline_expired),
+    deadline_warning_sent: Boolean(row.deadline_warning_sent),
+    deadline_extended_count: Number(row.deadline_extended_count || 0),
+    revision_count: Number(row.revision_count || 0),
+    cancel_reason: row.cancel_reason || null,
+    refund_amount: Number(row.refund_amount || 0),
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -772,11 +791,6 @@ function validateOrderFields(body) {
     return { error: 'invalid_deadline' };
   }
 
-  const commission = Math.round(amount * COMMISSION_RATE);
-  const workerAmount = amount - commission;
-  const firstPayment = Math.round(amount * 0.5);
-  const secondPayment = amount - firstPayment;
-
   return {
     fields: {
       title,
@@ -784,13 +798,9 @@ function validateOrderFields(body) {
       format,
       reference_urls: referenceUrls,
       notes,
-      amount,
-      commission,
-      worker_amount: workerAmount,
       deadline_hours: deadlineHours,
-      first_payment: firstPayment,
-      second_payment: secondPayment,
       has_source_materials: Boolean(body.has_source_materials),
+      ...calculateOrderMoney(amount),
     },
   };
 }
@@ -938,6 +948,169 @@ async function handleOrderCancel(supabase, telegramId, body) {
   await notifyOrderPeer(updated, telegramId, `❌ Order #${order.id} bekor qilindi.`);
 
   return json(200, { ok: true, order: orderShape(updated) });
+}
+
+/* ---------------- Order flow: to'lov, materiallar, deadline ---------------- */
+
+async function paymentCardNumber(supabase) {
+  const { data } = await request(supabase, 'settings', { query: 'select=seller_card_number&id=eq.1' }).catch(() => ({
+    data: [],
+  }));
+  return data?.[0]?.seller_card_number || process.env.PAYMENT_CARD_NUMBER || '';
+}
+
+// 50% oldindan to'lov — faqat mijoz boshlaydi, order qabul qilingandan keyin.
+async function handleOrderPaymentStart(supabase, telegramId, body) {
+  const order = await getOrderForUser(supabase, body.order_id, telegramId);
+  if (!order) return json(404, { ok: false, error: 'not_found' });
+  if (order.client_id !== telegramId) return json(403, { ok: false, error: 'only_client_pays' });
+  if (!['accepted', 'payment_pending'].includes(order.status)) {
+    return json(400, { ok: false, error: 'not_payable' });
+  }
+
+  // Oyna hali ochiq bo'lsa — o'sha summani qaytaramiz (yangi summa bermaymiz).
+  let current = order;
+  const stillValid =
+    order.status === 'payment_pending' &&
+    order.unique_price &&
+    order.payment_expires_at &&
+    new Date(order.payment_expires_at).getTime() > Date.now();
+
+  if (!stillValid) {
+    current = await openPaymentWindow(supabase, order, 'first');
+    if (!current) return json(503, { ok: false, error: 'no_price_slot' });
+
+    await insertMessage(supabase, order.chat_id, {
+      sender_id: telegramId,
+      message_type: 'system',
+      content: `💳 Order #${order.id} — 50% to'lov kutilmoqda (${formatUzs(current.unique_price)})`,
+    });
+  }
+
+  return json(200, {
+    ok: true,
+    payment: {
+      order_id: current.id,
+      stage: 'first',
+      amount: Number(current.unique_price),
+      card_number: await paymentCardNumber(supabase),
+      expires_at: current.payment_expires_at,
+    },
+    order: orderShape(current),
+  });
+}
+
+// Qolgan 50% — mijoz natijani qabul qilgandan keyin ochiladi (3 kunlik oyna).
+async function handleFinalPaymentStart(supabase, telegramId, body) {
+  const order = await getOrderForUser(supabase, body.order_id, telegramId);
+  if (!order) return json(404, { ok: false, error: 'not_found' });
+  if (order.client_id !== telegramId) return json(403, { ok: false, error: 'only_client_pays' });
+  if (order.status !== 'final_payment_pending') return json(400, { ok: false, error: 'not_payable' });
+
+  let current = order;
+  const stillValid =
+    order.unique_price &&
+    order.payment_stage === 'second' &&
+    order.payment_expires_at &&
+    new Date(order.payment_expires_at).getTime() > Date.now();
+
+  if (!stillValid) {
+    current = await openPaymentWindow(supabase, order, 'second');
+    if (!current) return json(503, { ok: false, error: 'no_price_slot' });
+  }
+
+  return json(200, {
+    ok: true,
+    payment: {
+      order_id: current.id,
+      stage: 'second',
+      amount: Number(current.unique_price),
+      card_number: await paymentCardNumber(supabase),
+      expires_at: current.payment_expires_at,
+    },
+    order: orderShape(current),
+  });
+}
+
+// Mijoz isxodnik materiallarni botga yuborib bo'lgach bosadi — ish boshlanadi.
+async function handleMaterialsSent(supabase, telegramId, body) {
+  const order = await getOrderForUser(supabase, body.order_id, telegramId);
+  if (!order) return json(404, { ok: false, error: 'not_found' });
+  if (order.client_id !== telegramId) return json(403, { ok: false, error: 'only_client' });
+  if (order.status !== 'materials_pending') return json(400, { ok: false, error: 'not_materials_stage' });
+
+  const updated = await startWork(supabase, order, { source_materials_sent: true });
+
+  await insertMessage(supabase, order.chat_id, {
+    sender_id: telegramId,
+    message_type: 'system',
+    content: `📦 Materiallar yuborildi — ish boshlandi. Deadline: ${formatDateTime(updated.deadline_at)}`,
+  });
+  await sendMessage(
+    order.worker_user_id,
+    `📦 <b>Materiallar keldi</b>\n\nOrder #${order.id} bo'yicha ish boshlandi.\n⏰ Deadline: ${formatDateTime(updated.deadline_at)}`,
+  ).catch(() => null);
+
+  return json(200, { ok: true, order: orderShape(updated) });
+}
+
+// Deadline o'tganda mijozning tanlovi: kutish (yangi muddat) yoki bekor qilish.
+async function handleDeadlineRespond(supabase, telegramId, body) {
+  const order = await getOrderForUser(supabase, body.order_id, telegramId);
+  if (!order) return json(404, { ok: false, error: 'not_found' });
+  if (order.client_id !== telegramId) return json(403, { ok: false, error: 'only_client' });
+  if (!order.deadline_expired) return json(400, { ok: false, error: 'deadline_not_expired' });
+
+  if (body.choice === 'wait') {
+    const hours = Number(body.extra_hours);
+    if (!Number.isFinite(hours) || hours < 1 || hours > 24) return json(400, { ok: false, error: 'invalid_extra_hours' });
+
+    const updated = await patchOrder(supabase, order.id, {
+      deadline_at: new Date(Date.now() + hours * 60 * 60 * 1000).toISOString(),
+      deadline_expired: false,
+      deadline_warning_sent: false,
+      deadline_extended_count: Number(order.deadline_extended_count || 0) + 1,
+    });
+    await insertMessage(supabase, order.chat_id, {
+      sender_id: telegramId,
+      message_type: 'system',
+      content: `⏳ Mijoz ${hours} soat qo'shimcha vaqt berdi`,
+    });
+    await sendMessage(
+      order.worker_user_id,
+      `⏳ Order #${order.id}: mijoz ${hours} soat qo'shimcha vaqt berdi. Ulgurishga harakat qiling.`,
+    ).catch(() => null);
+    return json(200, { ok: true, order: orderShape(updated) });
+  }
+
+  if (body.choice === 'cancel') {
+    // Deadline buzilgani uchun bekor qilindi — 50% mijozga qaytariladi, ishchiga shtraf.
+    const updated = await patchOrder(supabase, order.id, {
+      status: 'cancelled',
+      cancel_reason: 'deadline_violation',
+      refund_amount: Number(order.first_payment || 0),
+      second_payment_status: 'refunded',
+    });
+    await applyDeadlinePenalty(supabase, order);
+    await insertMessage(supabase, order.chat_id, {
+      sender_id: telegramId,
+      message_type: 'system',
+      content: `❌ Order #${order.id} deadline buzilgani uchun bekor qilindi`,
+    });
+    await sendMessage(
+      order.worker_user_id,
+      `❌ Order #${order.id} bekor qilindi — deadline buzildi.\n\nMijozga ${formatUzs(order.first_payment)} qaytariladi.`,
+    ).catch(() => null);
+    for (const chatId of adminChatIds()) {
+      await sendMessage(
+        chatId,
+        `↩️ <b>Qaytarish kerak</b>\n\nOrder #${order.id}\nMijoz: <code>${order.client_id}</code>\nSumma: ${formatUzs(order.first_payment)}`,
+      ).catch(() => null);
+    }
+    return json(200, { ok: true, order: orderShape(updated) });
+  }
+
+  return json(400, { ok: false, error: 'invalid_choice' });
 }
 
 async function handleOrderList(supabase, telegramId) {
@@ -1108,6 +1281,14 @@ exports.handler = async (event) => {
         return await handleOrderList(supabase, telegramId);
       case 'order-detail':
         return await handleOrderDetail(supabase, telegramId, body);
+      case 'order-payment-start':
+        return await handleOrderPaymentStart(supabase, telegramId, body);
+      case 'order-final-payment-start':
+        return await handleFinalPaymentStart(supabase, telegramId, body);
+      case 'order-materials-sent':
+        return await handleMaterialsSent(supabase, telegramId, body);
+      case 'order-deadline-respond':
+        return await handleDeadlineRespond(supabase, telegramId, body);
       default:
         return json(400, { ok: false, error: 'unknown_action' });
     }

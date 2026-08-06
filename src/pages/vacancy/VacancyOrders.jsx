@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import PageHeader from '../../components/PageHeader.jsx';
 import { vacancyCall } from '../../lib/vacancyApi.js';
+import OrderDetail from './OrderDetail.jsx';
 import { ORDER_STATUS_LABEL, ORDER_FORMAT_LABEL } from './orderStatus.js';
 import styles from './vacancy.module.css';
 
@@ -12,13 +13,20 @@ function dateLabel(value) {
 export default function VacancyOrders() {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [openOrder, setOpenOrder] = useState(null);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     vacancyCall('orders')
       .then((res) => setOrders(res.orders || []))
       .catch(() => setOrders([]))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    if (!openOrder) load();
+  }, [load, openOrder]);
+
+  if (openOrder) return <OrderDetail orderId={openOrder} onBack={() => setOpenOrder(null)} />;
 
   return (
     <div className={styles.page}>
@@ -38,7 +46,7 @@ export default function VacancyOrders() {
 
       <div className={styles.listingGrid}>
         {orders.map((order) => (
-          <div key={order.id} className={styles.listingCard} style={{ cursor: 'default' }}>
+          <button key={order.id} type="button" className={styles.listingCard} onClick={() => setOpenOrder(order.id)}>
             <div className={styles.listingTop}>
               <span className={styles.listingName}>#{order.id} {order.title}</span>
             </div>
@@ -50,7 +58,7 @@ export default function VacancyOrders() {
               <span className={styles.listingDone}>{ORDER_STATUS_LABEL[order.status] || order.status}</span>
             </div>
             <div className={styles.listingMeta}>{dateLabel(order.created_at)}</div>
-          </div>
+          </button>
         ))}
       </div>
     </div>

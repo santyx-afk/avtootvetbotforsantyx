@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { vacancyCall } from '../../lib/vacancyApi.js';
 import ProtectedMedia from './ProtectedMedia.jsx';
 import OrderModal from './OrderModal.jsx';
+import OrderDetail from './OrderDetail.jsx';
 import { ORDER_STATUS_LABEL } from './orderStatus.js';
 import styles from './vacancy.module.css';
 
@@ -47,6 +48,7 @@ export default function ChatView({ chatId, onBack }) {
   const [loading, setLoading] = useState(true);
   const [orderModal, setOrderModal] = useState(null); // null | 'create' | order (counter-offer)
   const [orderBusy, setOrderBusy] = useState(false);
+  const [openOrder, setOpenOrder] = useState(null);
   const bottomRef = useRef(null);
   const fileRef = useRef(null);
   const meRef = useRef(null);
@@ -177,6 +179,18 @@ export default function ChatView({ chatId, onBack }) {
   const myId = activeOrder ? (meta.role === 'client' ? activeOrder.client_id : activeOrder.worker_user_id) : null;
   const canRespondToOrder = activeOrder?.status === 'created' && activeOrder.created_by !== myId;
 
+  if (openOrder) {
+    return (
+      <OrderDetail
+        orderId={openOrder}
+        onBack={() => {
+          setOpenOrder(null);
+          load();
+        }}
+      />
+    );
+  }
+
   return (
     <div className={styles.chatPage}>
       <div className={styles.chatHeader}>
@@ -198,8 +212,10 @@ export default function ChatView({ chatId, onBack }) {
 
       {activeOrder && (
         <div className={styles.chatOrderTag} style={{ padding: '10px var(--app-pad)' }}>
-          📋 Order #{activeOrder.id} — {ORDER_STATUS_LABEL[activeOrder.status] || activeOrder.status} •{' '}
-          {activeOrder.amount.toLocaleString('uz-UZ')} UZS
+          <button type="button" className={styles.orderLink} onClick={() => setOpenOrder(activeOrder.id)}>
+            📋 Order #{activeOrder.id} — {ORDER_STATUS_LABEL[activeOrder.status] || activeOrder.status} •{' '}
+            {activeOrder.amount.toLocaleString('uz-UZ')} UZS
+          </button>
           {canRespondToOrder && (
             <div className={styles.regActions} style={{ marginTop: 8 }}>
               <button type="button" className={styles.btnPrimary} disabled={orderBusy} onClick={() => orderAction('order-accept')}>
