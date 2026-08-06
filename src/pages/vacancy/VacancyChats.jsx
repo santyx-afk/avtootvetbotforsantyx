@@ -3,21 +3,8 @@ import { useLocation } from 'react-router-dom';
 import PageHeader from '../../components/PageHeader.jsx';
 import { vacancyCall } from '../../lib/vacancyApi.js';
 import ChatView from './ChatView.jsx';
+import { ORDER_STATUS_LABEL } from './orderStatus.js';
 import styles from './vacancy.module.css';
-
-const ORDER_STATUS_LABEL = {
-  created: 'Yaratildi',
-  accepted: 'Qabul qilindi',
-  payment_pending: "To'lov kutilmoqda",
-  first_paid: "50% to'landi",
-  materials_pending: 'Material kutilmoqda',
-  in_progress: 'Jarayonda',
-  result_sent: 'Natija yuborildi',
-  reviewing: 'Tekshiruvda',
-  revising: 'Qayta ishlanmoqda',
-  final_payment_pending: "Qolgan to'lov kutilmoqda",
-  disputed: 'Nizoli',
-};
 
 function timeLabel(value) {
   if (!value) return '';

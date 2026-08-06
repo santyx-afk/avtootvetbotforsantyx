@@ -600,9 +600,14 @@ async function handleChatMessages(supabase, telegramId, body) {
   const messages = [];
   for (const row of rows) messages.push(await messageShape(row));
 
-  const worker = await request(supabase, 'workers', {
-    query: `select=id,user_id,name&user_id=eq.${encodeURIComponent(chat.worker_user_id)}&limit=1`,
-  }).catch(() => ({ data: [] }));
+  const [worker, activeOrder] = await Promise.all([
+    request(supabase, 'workers', {
+      query: `select=id,user_id,name&user_id=eq.${encodeURIComponent(chat.worker_user_id)}&limit=1`,
+    }).catch(() => ({ data: [] })),
+    request(supabase, 'freelance_orders', {
+      query: `select=*&chat_id=eq.${chat.id}&status=in.(${ACTIVE_ORDER_STATUSES})&order=created_at.desc&limit=1`,
+    }).catch(() => ({ data: [] })),
+  ]);
 
   return json(200, {
     ok: true,
@@ -613,6 +618,7 @@ async function handleChatMessages(supabase, telegramId, body) {
       listing_id: chat.listing_id,
       role: chat.client_id === telegramId ? 'client' : 'worker',
       worker: worker.data?.[0] || null,
+      active_order: activeOrder.data?.[0] ? orderShape(activeOrder.data[0]) : null,
     },
   });
 }
@@ -700,6 +706,255 @@ async function handleMessageReport(supabase, telegramId, body) {
     await sendMessage(chatId, `🚩 <b>Yangi shikoyat</b>\n\nChat #${chat.id}\nSabab: ${reason}`).catch(() => null);
   }
   return json(200, { ok: true });
+}
+
+/* ---------------- Orderlar ---------------- */
+
+const ORDER_FORMATS = ['reels_9_16', 'youtube_16_9', 'story_9_16', 'post_1_1', 'banner', 'logo', 'other'];
+const MAX_COUNTER_OFFERS = 3;
+const COMMISSION_RATE = 0.1;
+const ACTIVE_ORDER_STATUSES =
+  'created,accepted,payment_pending,first_paid,materials_pending,in_progress,result_sent,reviewing,revising,final_payment_pending';
+
+function orderShape(row) {
+  return {
+    id: row.id,
+    chat_id: row.chat_id,
+    created_by: row.created_by,
+    client_id: row.client_id,
+    worker_user_id: row.worker_user_id,
+    listing_id: row.listing_id,
+    title: row.title,
+    description: row.description,
+    format: row.format,
+    reference_urls: row.reference_urls || [],
+    notes: row.notes || '',
+    amount: Number(row.amount || 0),
+    commission: Number(row.commission || 0),
+    worker_amount: Number(row.worker_amount || 0),
+    deadline_hours: Number(row.deadline_hours || 0),
+    deadline_at: row.deadline_at,
+    first_payment: Number(row.first_payment || 0),
+    second_payment: Number(row.second_payment || 0),
+    first_payment_status: row.first_payment_status,
+    second_payment_status: row.second_payment_status,
+    has_source_materials: Boolean(row.has_source_materials),
+    counter_offer_count: Number(row.counter_offer_count || 0),
+    parent_order_id: row.parent_order_id || null,
+    status: row.status,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+function validateOrderFields(body) {
+  const title = trimText(body.title, 120);
+  if (title.length < 3) return { error: 'invalid_title' };
+
+  const description = trimText(body.description, 2000);
+  if (description.length < 10) return { error: 'invalid_description' };
+
+  const format = ORDER_FORMATS.includes(body.format) ? body.format : null;
+  if (!format) return { error: 'invalid_format' };
+
+  const referenceUrls = (Array.isArray(body.reference_urls) ? body.reference_urls : [])
+    .map(sanitizeUrl)
+    .filter(Boolean)
+    .slice(0, 3);
+
+  const notes = trimText(body.notes, 500);
+
+  const amount = Math.round(Number(body.amount));
+  if (!Number.isFinite(amount) || amount <= 0) return { error: 'invalid_amount' };
+
+  const deadlineHours = Number(body.deadline_hours);
+  if (!Number.isFinite(deadlineHours) || deadlineHours < 1 || deadlineHours > 240) {
+    return { error: 'invalid_deadline' };
+  }
+
+  const commission = Math.round(amount * COMMISSION_RATE);
+  const workerAmount = amount - commission;
+  const firstPayment = Math.round(amount * 0.5);
+  const secondPayment = amount - firstPayment;
+
+  return {
+    fields: {
+      title,
+      description,
+      format,
+      reference_urls: referenceUrls,
+      notes,
+      amount,
+      commission,
+      worker_amount: workerAmount,
+      deadline_hours: deadlineHours,
+      first_payment: firstPayment,
+      second_payment: secondPayment,
+      has_source_materials: Boolean(body.has_source_materials),
+    },
+  };
+}
+
+async function getActiveOrderForChat(supabase, chatId) {
+  const { data } = await request(supabase, 'freelance_orders', {
+    query: `select=id&chat_id=eq.${chatId}&status=in.(${ACTIVE_ORDER_STATUSES})&limit=1`,
+  });
+  return data?.[0] || null;
+}
+
+async function getOrderForUser(supabase, orderId, telegramId) {
+  const { data } = await request(supabase, 'freelance_orders', {
+    query: `select=*&id=eq.${Number(orderId)}&limit=1`,
+  });
+  const order = data?.[0];
+  if (!order) return null;
+  if (order.client_id !== telegramId && order.worker_user_id !== telegramId) return null;
+  return order;
+}
+
+async function notifyOrderPeer(order, telegramId, text) {
+  const peerId = order.client_id === telegramId ? order.worker_user_id : order.client_id;
+  await sendMessage(peerId, text).catch(() => null);
+}
+
+async function handleOrderCreate(supabase, telegramId, body) {
+  const chat = await getChatForUser(supabase, body.chat_id, telegramId);
+  if (!chat) return json(404, { ok: false, error: 'not_found' });
+
+  if (await getActiveOrderForChat(supabase, chat.id)) {
+    return json(400, { ok: false, error: 'active_order_exists' });
+  }
+
+  const { fields, error } = validateOrderFields(body);
+  if (error) return json(400, { ok: false, error });
+
+  const { data } = await request(supabase, 'freelance_orders', {
+    method: 'POST',
+    body: {
+      chat_id: chat.id,
+      created_by: telegramId,
+      client_id: chat.client_id,
+      worker_user_id: chat.worker_user_id,
+      listing_id: chat.listing_id,
+      ...fields,
+    },
+    headers: { Prefer: 'return=representation' },
+  });
+  const order = data[0];
+
+  await insertMessage(supabase, chat.id, {
+    sender_id: telegramId,
+    message_type: 'system',
+    content: `📋 Order #${order.id} yaratildi: "${order.title}"`,
+  });
+  await notifyOrderPeer(order, telegramId, `📋 Yangi order #${order.id}\n📝 ${order.title}\n💰 ${order.amount} UZS`);
+
+  return json(200, { ok: true, order: orderShape(order) });
+}
+
+async function handleOrderCounter(supabase, telegramId, body) {
+  const original = await getOrderForUser(supabase, body.order_id, telegramId);
+  if (!original) return json(404, { ok: false, error: 'not_found' });
+  if (original.status !== 'created') return json(400, { ok: false, error: 'not_counterable' });
+  if (original.counter_offer_count >= MAX_COUNTER_OFFERS) return json(400, { ok: false, error: 'counter_limit' });
+
+  const { fields, error } = validateOrderFields(body);
+  if (error) return json(400, { ok: false, error });
+
+  await request(supabase, 'freelance_orders', {
+    method: 'PATCH',
+    query: `id=eq.${original.id}`,
+    body: { status: 'cancelled', updated_at: new Date().toISOString() },
+  });
+
+  const { data } = await request(supabase, 'freelance_orders', {
+    method: 'POST',
+    body: {
+      chat_id: original.chat_id,
+      created_by: telegramId,
+      client_id: original.client_id,
+      worker_user_id: original.worker_user_id,
+      listing_id: original.listing_id,
+      parent_order_id: original.id,
+      counter_offer_count: original.counter_offer_count + 1,
+      ...fields,
+    },
+    headers: { Prefer: 'return=representation' },
+  });
+  const order = data[0];
+
+  await insertMessage(supabase, original.chat_id, {
+    sender_id: telegramId,
+    message_type: 'system',
+    content: `🔄 Order #${original.id} o'rniga yangi taklif #${order.id}: "${order.title}", ${order.amount} UZS`,
+  });
+  await notifyOrderPeer(order, telegramId, `🔄 Order #${original.id} bo'yicha yangi taklif keldi: ${order.amount} UZS`);
+
+  return json(200, { ok: true, order: orderShape(order) });
+}
+
+async function handleOrderAccept(supabase, telegramId, body) {
+  const order = await getOrderForUser(supabase, body.order_id, telegramId);
+  if (!order) return json(404, { ok: false, error: 'not_found' });
+  if (order.status !== 'created') return json(400, { ok: false, error: 'not_acceptable' });
+  if (order.created_by === telegramId) return json(400, { ok: false, error: 'cannot_accept_own' });
+
+  const { data } = await request(supabase, 'freelance_orders', {
+    method: 'PATCH',
+    query: `id=eq.${order.id}`,
+    body: { status: 'accepted', updated_at: new Date().toISOString() },
+    headers: { Prefer: 'return=representation' },
+  });
+  const updated = data[0];
+
+  await insertMessage(supabase, order.chat_id, {
+    sender_id: telegramId,
+    message_type: 'system',
+    content: `✅ Order #${order.id} qabul qilindi`,
+  });
+  await notifyOrderPeer(updated, telegramId, `✅ Order #${order.id} qabul qilindi!`);
+
+  return json(200, { ok: true, order: orderShape(updated) });
+}
+
+async function handleOrderCancel(supabase, telegramId, body) {
+  const order = await getOrderForUser(supabase, body.order_id, telegramId);
+  if (!order) return json(404, { ok: false, error: 'not_found' });
+  if (!['created', 'accepted'].includes(order.status)) return json(400, { ok: false, error: 'not_cancellable' });
+
+  const { data } = await request(supabase, 'freelance_orders', {
+    method: 'PATCH',
+    query: `id=eq.${order.id}`,
+    body: { status: 'cancelled', updated_at: new Date().toISOString() },
+    headers: { Prefer: 'return=representation' },
+  });
+  const updated = data[0];
+
+  await insertMessage(supabase, order.chat_id, {
+    sender_id: telegramId,
+    message_type: 'system',
+    content: `❌ Order #${order.id} bekor qilindi`,
+  });
+  await notifyOrderPeer(updated, telegramId, `❌ Order #${order.id} bekor qilindi.`);
+
+  return json(200, { ok: true, order: orderShape(updated) });
+}
+
+async function handleOrderList(supabase, telegramId) {
+  const id = encodeURIComponent(telegramId);
+  const { data } = await request(supabase, 'freelance_orders', {
+    query: `select=*&or=(client_id.eq.${id},worker_user_id.eq.${id})&order=created_at.desc&limit=100`,
+  });
+  return json(200, {
+    ok: true,
+    orders: (data || []).map((row) => ({ ...orderShape(row), role: row.client_id === telegramId ? 'client' : 'worker' })),
+  });
+}
+
+async function handleOrderDetail(supabase, telegramId, body) {
+  const order = await getOrderForUser(supabase, body.order_id, telegramId);
+  if (!order) return json(404, { ok: false, error: 'not_found' });
+  return json(200, { ok: true, order: orderShape(order), role: order.client_id === telegramId ? 'client' : 'worker' });
 }
 
 /* ---------------- Admin ---------------- */
@@ -841,6 +1096,18 @@ exports.handler = async (event) => {
         return await handleMessageSend(supabase, telegramId, body);
       case 'message-report':
         return await handleMessageReport(supabase, telegramId, body);
+      case 'order-create':
+        return await handleOrderCreate(supabase, telegramId, body);
+      case 'order-counter':
+        return await handleOrderCounter(supabase, telegramId, body);
+      case 'order-accept':
+        return await handleOrderAccept(supabase, telegramId, body);
+      case 'order-cancel':
+        return await handleOrderCancel(supabase, telegramId, body);
+      case 'orders':
+        return await handleOrderList(supabase, telegramId);
+      case 'order-detail':
+        return await handleOrderDetail(supabase, telegramId, body);
       default:
         return json(400, { ok: false, error: 'unknown_action' });
     }
