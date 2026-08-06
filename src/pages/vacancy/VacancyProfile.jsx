@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import PageHeader from '../../components/PageHeader.jsx';
 import { vacancyCall } from '../../lib/vacancyApi.js';
+import MyListings from './MyListings.jsx';
 import WorkerRegister from './WorkerRegister.jsx';
 import WorkerRules from './WorkerRules.jsx';
 import styles from './vacancy.module.css';
@@ -146,7 +147,9 @@ export default function VacancyProfile() {
             </div>
           </div>
 
-          <p className={styles.note}>E&apos;lonlar va sozlamalar keyingi bosqichda ochiladi.</p>
+          <MyListings />
+
+          <p className={styles.note}>Sozlamalar va ish vaqti keyingi bosqichda ochiladi.</p>
         </>
       )}
 

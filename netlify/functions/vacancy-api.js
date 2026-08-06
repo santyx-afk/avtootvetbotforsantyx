@@ -212,6 +212,222 @@ async function handleAcceptRules(supabase, telegramId) {
   return json(200, { ok: true });
 }
 
+/* ---------------- E'lonlar ---------------- */
+
+const MAX_ACTIVE_LISTINGS = 3;
+
+function listingShape(row) {
+  return {
+    id: row.id,
+    worker_id: row.worker_id,
+    title: row.title,
+    description: row.description,
+    category: row.category,
+    min_price: Number(row.min_price || 0),
+    is_published: Boolean(row.is_published),
+    is_hidden: Boolean(row.is_hidden),
+    created_at: row.created_at,
+  };
+}
+
+function catalogShape(row) {
+  const worker = row.workers || {};
+  return {
+    ...listingShape(row),
+    worker: {
+      id: worker.id,
+      user_id: worker.user_id,
+      name: worker.name,
+      avg_rating: Number(worker.avg_rating || 0),
+      total_reviews: Number(worker.total_reviews || 0),
+      completed_orders: Number(worker.completed_orders || 0),
+      is_busy: Boolean(worker.is_busy),
+      categories: worker.categories || [],
+    },
+  };
+}
+
+// Ishchining faol e'lonlari sonini hisoblaydi (limit tekshiruvi uchun).
+async function countActiveListings(supabase, workerId) {
+  const { data } = await request(supabase, 'listings', {
+    query: `select=id&worker_id=eq.${workerId}&is_published=eq.true&is_hidden=eq.false`,
+  });
+  return (data || []).length;
+}
+
+async function requireWorker(supabase, telegramId) {
+  const worker = await getWorkerByUser(supabase, telegramId);
+  if (!worker) return { error: json(403, { ok: false, error: 'not_worker' }) };
+  if (worker.is_banned) return { error: json(403, { ok: false, error: 'banned' }) };
+  return { worker };
+}
+
+async function handleMyListings(supabase, telegramId) {
+  const { worker, error } = await requireWorker(supabase, telegramId);
+  if (error) return error;
+  const { data } = await request(supabase, 'listings', {
+    query: `select=*&worker_id=eq.${worker.id}&order=created_at.desc`,
+  });
+  return json(200, {
+    ok: true,
+    listings: (data || []).map(listingShape),
+    is_approved: Boolean(worker.is_approved),
+    categories: worker.categories || [],
+  });
+}
+
+async function handleListingCreate(supabase, telegramId, body) {
+  const { worker, error } = await requireWorker(supabase, telegramId);
+  if (error) return error;
+
+  const title = trimText(body.title, 120);
+  const description = trimText(body.description, 2000);
+  const category = CATEGORIES.includes(body.category) ? body.category : null;
+  const minPrice = Math.round(Number(body.min_price || 0));
+  // Tasdiqlanmagan ishchi faqat chernovik saqlay oladi.
+  const publish = Boolean(body.publish) && worker.is_approved;
+
+  if (title.length < 3) return json(400, { ok: false, error: 'invalid_title' });
+  if (description.length < 10) return json(400, { ok: false, error: 'invalid_description' });
+  if (!category || !(worker.categories || []).includes(category)) return json(400, { ok: false, error: 'invalid_category' });
+  if (!Number.isFinite(minPrice) || minPrice <= 0) return json(400, { ok: false, error: 'invalid_price' });
+
+  if (publish && (await countActiveListings(supabase, worker.id)) >= MAX_ACTIVE_LISTINGS) {
+    return json(400, { ok: false, error: 'listing_limit' });
+  }
+
+  const { data } = await request(supabase, 'listings', {
+    method: 'POST',
+    body: { worker_id: worker.id, title, description, category, min_price: minPrice, is_published: publish },
+    headers: { Prefer: 'return=representation' },
+  });
+  return json(200, { ok: true, listing: listingShape(data[0]) });
+}
+
+async function getOwnListing(supabase, workerId, listingId) {
+  const { data } = await request(supabase, 'listings', {
+    query: `select=*&id=eq.${Number(listingId)}&worker_id=eq.${workerId}&limit=1`,
+  });
+  return data?.[0] || null;
+}
+
+async function handleListingUpdate(supabase, telegramId, body) {
+  const { worker, error } = await requireWorker(supabase, telegramId);
+  if (error) return error;
+  const listing = await getOwnListing(supabase, worker.id, body.listing_id);
+  if (!listing) return json(404, { ok: false, error: 'not_found' });
+
+  const patch = { updated_at: new Date().toISOString() };
+  if (body.title !== undefined) {
+    const title = trimText(body.title, 120);
+    if (title.length < 3) return json(400, { ok: false, error: 'invalid_title' });
+    patch.title = title;
+  }
+  if (body.description !== undefined) {
+    const description = trimText(body.description, 2000);
+    if (description.length < 10) return json(400, { ok: false, error: 'invalid_description' });
+    patch.description = description;
+  }
+  if (body.category !== undefined) {
+    if (!CATEGORIES.includes(body.category) || !(worker.categories || []).includes(body.category)) {
+      return json(400, { ok: false, error: 'invalid_category' });
+    }
+    patch.category = body.category;
+  }
+  if (body.min_price !== undefined) {
+    const minPrice = Math.round(Number(body.min_price));
+    if (!Number.isFinite(minPrice) || minPrice <= 0) return json(400, { ok: false, error: 'invalid_price' });
+    patch.min_price = minPrice;
+  }
+  if (body.publish !== undefined) {
+    if (body.publish && !worker.is_approved) return json(403, { ok: false, error: 'not_approved' });
+    if (body.publish && !listing.is_published && (await countActiveListings(supabase, worker.id)) >= MAX_ACTIVE_LISTINGS) {
+      return json(400, { ok: false, error: 'listing_limit' });
+    }
+    patch.is_published = Boolean(body.publish);
+  }
+  if (body.hidden !== undefined) {
+    if (!body.hidden && listing.is_hidden && listing.is_published) {
+      if ((await countActiveListings(supabase, worker.id)) >= MAX_ACTIVE_LISTINGS) {
+        return json(400, { ok: false, error: 'listing_limit' });
+      }
+    }
+    patch.is_hidden = Boolean(body.hidden);
+  }
+
+  const { data } = await request(supabase, 'listings', {
+    method: 'PATCH',
+    query: `id=eq.${listing.id}`,
+    body: patch,
+    headers: { Prefer: 'return=representation' },
+  });
+  return json(200, { ok: true, listing: listingShape(data[0]) });
+}
+
+async function handleListingDelete(supabase, telegramId, body) {
+  const { worker, error } = await requireWorker(supabase, telegramId);
+  if (error) return error;
+  const listing = await getOwnListing(supabase, worker.id, body.listing_id);
+  if (!listing) return json(404, { ok: false, error: 'not_found' });
+  await request(supabase, 'listings', { method: 'DELETE', query: `id=eq.${listing.id}` });
+  return json(200, { ok: true });
+}
+
+// Katalog — faqat tasdiqlangan, banlanmagan ishchilarning faol e'lonlari.
+async function handleCatalog(supabase, body) {
+  const params = ['select=*,workers!inner(*)', 'is_published=eq.true', 'is_hidden=eq.false',
+    'workers.is_approved=eq.true', 'workers.is_banned=eq.false'];
+
+  if (CATEGORIES.includes(body.category)) params.push(`category=eq.${body.category}`);
+  // PostgREST filtr sintaksisiga ta'sir qiladigan belgilarni olib tashlaymiz.
+  const search = trimText(body.search, 60).replace(/[,()*."\\]/g, ' ').trim();
+  if (search) params.push(`title=ilike.*${encodeURIComponent(search)}*`);
+
+  const sortMap = {
+    rating: 'workers(avg_rating).desc',
+    price_asc: 'min_price.asc',
+    price_desc: 'min_price.desc',
+    online: 'workers(is_busy).asc',
+  };
+  params.push(`order=${sortMap[body.sort] || 'created_at.desc'}`);
+  params.push('limit=60');
+
+  const { data } = await request(supabase, 'listings', { query: params.join('&') });
+  return json(200, { ok: true, listings: (data || []).map(catalogShape) });
+}
+
+// Ishchining ochiq profili — e'lonlari va sharhlari bilan.
+async function handleWorkerPublic(supabase, body) {
+  const workerId = Number(body.worker_id);
+  if (!workerId) return json(400, { ok: false, error: 'invalid_worker' });
+
+  const { data } = await request(supabase, 'workers', {
+    query: `select=*&id=eq.${workerId}&is_approved=eq.true&is_banned=eq.false&limit=1`,
+  });
+  const worker = data?.[0];
+  if (!worker) return json(404, { ok: false, error: 'not_found' });
+
+  const [listingsRes, reviewsRes] = await Promise.all([
+    request(supabase, 'listings', {
+      query: `select=*&worker_id=eq.${workerId}&is_published=eq.true&is_hidden=eq.false&order=created_at.desc`,
+    }).catch(() => ({ data: [] })),
+    request(supabase, 'freelance_reviews', {
+      query: `select=rating,comment,created_at&reviewed_id=eq.${encodeURIComponent(worker.user_id)}&reviewer_role=eq.client&is_visible=eq.true&order=created_at.desc&limit=20`,
+    }).catch(() => ({ data: [] })),
+  ]);
+
+  const shaped = workerShape(worker);
+  if (!shaped.show_phone) shaped.phone = null;
+  delete shaped.card_number;
+
+  return json(200, {
+    ok: true,
+    worker: shaped,
+    listings: (listingsRes.data || []).map(listingShape),
+    reviews: reviewsRes.data || [],
+  });
+}
+
 /* ---------------- Admin ---------------- */
 
 async function handleAdminWorkers(supabase, body) {
@@ -329,6 +545,18 @@ exports.handler = async (event) => {
         return await handleWorkerRegister(supabase, telegramId, body);
       case 'worker-accept-rules':
         return await handleAcceptRules(supabase, telegramId);
+      case 'worker-public':
+        return await handleWorkerPublic(supabase, body);
+      case 'catalog':
+        return await handleCatalog(supabase, body);
+      case 'my-listings':
+        return await handleMyListings(supabase, telegramId);
+      case 'listing-create':
+        return await handleListingCreate(supabase, telegramId, body);
+      case 'listing-update':
+        return await handleListingUpdate(supabase, telegramId, body);
+      case 'listing-delete':
+        return await handleListingDelete(supabase, telegramId, body);
       default:
         return json(400, { ok: false, error: 'unknown_action' });
     }
