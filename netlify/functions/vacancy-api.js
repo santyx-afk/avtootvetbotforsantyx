@@ -1454,6 +1454,178 @@ async function handleMyRating(supabase, telegramId) {
   });
 }
 
+/* ---------------- Reportlar ---------------- */
+
+// Order bo'yicha shikoyat. Chat xabariga shikoyat `message-report` orqali beriladi.
+async function handleOrderReport(supabase, telegramId, body) {
+  const order = await getOrderForUser(supabase, body.order_id, telegramId);
+  if (!order) return json(404, { ok: false, error: 'not_found' });
+
+  const reason = trimText(body.reason, 1000);
+  if (reason.length < 5) return json(400, { ok: false, error: 'invalid_reason' });
+
+  const reportedId = order.client_id === telegramId ? order.worker_user_id : order.client_id;
+
+  // Bir order bo'yicha ochiq shikoyat takrorlanmasin.
+  const { data: existing } = await request(supabase, 'freelance_reports', {
+    query: `select=id&order_id=eq.${order.id}&reporter_id=eq.${encodeURIComponent(telegramId)}&status=eq.pending&limit=1`,
+  }).catch(() => ({ data: [] }));
+  if (existing?.[0]) return json(400, { ok: false, error: 'already_reported' });
+
+  await request(supabase, 'freelance_reports', {
+    method: 'POST',
+    body: {
+      order_id: order.id,
+      chat_id: order.chat_id,
+      reporter_id: telegramId,
+      reported_id: reportedId,
+      reason,
+    },
+  });
+
+  await insertMessage(supabase, order.chat_id, {
+    sender_id: telegramId,
+    message_type: 'system',
+    content: `🚩 Order #${order.id} bo'yicha shikoyat yuborildi — admin ko'rib chiqadi`,
+  });
+
+  for (const chatId of adminChatIds()) {
+    await sendMessage(
+      chatId,
+      `🚩 <b>Order bo'yicha shikoyat</b>\n\nOrder #${order.id}\nKimdan: <code>${telegramId}</code>\nKimga: <code>${reportedId}</code>\n\n${reason}`,
+    ).catch(() => null);
+  }
+
+  return json(200, { ok: true });
+}
+
+/* ---------------- Admin: reportlar ---------------- */
+
+// Jarima zinapoyasi: 1 — ogohlantirish, 2 — reyting -0.5, 3+ — ban.
+// Faqat tasdiqlangan (dismissed bo'lmagan) reportlar sanaladi.
+const REPORT_LADDER = ['warn', 'penalty', 'ban'];
+const REPORT_BAN_DAYS = 7;
+
+async function countConfirmedReports(supabase, reportedId) {
+  const { data } = await request(supabase, 'freelance_reports', {
+    query: `select=id&reported_id=eq.${encodeURIComponent(reportedId)}&resolution=not.is.null&resolution=neq.dismissed`,
+  }).catch(() => ({ data: [] }));
+  return (data || []).length;
+}
+
+async function handleAdminReports(supabase, body) {
+  const status = ['pending', 'reviewed', 'resolved'].includes(body.status) ? body.status : null;
+  const filters = ['select=*'];
+  if (status) filters.push(`status=eq.${status}`);
+  filters.push('order=created_at.desc', 'limit=100');
+
+  const { data } = await request(supabase, 'freelance_reports', { query: filters.join('&') }).catch(() => ({
+    data: [],
+  }));
+
+  const reports = data || [];
+  // Har bir report yonida aybdorning oldingi tasdiqlangan reportlari soni —
+  // admin qaysi choraga o'tishni ko'rib tursin.
+  const counts = {};
+  for (const id of [...new Set(reports.map((r) => r.reported_id))]) {
+    counts[id] = await countConfirmedReports(supabase, id);
+  }
+
+  return json(200, {
+    ok: true,
+    reports: reports.map((r) => ({ ...r, reported_confirmed_count: counts[r.reported_id] || 0 })),
+  });
+}
+
+// Admin qarori: warn | penalty | ban | dismiss | auto (zinapoya o'zi tanlaydi).
+async function handleAdminReportResolve(supabase, body, adminTelegramId) {
+  const reportId = Number(body.report_id);
+  if (!reportId) return json(400, { ok: false, error: 'invalid_report' });
+
+  const { data: found } = await request(supabase, 'freelance_reports', {
+    query: `select=*&id=eq.${reportId}&limit=1`,
+  }).catch(() => ({ data: [] }));
+  const report = found?.[0];
+  if (!report) return json(404, { ok: false, error: 'not_found' });
+  if (report.resolution) return json(400, { ok: false, error: 'already_resolved' });
+
+  let action = ['warn', 'penalty', 'ban', 'dismiss', 'auto'].includes(body.action) ? body.action : null;
+  if (!action) return json(400, { ok: false, error: 'invalid_action' });
+
+  if (action === 'auto') {
+    const prior = await countConfirmedReports(supabase, report.reported_id);
+    action = REPORT_LADDER[Math.min(prior, REPORT_LADDER.length - 1)];
+  }
+
+  const notes = trimText(body.admin_notes, 500);
+  const { data: workerRows } = await request(supabase, 'workers', {
+    query: `select=*&user_id=eq.${encodeURIComponent(report.reported_id)}&limit=1`,
+  }).catch(() => ({ data: [] }));
+  const worker = workerRows?.[0] || null;
+
+  // Reyting va ban faqat ishchilarga tegishli — mijozlarda alohida jadval yo'q.
+  if ((action === 'penalty' || action === 'ban') && !worker) {
+    return json(400, { ok: false, error: 'not_a_worker' });
+  }
+
+  let notice = null;
+  if (action === 'dismiss') {
+    notice = null;
+  } else if (action === 'warn') {
+    notice = `⚠️ <b>Ogohlantirish</b>\n\nSizga qarshi shikoyat tasdiqlandi.\nSabab: ${report.reason}\n\nQoidalarga rioya qiling.`;
+  } else if (action === 'penalty') {
+    await request(supabase, 'workers', {
+      method: 'PATCH',
+      query: `id=eq.${worker.id}`,
+      body: { rating_penalty: Number(worker.rating_penalty || 0) + 0.5, updated_at: new Date().toISOString() },
+    }).catch(() => null);
+    await recalculateWorkerRating(supabase, report.reported_id).catch(() => null);
+    notice = `⚠️ <b>Shtraf</b>\n\nShikoyat tasdiqlandi, reytingingiz 0.5 ball tushirildi.\nSabab: ${report.reason}`;
+  } else if (action === 'ban') {
+    const days = Number(body.ban_days);
+    const permanent = body.permanent === true;
+    const until = permanent
+      ? null
+      : new Date(Date.now() + (Number.isFinite(days) && days > 0 ? days : REPORT_BAN_DAYS) * 86400000).toISOString();
+    await request(supabase, 'workers', {
+      method: 'PATCH',
+      query: `id=eq.${worker.id}`,
+      body: {
+        is_banned: true,
+        ban_reason: notes || `Shikoyat: ${report.reason}`.slice(0, 300),
+        banned_until: until,
+        updated_at: new Date().toISOString(),
+      },
+    }).catch(() => null);
+    notice = permanent
+      ? `🚫 <b>Hisobingiz to'xtatildi</b>\n\nSabab: ${notes || report.reason}`
+      : `🚫 <b>Hisobingiz ${Number.isFinite(days) && days > 0 ? days : REPORT_BAN_DAYS} kunga to'xtatildi</b>\n\nSabab: ${notes || report.reason}`;
+  }
+
+  const { data: updated } = await request(supabase, 'freelance_reports', {
+    method: 'PATCH',
+    query: `id=eq.${reportId}`,
+    body: {
+      status: 'resolved',
+      resolution: action === 'dismiss' ? 'dismissed' : action === 'warn' ? 'warned' : action === 'penalty' ? 'penalty' : 'banned',
+      admin_notes: notes || null,
+      resolved_by: String(adminTelegramId),
+      resolved_at: new Date().toISOString(),
+    },
+    headers: { Prefer: 'return=representation' },
+  });
+
+  if (notice) await sendMessage(report.reported_id, notice).catch(() => null);
+  await sendMessage(
+    report.reporter_id,
+    action === 'dismiss'
+      ? `ℹ️ Shikoyatingiz ko'rib chiqildi. Qoida buzilishi aniqlanmadi.`
+      : `✅ Shikoyatingiz ko'rib chiqildi va chora ko'rildi. Rahmat.`,
+  ).catch(() => null);
+
+  return json(200, { ok: true, report: updated?.[0] || null, applied: action });
+}
+
 async function handleOrderList(supabase, telegramId) {
   const id = encodeURIComponent(telegramId);
   const { data } = await request(supabase, 'freelance_orders', {
@@ -1605,6 +1777,8 @@ async function handleAdminReviewVisibility(supabase, body) {
 }
 
 const ADMIN_ACTIONS = {
+  'admin/reports': handleAdminReports,
+  'admin/report-resolve': handleAdminReportResolve,
   'admin/reviews': handleAdminReviews,
   'admin/review-visibility': handleAdminReviewVisibility,
   'admin/workers': handleAdminWorkers,
@@ -1634,7 +1808,8 @@ exports.handler = async (event) => {
     const adminHandler = ADMIN_ACTIONS[body.action];
     if (adminHandler) {
       if (!isAdminTelegramId(telegramId)) return json(403, { ok: false, error: 'forbidden' });
-      return await adminHandler(supabase, body);
+      // telegramId — audit uchun (kim hal qildi); eski handlerlar buni e'tiborsiz qoldiradi.
+      return await adminHandler(supabase, body, telegramId);
     }
 
     switch (body.action) {
@@ -1700,6 +1875,8 @@ exports.handler = async (event) => {
         return await handleRequestRevision(supabase, telegramId, body);
       case 'order-review':
         return await handleOrderReview(supabase, telegramId, body);
+      case 'order-report':
+        return await handleOrderReport(supabase, telegramId, body);
       case 'my-rating':
         return await handleMyRating(supabase, telegramId);
       default:

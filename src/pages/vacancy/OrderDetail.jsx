@@ -38,6 +38,8 @@ const ERRORS = {
   not_completed: 'Baho faqat order yakunlangandan keyin qo‘yiladi',
   invalid_rating: '1 dan 5 gacha yulduz tanlang',
   already_reviewed: 'Siz allaqachon baho qo‘ygansiz',
+  invalid_reason: 'Sababni batafsilroq yozing',
+  already_reported: 'Bu order bo‘yicha shikoyatingiz ko‘rib chiqilmoqda',
 };
 
 // Uzoq muddat uchun format: "02 kun 06:00:00" (deadline va 3 kunlik to'lov oynasi).
@@ -74,6 +76,9 @@ export default function OrderDetail({ orderId, onBack }) {
   const [myReview, setMyReview] = useState(null);
   const [rating, setRating] = useState(0);
   const [reviewComment, setReviewComment] = useState('');
+  const [reporting, setReporting] = useState(false);
+  const [reportReason, setReportReason] = useState('');
+  const [reportSent, setReportSent] = useState(false);
   const resultFileRef = useRef(null);
 
   const load = useCallback(async () => {
@@ -155,6 +160,21 @@ export default function OrderDetail({ orderId, onBack }) {
     } finally {
       setBusy(false);
       if (resultFileRef.current) resultFileRef.current.value = '';
+    }
+  }
+
+  async function submitReport() {
+    setBusy(true);
+    setError('');
+    try {
+      await vacancyCall('order-report', { order_id: orderId, reason: reportReason.trim() });
+      setReporting(false);
+      setReportReason('');
+      setReportSent(true);
+    } catch (err) {
+      setError(ERRORS[err.message] || 'Shikoyat yuborilmadi.');
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -552,6 +572,51 @@ export default function OrderDetail({ orderId, onBack }) {
         <div className={styles.statusCard}>
           <span className={styles.statusEmoji}>❌</span>
           <div className={styles.statusTitle}>Order bekor qilindi</div>
+        </div>
+      )}
+
+      {/* Shikoyat — bekor qilingan/yakunlanganidan tashqari har bosqichda */}
+      {!['cancelled'].includes(order.status) && (
+        <div className={styles.reportRow}>
+          {reportSent ? (
+            <span className={styles.note}>🚩 Shikoyatingiz yuborildi — admin ko&apos;rib chiqadi.</span>
+          ) : (
+            <button type="button" className={styles.reportBtn} onClick={() => setReporting(true)}>
+              🚩 Shikoyat qilish
+            </button>
+          )}
+        </div>
+      )}
+
+      {reporting && (
+        <div className={styles.modalOverlay}>
+          <div className={styles.modal}>
+            <h2 className={styles.modalTitle}>🚩 Shikoyat</h2>
+            <p className={styles.statusDesc}>
+              Muammoni batafsil yozing. Admin chat tarixi va order tafsilotlarini ko&apos;rib chiqadi.
+            </p>
+            <textarea
+              className={styles.textarea}
+              rows={4}
+              value={reportReason}
+              onChange={(e) => setReportReason(e.target.value)}
+              placeholder="Nima sababdan shikoyat qilyapsiz?"
+              maxLength={1000}
+            />
+            <div className={styles.regActions}>
+              <button type="button" className={styles.btnGhost} onClick={() => setReporting(false)} disabled={busy}>
+                Bekor qilish
+              </button>
+              <button
+                type="button"
+                className={styles.btnPrimary}
+                onClick={submitReport}
+                disabled={busy || reportReason.trim().length < 5}
+              >
+                Yuborish
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
