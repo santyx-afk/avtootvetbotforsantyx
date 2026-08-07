@@ -3,7 +3,12 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { showBackButton, hideBackButton } from '../telegram/webapp.js';
 
 // Ildiz (tab) yo'nalishlari — bularda Telegram back button yashiriladi.
-const ROOT_PATHS = ['/catalog', '/cart', '/wishlist', '/history', '/profile', '/'];
+// Vakansiya tablari ham ildiz: ular orasida o'tish tarix emas, do'konga qaytish
+// uchun esa tab bar'da alohida "← Do'kon" tugmasi bor.
+const ROOT_PATHS = [
+  '/catalog', '/cart', '/wishlist', '/history', '/profile', '/',
+  '/vacancy', '/vacancy/chats', '/vacancy/orders', '/vacancy/profile',
+];
 
 // Joriy yo'nalishga qarab Telegram BackButton'ni ko'rsatadi/yashiradi.
 // Ildiz bo'lmagan sahifalarda bosilganda oldingi sahifaga qaytaradi.

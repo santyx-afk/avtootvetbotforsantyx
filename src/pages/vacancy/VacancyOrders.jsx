@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import PageHeader from '../../components/PageHeader.jsx';
 import { vacancyCall } from '../../lib/vacancyApi.js';
 import OrderDetail from './OrderDetail.jsx';
+import { useVacancyBack } from './useVacancyBack.js';
 import { ORDER_STATUS_LABEL, ORDER_FORMAT_LABEL } from './orderStatus.js';
 import styles from './vacancy.module.css';
 
@@ -25,6 +26,9 @@ export default function VacancyOrders() {
   useEffect(() => {
     if (!openOrder) load();
   }, [load, openOrder]);
+
+  // Order tafsilotlari alohida route emas — Telegram "orqaga" tugmasi uni yopadi.
+  useVacancyBack(() => setOpenOrder(null), Boolean(openOrder));
 
   if (openOrder) return <OrderDetail orderId={openOrder} onBack={() => setOpenOrder(null)} />;
 

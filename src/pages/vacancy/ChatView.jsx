@@ -3,6 +3,7 @@ import { vacancyCall } from '../../lib/vacancyApi.js';
 import ProtectedMedia from './ProtectedMedia.jsx';
 import OrderModal from './OrderModal.jsx';
 import OrderDetail from './OrderDetail.jsx';
+import { useVacancyBack } from './useVacancyBack.js';
 import { ORDER_STATUS_LABEL } from './orderStatus.js';
 import styles from './vacancy.module.css';
 
@@ -52,6 +53,9 @@ export default function ChatView({ chatId, onBack }) {
   const bottomRef = useRef(null);
   const fileRef = useRef(null);
   const meRef = useRef(null);
+
+  // Telegram "orqaga" tugmasi: ochiq order tafsilotini, aks holda chatni yopadi.
+  useVacancyBack(() => (openOrder ? setOpenOrder(null) : onBack?.()));
 
   const load = useCallback(async () => {
     try {

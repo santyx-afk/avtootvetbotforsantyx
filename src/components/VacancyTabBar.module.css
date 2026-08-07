@@ -42,9 +42,17 @@
   transform: scale(0.9);
 }
 
-/* "Do'kon" — chiqish tugmasi: ingichka ajratuvchi bilan */
+/* "Do'kon" — chiqish tugmasi. Bu tab emas, ikkinchi darajali amal:
+   torroq va so'nikroq, shunda 4 ta asosiy tab ko'zga birinchi tashlanadi. */
 .exit {
   position: relative;
+  flex: 0 0 auto;
+  min-width: 58px;
+  padding: 0 4px;
+  opacity: 0.72;
+}
+.exit .label {
+  font-size: 9.5px;
 }
 .exit::after {
   content: '';

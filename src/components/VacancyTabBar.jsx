@@ -25,7 +25,7 @@ export default function VacancyTabBar() {
       <div className={styles.inner}>
         <button type="button" className={`${styles.tab} ${styles.exit}`} onClick={exitToStore}>
           <span className={styles.iconWrap}>
-            <Icon name="chevronLeft" size={24} />
+            <Icon name="chevronLeft" size={20} />
           </span>
           <span className={styles.label}>Do'kon</span>
         </button>
