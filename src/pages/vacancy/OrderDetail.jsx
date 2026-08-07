@@ -1,12 +1,24 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import CopyField from '../../components/CopyField.jsx';
 import Spinner from '../../components/Spinner.jsx';
 import { vacancyCall } from '../../lib/vacancyApi.js';
+import ProtectedMedia from './ProtectedMedia.jsx';
 import { ORDER_STATUS_LABEL, ORDER_FORMAT_LABEL } from './orderStatus.js';
 import styles from './vacancy.module.css';
 
 const POLL_MS = 5000;
 const SUPPORT = '@santyx';
+const MAX_REVISIONS = 3;
+const MAX_MEDIA_BYTES = 4 * 1024 * 1024;
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(',')[1] || '');
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
 
 const ERRORS = {
   not_payable: "Bu order hozir to'lovga tayyor emas",
@@ -15,6 +27,14 @@ const ERRORS = {
   not_materials_stage: 'Bu bosqichda materiallar kutilmayapti',
   deadline_not_expired: "Deadline hali o'tmagan",
   invalid_extra_hours: "Qo'shimcha vaqt 1–24 soat oralig'ida bo'lsin",
+  not_result_stage: 'Bu bosqichda natija yuborilmaydi',
+  not_reviewable: 'Bu order hozir tekshiruvda emas',
+  only_worker: 'Bu amalni faqat montajor bajaradi',
+  only_client: 'Bu amalni faqat mijoz bajaradi',
+  media_required: 'Fayl tanlang',
+  media_too_large: "Fayl 4 MB dan katta bo'lmasin",
+  invalid_media_type: 'Faqat JPEG, PNG, WebP, MP4, MOV',
+  invalid_comment: "Nima o'zgartirish kerakligini batafsilroq yozing",
 };
 
 // Uzoq muddat uchun format: "02 kun 06:00:00" (deadline va 3 kunlik to'lov oynasi).
@@ -44,6 +64,10 @@ export default function OrderDetail({ orderId, onBack }) {
   const [error, setError] = useState('');
   const [extraHours, setExtraHours] = useState('6');
   const [tick, setTick] = useState(0);
+  const [revising, setRevising] = useState(false);
+  const [revisionComment, setRevisionComment] = useState('');
+  const [confirmPayment, setConfirmPayment] = useState(false);
+  const resultFileRef = useRef(null);
 
   const load = useCallback(async () => {
     try {
@@ -98,6 +122,38 @@ export default function OrderDetail({ orderId, onBack }) {
       return null;
     } finally {
       setBusy(false);
+    }
+  }
+
+  // Montajor natijani yuboradi.
+  async function sendResult(file) {
+    if (!file) return;
+    if (file.size > MAX_MEDIA_BYTES) {
+      setError(ERRORS.media_too_large);
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      const data = await fileToBase64(file);
+      const res = await vacancyCall('order-result-send', {
+        order_id: orderId,
+        media: { type: file.type, data },
+      });
+      setOrder(res.order);
+    } catch (err) {
+      setError(ERRORS[err.message] || 'Natija yuborilmadi.');
+    } finally {
+      setBusy(false);
+      if (resultFileRef.current) resultFileRef.current.value = '';
+    }
+  }
+
+  async function submitRevision() {
+    const res = await call('order-request-revision', { comment: revisionComment.trim() });
+    if (res) {
+      setRevising(false);
+      setRevisionComment('');
     }
   }
 
@@ -314,6 +370,100 @@ export default function OrderDetail({ orderId, onBack }) {
         </div>
       )}
 
+      {/* Montajor natijani yuboradi (in_progress / revising) */}
+      {['in_progress', 'revising'].includes(order.status) && !isClient && (
+        <div className={styles.statusCard}>
+          <span className={styles.statusEmoji}>📤</span>
+          <div className={styles.statusTitle}>Natijani yuborish</div>
+          <p className={styles.statusDesc}>
+            Tayyor ishni yuboring — mijoz uni himoyalangan ko&apos;rinishda ko&apos;radi (yuklab bo&apos;lmaydi).
+            Yakuniy fayl to&apos;liq to&apos;lovdan keyin beriladi.
+          </p>
+          {order.revision_count > 0 && (
+            <p className={styles.note}>
+              O&apos;zgartirishlar: {order.revision_count}/{MAX_REVISIONS}
+            </p>
+          )}
+          <input
+            ref={resultFileRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime"
+            hidden
+            onChange={(e) => sendResult(e.target.files?.[0])}
+          />
+          <button
+            type="button"
+            className={styles.btnPrimary}
+            disabled={busy}
+            onClick={() => resultFileRef.current?.click()}
+          >
+            {busy ? 'Yuklanmoqda...' : '📎 Natijani tanlash'}
+          </button>
+        </div>
+      )}
+
+      {/* Natija yuborildi — montajor tomonida kutish + to'lov so'rash */}
+      {['result_sent', 'reviewing'].includes(order.status) && !isClient && (
+        <div className={styles.statusCard}>
+          <span className={styles.statusEmoji}>⏳</span>
+          <div className={styles.statusTitle}>
+            {order.status === 'reviewing' ? 'Mijoz tekshirmoqda' : 'Natija yuborildi'}
+          </div>
+          <p className={styles.statusDesc}>Mijoz natijani ko&apos;rib chiqmoqda.</p>
+          {order.status === 'result_sent' && (
+            <button type="button" className={styles.btnGhost} disabled={busy} onClick={() => setConfirmPayment(true)}>
+              Qolgan to&apos;lovni so&apos;rash
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Mijoz natijani ko'radi va 3 ta tanlovdan birini qiladi */}
+      {['result_sent', 'reviewing'].includes(order.status) && isClient && (
+        <div className={styles.statusCard}>
+          <span className={styles.statusEmoji}>🎬</span>
+          <div className={styles.statusTitle}>Natija tayyor</div>
+
+          {order.result_media_url && (
+            <ProtectedMedia url={order.result_media_url} type={order.result_media_kind || 'image'} />
+          )}
+
+          <p className={styles.statusDesc}>
+            Natijani ko&apos;rib chiqing. Qabul qilsangiz qolgan {formatUzs(order.second_payment)} to&apos;lovga
+            o&apos;tasiz.
+          </p>
+
+          <button type="button" className={styles.btnPrimary} disabled={busy} onClick={() => call('order-approve-result')}>
+            ✅ Qabul qildim
+          </button>
+
+          <div className={styles.regActions}>
+            <button
+              type="button"
+              className={styles.btnGhost}
+              disabled={busy}
+              onClick={() => setRevising(true)}
+            >
+              ✏️ O&apos;zgartirish kerak
+            </button>
+          </div>
+          <p className={styles.note}>
+            O&apos;zgartirishlar: {order.revision_count}/{MAX_REVISIONS}
+            {order.revision_count >= MAX_REVISIONS && ' — limit tugadi, keyingi so‘rov nizoga aylanadi'}
+          </p>
+        </div>
+      )}
+
+      {order.status === 'disputed' && (
+        <div className={styles.statusCard}>
+          <span className={styles.statusEmoji}>🚩</span>
+          <div className={styles.statusTitle}>Nizo ochildi</div>
+          <p className={styles.statusDesc}>
+            O&apos;zgartirish limiti tugadi va tomonlar kelisha olmadi. Admin ko&apos;rib chiqmoqda.
+          </p>
+        </div>
+      )}
+
       {order.status === 'completed' && (
         <div className={styles.statusCard}>
           <span className={styles.statusEmoji}>🎉</span>
@@ -330,6 +480,72 @@ export default function OrderDetail({ orderId, onBack }) {
         <div className={styles.statusCard}>
           <span className={styles.statusEmoji}>❌</span>
           <div className={styles.statusTitle}>Order bekor qilindi</div>
+        </div>
+      )}
+
+      {/* O'zgartirish so'rash modali */}
+      {revising && (
+        <div className={styles.modalOverlay}>
+          <div className={styles.modal}>
+            <h2 className={styles.modalTitle}>✏️ O&apos;zgartirish kerak</h2>
+            <p className={styles.statusDesc}>
+              Nima o&apos;zgartirish kerakligini aniq yozing. Bu {order.revision_count + 1}-o&apos;zgartirish
+              (limit: {MAX_REVISIONS}).
+            </p>
+            <textarea
+              className={styles.textarea}
+              rows={4}
+              value={revisionComment}
+              onChange={(e) => setRevisionComment(e.target.value)}
+              placeholder="Masalan: 0:15 dagi musiqani almashtiring, oxirgi kadr uzunroq bo'lsin..."
+              maxLength={1000}
+            />
+            <div className={styles.regActions}>
+              <button type="button" className={styles.btnGhost} onClick={() => setRevising(false)} disabled={busy}>
+                Bekor qilish
+              </button>
+              <button
+                type="button"
+                className={styles.btnPrimary}
+                onClick={submitRevision}
+                disabled={busy || revisionComment.trim().length < 5}
+              >
+                Yuborish
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Montajor uchun ogohlantirish — to'lov so'rashdan oldin */}
+      {confirmPayment && (
+        <div className={styles.modalOverlay}>
+          <div className={styles.modal}>
+            <h2 className={styles.modalTitle}>⚠️ Muhim!</h2>
+            <p className={styles.statusDesc}>Mijoz natijadan qanoatlandimi?</p>
+            <p className={styles.statusDesc}>
+              Yakuniy to&apos;lovni so&apos;rashdan oldin mijoz natijani qabul qilganini tasdiqlang.
+            </p>
+            <div className={styles.paymentWarning}>
+              Qoidaga amal qilmaslik ban ga olib kelishi mumkin.
+            </div>
+            <div className={styles.regActions}>
+              <button type="button" className={styles.btnGhost} onClick={() => setConfirmPayment(false)} disabled={busy}>
+                Orqaga
+              </button>
+              <button
+                type="button"
+                className={styles.btnPrimary}
+                disabled={busy}
+                onClick={async () => {
+                  const res = await call('order-request-payment');
+                  if (res) setConfirmPayment(false);
+                }}
+              >
+                Mijoz tasdiqladi ✓
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

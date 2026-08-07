@@ -532,6 +532,15 @@ const MEDIA_TYPES = {
   'video/quicktime': { ext: 'mov', kind: 'video' },
 };
 
+// Saqlangan yo'l kengaytmasi bo'yicha media turi (imzolangan URL query bilan
+// kelgani uchun URL'dan taxmin qilish ishonchsiz).
+function mediaKindFromPath(path) {
+  if (!path) return null;
+  const ext = String(path).split('.').pop().toLowerCase();
+  const match = Object.values(MEDIA_TYPES).find((m) => m.ext === ext);
+  return match?.kind || null;
+}
+
 function storageBase() {
   return process.env.SUPABASE_URL.replace(/\/$/, '');
 }
@@ -1193,6 +1202,179 @@ async function handleDeadlineRespond(supabase, telegramId, body) {
   return json(400, { ok: false, error: 'invalid_choice' });
 }
 
+/* ---------------- Natija yetkazish ---------------- */
+
+const MAX_REVISIONS = 3;
+
+// Montajor natijani yuboradi — chatda himoyalangan ko'rinishda (yuklab bo'lmaydi).
+// Yakuniy, yuklab olinadigan fayl faqat to'liq to'lovdan keyin bot orqali beriladi.
+async function handleResultSend(supabase, telegramId, body) {
+  const order = await getOrderForUser(supabase, body.order_id, telegramId);
+  if (!order) return json(404, { ok: false, error: 'not_found' });
+  if (order.worker_user_id !== telegramId) return json(403, { ok: false, error: 'only_worker' });
+  if (!['in_progress', 'revising'].includes(order.status)) {
+    return json(400, { ok: false, error: 'not_result_stage' });
+  }
+
+  const media = body.media;
+  if (!media) return json(400, { ok: false, error: 'media_required' });
+  const meta = MEDIA_TYPES[media.type];
+  if (!meta) return json(400, { ok: false, error: 'invalid_media_type' });
+
+  const buffer = Buffer.from(String(media.data || ''), 'base64');
+  if (!buffer.length) return json(400, { ok: false, error: 'empty_media' });
+  if (buffer.length > MAX_MEDIA_BYTES) return json(400, { ok: false, error: 'media_too_large' });
+
+  const path = `result/${order.id}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${meta.ext}`;
+  await uploadMedia(buffer, media.type, path);
+
+  const updated = await patchOrder(supabase, order.id, { status: 'result_sent', result_media_url: path });
+
+  // Natija chatda ham ko'rinadi — himoyalangan media sifatida.
+  await insertMessage(supabase, order.chat_id, {
+    sender_id: telegramId,
+    message_type: meta.kind,
+    media_url: path,
+    content: trimText(body.content, 500) || `Order #${order.id} — natija`,
+  });
+  await insertMessage(supabase, order.chat_id, {
+    sender_id: telegramId,
+    message_type: 'system',
+    content: `📤 Order #${order.id} bo'yicha natija yuborildi`,
+  });
+
+  await sendMessage(
+    order.client_id,
+    `📤 <b>Natija tayyor!</b>\n\nOrder #${order.id} bo'yicha montajor natijani yubordi.\n\nMini App → Orderlar bo'limidan ko'ring va qaror qabul qiling.`,
+  ).catch(() => null);
+
+  return json(200, { ok: true, order: orderShape(updated) });
+}
+
+// Montajor "Qolgan to'lovni so'rash" — bu faqat mijozga eslatma yuboradi.
+// Pul holati o'zgarmaydi: yakuniy to'lov oynasi mijoz natijani qabul qilgandagina ochiladi.
+async function handleRequestPayment(supabase, telegramId, body) {
+  const order = await getOrderForUser(supabase, body.order_id, telegramId);
+  if (!order) return json(404, { ok: false, error: 'not_found' });
+  if (order.worker_user_id !== telegramId) return json(403, { ok: false, error: 'only_worker' });
+  if (order.status !== 'result_sent') return json(400, { ok: false, error: 'not_result_stage' });
+
+  const updated = await patchOrder(supabase, order.id, { status: 'reviewing' });
+
+  await insertMessage(supabase, order.chat_id, {
+    sender_id: telegramId,
+    message_type: 'system',
+    content: `❓ Montajor natijani qabul qilishingizni so'rayapti`,
+  });
+  await sendMessage(
+    order.client_id,
+    `❓ <b>Natijani qabul qilasizmi?</b>\n\nOrder #${order.id}\n\nQabul qilsangiz, qolgan ${formatUzs(order.second_payment)} to'lovga o'tasiz.\nAgar kamchilik bo'lsa — "O'zgartirish kerak" tugmasini bosing.`,
+  ).catch(() => null);
+
+  return json(200, { ok: true, order: orderShape(updated) });
+}
+
+// Mijoz natijani qabul qildi → qolgan 50% uchun 3 kunlik to'lov oynasi ochiladi.
+async function handleApproveResult(supabase, telegramId, body) {
+  const order = await getOrderForUser(supabase, body.order_id, telegramId);
+  if (!order) return json(404, { ok: false, error: 'not_found' });
+  if (order.client_id !== telegramId) return json(403, { ok: false, error: 'only_client' });
+  if (!['result_sent', 'reviewing'].includes(order.status)) {
+    return json(400, { ok: false, error: 'not_reviewable' });
+  }
+
+  const updated = await openPaymentWindow(supabase, order, 'second');
+  if (!updated) return json(503, { ok: false, error: 'no_price_slot' });
+
+  await insertMessage(supabase, order.chat_id, {
+    sender_id: telegramId,
+    message_type: 'system',
+    content: `✅ Mijoz natijani qabul qildi — qolgan to'lov kutilmoqda`,
+  });
+  await sendMessage(
+    order.client_id,
+    `✅ <b>Natijani qabul qildingiz</b>\n\nOrder #${order.id}\nQolgan ${formatUzs(order.second_payment)} ni 3 kun ichida to'lang.\n\n⚠️ To'lanmasa order bekor qilinadi.`,
+  ).catch(() => null);
+  await sendMessage(
+    order.worker_user_id,
+    `🎉 <b>Mijoz natijani qabul qildi!</b>\n\nOrder #${order.id}\nQolgan to'lov kutilmoqda (3 kun muddat).`,
+  ).catch(() => null);
+
+  return json(200, { ok: true, order: orderShape(updated) });
+}
+
+// Mijoz o'zgartirish so'raydi. Limit — 3 marta; undan keyingi so'rov
+// avtomatik nizoga aylanadi (aks holda cheksiz aylanib qolardi).
+async function handleRequestRevision(supabase, telegramId, body) {
+  const order = await getOrderForUser(supabase, body.order_id, telegramId);
+  if (!order) return json(404, { ok: false, error: 'not_found' });
+  if (order.client_id !== telegramId) return json(403, { ok: false, error: 'only_client' });
+  if (!['result_sent', 'reviewing'].includes(order.status)) {
+    return json(400, { ok: false, error: 'not_reviewable' });
+  }
+
+  const comment = trimText(body.comment, 1000);
+  if (comment.length < 5) return json(400, { ok: false, error: 'invalid_comment' });
+
+  const used = Number(order.revision_count || 0);
+
+  // Limit tugagan: yangi so'rov o'rniga nizo ochiladi va admin aralashadi.
+  if (used >= MAX_REVISIONS) {
+    const updated = await patchOrder(supabase, order.id, { status: 'disputed' });
+    await request(supabase, 'freelance_reports', {
+      method: 'POST',
+      body: {
+        order_id: order.id,
+        chat_id: order.chat_id,
+        reporter_id: telegramId,
+        reported_id: order.worker_user_id,
+        reason: `O'zgartirish limiti (${MAX_REVISIONS}) tugadi, tomonlar kelisha olmadi. So'nggi izoh: ${comment}`,
+      },
+    }).catch(() => null);
+
+    await insertMessage(supabase, order.chat_id, {
+      sender_id: telegramId,
+      message_type: 'system',
+      content: `🚩 O'zgartirish limiti tugadi — nizo ochildi, admin ko'rib chiqadi`,
+    });
+    for (const chatId of adminChatIds()) {
+      await sendMessage(
+        chatId,
+        `🚩 <b>Avtomatik nizo</b>\n\nOrder #${order.id} — ${MAX_REVISIONS} ta o'zgartirishdan keyin kelishilmadi.\nMijoz: <code>${order.client_id}</code>\nMontajor: <code>${order.worker_user_id}</code>`,
+      ).catch(() => null);
+    }
+    await sendMessage(order.worker_user_id, `🚩 Order #${order.id} bo'yicha nizo ochildi. Admin ko'rib chiqadi.`).catch(
+      () => null,
+    );
+    return json(200, { ok: true, order: orderShape(updated), disputed: true });
+  }
+
+  const count = used + 1;
+  const updated = await patchOrder(supabase, order.id, { status: 'revising', revision_count: count });
+
+  await insertMessage(supabase, order.chat_id, { sender_id: telegramId, message_type: 'text', content: comment });
+  await insertMessage(supabase, order.chat_id, {
+    sender_id: telegramId,
+    message_type: 'system',
+    content: `✏️ O'zgartirish so'raldi (${count}/${MAX_REVISIONS})`,
+  });
+
+  const left = MAX_REVISIONS - count;
+  await sendMessage(
+    order.worker_user_id,
+    `✏️ <b>O'zgartirish so'raldi</b> (${count}/${MAX_REVISIONS})\n\nOrder #${order.id}\n💬 ${comment}`,
+  ).catch(() => null);
+
+  // Limit tugaganda ikkala tomon ham ogohlantiriladi.
+  if (left === 0) {
+    const warning = `⚠️ Order #${order.id}: ${MAX_REVISIONS} ta o'zgartirish limiti tugadi. Kelisha olmasangiz, istalgan tomon shikoyat yuborishi mumkin.`;
+    await sendMessage(order.client_id, warning).catch(() => null);
+    await sendMessage(order.worker_user_id, warning).catch(() => null);
+  }
+
+  return json(200, { ok: true, order: orderShape(updated) });
+}
+
 async function handleOrderList(supabase, telegramId) {
   const id = encodeURIComponent(telegramId);
   const { data } = await request(supabase, 'freelance_orders', {
@@ -1207,7 +1389,13 @@ async function handleOrderList(supabase, telegramId) {
 async function handleOrderDetail(supabase, telegramId, body) {
   const order = await getOrderForUser(supabase, body.order_id, telegramId);
   if (!order) return json(404, { ok: false, error: 'not_found' });
-  return json(200, { ok: true, order: orderShape(order), role: order.client_id === telegramId ? 'client' : 'worker' });
+  const shaped = orderShape(order);
+  // Natija faqat qisqa muddatli imzolangan havola orqali ko'rsatiladi —
+  // to'g'ridan-to'g'ri yuklab olinadigan URL berilmaydi.
+  // Turini imzolangan URL'dan taxmin qilmaymiz — saqlangan yo'l kengaytmasidan aniqlaymiz.
+  shaped.result_media_url = await signMedia(order.result_media_url);
+  shaped.result_media_kind = mediaKindFromPath(order.result_media_url);
+  return json(200, { ok: true, order: shaped, role: order.client_id === telegramId ? 'client' : 'worker' });
 }
 
 /* ---------------- Admin ---------------- */
@@ -1373,6 +1561,14 @@ exports.handler = async (event) => {
         return await handleMaterialsSent(supabase, telegramId, body);
       case 'order-deadline-respond':
         return await handleDeadlineRespond(supabase, telegramId, body);
+      case 'order-result-send':
+        return await handleResultSend(supabase, telegramId, body);
+      case 'order-request-payment':
+        return await handleRequestPayment(supabase, telegramId, body);
+      case 'order-approve-result':
+        return await handleApproveResult(supabase, telegramId, body);
+      case 'order-request-revision':
+        return await handleRequestRevision(supabase, telegramId, body);
       default:
         return json(400, { ok: false, error: 'unknown_action' });
     }
