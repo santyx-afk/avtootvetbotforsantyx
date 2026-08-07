@@ -11,6 +11,7 @@ const {
   applyDeadlinePenalty,
   recalculateWorkerRating,
 } = require('../../shared/vacancy-order-service');
+const { forwardPendingMaterials } = require('../../shared/vacancy-bot-service');
 
 // Vakansiyalar (freelance marketplace) moduli uchun API.
 // Obuna do'koni API'sidan (webapp-api) mustaqil — alohida funksiya, alohida jadvallar.
@@ -1131,6 +1132,12 @@ async function handleMaterialsSent(supabase, telegramId, body) {
 
   const updated = await startWork(supabase, order, { source_materials_sent: true });
 
+  // Botga yuborilgan fayllarni montajorga uzatamiz (ular Telegram'da saqlanadi).
+  const forwarded = await forwardPendingMaterials(supabase, order).catch((e) => {
+    console.warn('forward materials warn:', e?.message);
+    return 0;
+  });
+
   await insertMessage(supabase, order.chat_id, {
     sender_id: telegramId,
     message_type: 'system',
@@ -1138,10 +1145,10 @@ async function handleMaterialsSent(supabase, telegramId, body) {
   });
   await sendMessage(
     order.worker_user_id,
-    `📦 <b>Materiallar keldi</b>\n\nOrder #${order.id} bo'yicha ish boshlandi.\n⏰ Deadline: ${formatDateTime(updated.deadline_at)}`,
+    `📦 <b>Materiallar keldi</b> (${forwarded} ta fayl)\n\nOrder #${order.id} bo'yicha ish boshlandi.\n⏰ Deadline: ${formatDateTime(updated.deadline_at)}`,
   ).catch(() => null);
 
-  return json(200, { ok: true, order: orderShape(updated) });
+  return json(200, { ok: true, order: orderShape(updated), forwarded_files: forwarded });
 }
 
 // Deadline o'tganda mijozning tanlovi: kutish (yangi muddat) yoki bekor qilish.
@@ -1824,9 +1831,11 @@ async function handleAdminOrderPaid(supabase, body) {
 
   const updated = await patchOrder(supabase, orderId, { worker_paid: true });
 
+  // To'lovdan keyin montajor tayyor faylni botga yuboradi — bot uni mijozga
+  // yuklab olinadigan holda uzatadi (vacancy-bot-service).
   await sendMessage(
     order.worker_user_id,
-    `💰 <b>Sizga to'lov o'tkazildi</b>\n\nOrder #${order.id}\nSumma: ${formatUzs(order.worker_amount)}\n\nOrder yakunlandi. Rahmat!`,
+    `💰 <b>Sizga to'lov o'tkazildi</b>\n\nOrder #${order.id}\nSumma: ${formatUzs(order.worker_amount)}\n\n📤 Endi tayyor faylni <b>shu botga yuboring</b> — u mijozga avtomatik yetkaziladi.`,
   ).catch(() => null);
 
   return json(200, { ok: true, order: orderShape(updated) });
