@@ -26,6 +26,7 @@ export default function VacancyProfile() {
   const [showRules, setShowRules] = useState(false);
   const [editing, setEditing] = useState(false);
   const [busyPending, setBusyPending] = useState(false);
+  const [myRating, setMyRating] = useState(null);
 
   const load = useCallback(async () => {
     try {
@@ -41,6 +42,10 @@ export default function VacancyProfile() {
 
   useEffect(() => {
     load();
+    // Mijoz sifatidagi reyting — ishchi bo'lmaganlarga ham ko'rsatiladi.
+    vacancyCall('my-rating')
+      .then(setMyRating)
+      .catch(() => setMyRating(null));
   }, [load]);
 
   async function acceptRules() {
@@ -95,6 +100,18 @@ export default function VacancyProfile() {
 
       {state === 'none' && (
         <>
+          {/* Mijoz sifatidagi reyting — montajorlar qo'ygan baholardan */}
+          {myRating && myRating.total_reviews > 0 && (
+            <div className={styles.workerCard}>
+              <div className={styles.workerName}>
+                ⭐ {myRating.avg_rating.toFixed(1)}
+              </div>
+              <div className={styles.workerMeta}>
+                Mijoz sifatidagi reytingingiz ({myRating.total_reviews} ta baho)
+              </div>
+            </div>
+          )}
+
           <div className={styles.profileCard}>
             <span className={styles.profileEmoji}>💼</span>
             <div className={styles.profileTitle}>Ishchi bo&apos;ling</div>

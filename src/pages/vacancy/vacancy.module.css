@@ -942,6 +942,38 @@
   cursor: pointer;
 }
 
+/* ---------- Baholash ---------- */
+.starRow {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin: 6px 0 10px;
+}
+.starOn,
+.starOff {
+  border: none;
+  background: transparent;
+  font-size: 34px;
+  line-height: 1;
+  padding: 0 2px;
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
+.starOn {
+  color: #ffc107;
+}
+.starOff {
+  color: var(--app-separator);
+}
+.starOn:active,
+.starOff:active {
+  transform: scale(1.15);
+}
+.starsStatic {
+  font-size: 20px;
+  letter-spacing: 2px;
+}
+
 /* ---------- Order tafsilotlari / to'lov ---------- */
 .orderStatusBadge {
   display: inline-block;

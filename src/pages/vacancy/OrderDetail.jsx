@@ -35,6 +35,9 @@ const ERRORS = {
   media_too_large: "Fayl 4 MB dan katta bo'lmasin",
   invalid_media_type: 'Faqat JPEG, PNG, WebP, MP4, MOV',
   invalid_comment: "Nima o'zgartirish kerakligini batafsilroq yozing",
+  not_completed: 'Baho faqat order yakunlangandan keyin qo‘yiladi',
+  invalid_rating: '1 dan 5 gacha yulduz tanlang',
+  already_reviewed: 'Siz allaqachon baho qo‘ygansiz',
 };
 
 // Uzoq muddat uchun format: "02 kun 06:00:00" (deadline va 3 kunlik to'lov oynasi).
@@ -67,6 +70,10 @@ export default function OrderDetail({ orderId, onBack }) {
   const [revising, setRevising] = useState(false);
   const [revisionComment, setRevisionComment] = useState('');
   const [confirmPayment, setConfirmPayment] = useState(false);
+  const [canReview, setCanReview] = useState(false);
+  const [myReview, setMyReview] = useState(null);
+  const [rating, setRating] = useState(0);
+  const [reviewComment, setReviewComment] = useState('');
   const resultFileRef = useRef(null);
 
   const load = useCallback(async () => {
@@ -74,6 +81,8 @@ export default function OrderDetail({ orderId, onBack }) {
       const res = await vacancyCall('order-detail', { order_id: orderId });
       setOrder(res.order);
       setRole(res.role);
+      setCanReview(Boolean(res.can_review));
+      setMyReview(res.my_review || null);
     } catch {
       setError('Order yuklanmadi.');
     } finally {
@@ -146,6 +155,20 @@ export default function OrderDetail({ orderId, onBack }) {
     } finally {
       setBusy(false);
       if (resultFileRef.current) resultFileRef.current.value = '';
+    }
+  }
+
+  async function submitReview() {
+    setBusy(true);
+    setError('');
+    try {
+      await vacancyCall('order-review', { order_id: orderId, rating, comment: reviewComment.trim() });
+      setCanReview(false);
+      setMyReview({ rating, comment: reviewComment.trim() });
+    } catch (err) {
+      setError(ERRORS[err.message] || 'Baho yuborilmadi.');
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -473,6 +496,55 @@ export default function OrderDetail({ orderId, onBack }) {
               ? "To'lov to'liq qabul qilindi. Tayyor fayl bot orqali yuboriladi."
               : `To'lov to'liq qabul qilindi. Sizga ${formatUzs(order.worker_amount)} to'lanadi.`}
           </p>
+        </div>
+      )}
+
+      {/* Ikki tomonlama baho — order yakunlangach har tomon bir marta qo'yadi */}
+      {order.status === 'completed' && (canReview || myReview) && (
+        <div className={styles.statusCard}>
+          <div className={styles.statusTitle}>
+            {myReview ? 'Sizning bahoyingiz' : `⭐ ${isClient ? 'Montajorni' : 'Mijozni'} baholang`}
+          </div>
+
+          {myReview ? (
+            <>
+              <div className={styles.starsStatic}>{'⭐'.repeat(myReview.rating)}</div>
+              {myReview.comment && <p className={styles.statusDesc}>{myReview.comment}</p>}
+            </>
+          ) : (
+            <>
+              <p className={styles.statusDesc}>Ish qanday bo&apos;ldi?</p>
+              <div className={styles.starRow}>
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    className={n <= rating ? styles.starOn : styles.starOff}
+                    onClick={() => setRating(n)}
+                    aria-label={`${n} yulduz`}
+                  >
+                    ★
+                  </button>
+                ))}
+              </div>
+              <textarea
+                className={styles.textarea}
+                rows={3}
+                value={reviewComment}
+                onChange={(e) => setReviewComment(e.target.value)}
+                placeholder="Izoh qoldiring (ixtiyoriy)"
+                maxLength={1000}
+              />
+              <button
+                type="button"
+                className={styles.btnPrimary}
+                disabled={busy || rating < 1}
+                onClick={submitReview}
+              >
+                Yuborish
+              </button>
+            </>
+          )}
         </div>
       )}
 

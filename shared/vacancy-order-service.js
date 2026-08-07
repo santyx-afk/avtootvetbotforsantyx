@@ -139,6 +139,55 @@ async function startWork(supabase, order, extraPatch = {}) {
   });
 }
 
+// Ishchi reytingini ko'rinadigan mijoz baholaridan qayta hisoblaydi.
+// Deadline jarimasi (rating_penalty) alohida saqlanadi va shu yerda ayiriladi —
+// aks holda har yangi baho jarimani yuvib yuborardi.
+async function recalculateWorkerRating(supabase, workerUserId) {
+  const { data: worker } = await request(supabase, 'workers', {
+    query: `select=id,rating_penalty&user_id=eq.${encodeURIComponent(workerUserId)}&limit=1`,
+  }).catch(() => ({ data: [] }));
+  if (!worker?.[0]) return null;
+
+  const { data: reviews } = await request(supabase, 'freelance_reviews', {
+    query: `select=rating&reviewed_id=eq.${encodeURIComponent(workerUserId)}&reviewer_role=eq.client&is_visible=eq.true`,
+  }).catch(() => ({ data: [] }));
+
+  const list = reviews || [];
+  const total = list.length;
+  const average = total ? list.reduce((sum, r) => sum + Number(r.rating || 0), 0) / total : 0;
+  const penalty = Number(worker[0].rating_penalty || 0);
+  const finalRating = total ? Math.max(0, average - penalty) : 0;
+
+  return patchWorkerById(supabase, worker[0].id, {
+    avg_rating: Number(finalRating.toFixed(2)),
+    total_reviews: total,
+  });
+}
+
+async function patchWorkerById(supabase, workerId, patch) {
+  const { data } = await request(supabase, 'workers', {
+    method: 'PATCH',
+    query: `id=eq.${Number(workerId)}`,
+    body: { ...patch, updated_at: new Date().toISOString() },
+    headers: { Prefer: 'return=representation' },
+  }).catch(() => ({ data: [] }));
+  return data?.[0] || null;
+}
+
+// Order yakunlanganda ishchi statistikasini oshiradi.
+async function creditWorkerCompletion(supabase, order) {
+  const { data } = await request(supabase, 'workers', {
+    query: `select=id,completed_orders,total_earnings&user_id=eq.${encodeURIComponent(order.worker_user_id)}&limit=1`,
+  }).catch(() => ({ data: [] }));
+  const worker = data?.[0];
+  if (!worker) return null;
+
+  return patchWorkerById(supabase, worker.id, {
+    completed_orders: Number(worker.completed_orders || 0) + 1,
+    total_earnings: Number(worker.total_earnings || 0) + Number(order.worker_amount || 0),
+  });
+}
+
 // Deadline buzilishi hisoblagichi: 1 — ogohlantirish, 2 — reyting -0.5, 3 — 7 kunlik ban.
 async function applyDeadlinePenalty(supabase, order) {
   const { data } = await request(supabase, 'workers', {
@@ -152,7 +201,8 @@ async function applyDeadlinePenalty(supabase, order) {
   let notice = `⚠️ <b>Ogohlantirish</b>\n\nOrder #${order.id} bo'yicha deadline buzildi (${violations}-marta).`;
 
   if (violations === 2) {
-    patch.avg_rating = Math.max(0, Number(worker.avg_rating || 0) - 0.5);
+    // Jarima alohida ustunda to'planadi; avg_rating undan keyin qayta hisoblanadi.
+    patch.rating_penalty = Number(worker.rating_penalty || 0) + 0.5;
     notice += '\n\nReytingingiz 0.5 ball tushirildi.';
   } else if (violations >= MAX_DEADLINE_VIOLATIONS) {
     patch.is_banned = true;
@@ -162,6 +212,10 @@ async function applyDeadlinePenalty(supabase, order) {
   }
 
   await request(supabase, 'workers', { method: 'PATCH', query: `id=eq.${worker.id}`, body: patch }).catch(() => null);
+  // Jarima o'zgargan bo'lsa reytingni qayta hisoblaymiz.
+  if (patch.rating_penalty !== undefined) {
+    await recalculateWorkerRating(supabase, order.worker_user_id).catch(() => null);
+  }
   await sendMessage(order.worker_user_id, notice).catch(() => null);
 }
 
@@ -241,6 +295,9 @@ async function confirmFinalPayment({ supabase, order, messageKey }) {
     payment_stage: null,
     payment_expires_at: null,
   });
+
+  // Ishchi statistikasi: tugallangan ishlar va daromad.
+  await creditWorkerCompletion(supabase, order).catch((e) => console.warn('worker stats warn:', e?.message));
 
   await insertSystemMessage(supabase, order.chat_id, `🎉 Order #${order.id} yakunlandi — to'lov to'liq qabul qilindi.`);
   await sendMessage(
@@ -385,6 +442,8 @@ module.exports = {
   openPaymentWindow,
   startWork,
   applyDeadlinePenalty,
+  recalculateWorkerRating,
+  creditWorkerCompletion,
   matchVacancyPayment,
   expirePaymentWindows,
   checkDeadlines,

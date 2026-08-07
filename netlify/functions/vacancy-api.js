@@ -9,6 +9,7 @@ const {
   openPaymentWindow,
   startWork,
   applyDeadlinePenalty,
+  recalculateWorkerRating,
 } = require('../../shared/vacancy-order-service');
 
 // Vakansiyalar (freelance marketplace) moduli uchun API.
@@ -1375,6 +1376,84 @@ async function handleRequestRevision(supabase, telegramId, body) {
   return json(200, { ok: true, order: orderShape(updated) });
 }
 
+/* ---------------- Baholar (ikki tomonlama) ---------------- */
+
+async function getOrderReviews(supabase, orderId) {
+  const { data } = await request(supabase, 'freelance_reviews', {
+    query: `select=*&order_id=eq.${Number(orderId)}`,
+  }).catch(() => ({ data: [] }));
+  return data || [];
+}
+
+// Order yakunlangandan keyin ikkala tomon bir martadan baho qoldiradi.
+// Jadvaldagi UNIQUE(order_id, reviewer_role) takroriy bahoni bloklaydi.
+async function handleOrderReview(supabase, telegramId, body) {
+  const order = await getOrderForUser(supabase, body.order_id, telegramId);
+  if (!order) return json(404, { ok: false, error: 'not_found' });
+  if (order.status !== 'completed') return json(400, { ok: false, error: 'not_completed' });
+
+  const rating = Math.round(Number(body.rating));
+  if (!Number.isFinite(rating) || rating < 1 || rating > 5) {
+    return json(400, { ok: false, error: 'invalid_rating' });
+  }
+  const comment = trimText(body.comment, 1000);
+
+  const isClient = order.client_id === telegramId;
+  const reviewerRole = isClient ? 'client' : 'worker';
+  const reviewedId = isClient ? order.worker_user_id : order.client_id;
+
+  const existing = await getOrderReviews(supabase, order.id);
+  if (existing.some((r) => r.reviewer_role === reviewerRole)) {
+    return json(400, { ok: false, error: 'already_reviewed' });
+  }
+
+  const { data } = await request(supabase, 'freelance_reviews', {
+    method: 'POST',
+    body: {
+      order_id: order.id,
+      reviewer_id: telegramId,
+      reviewed_id: reviewedId,
+      reviewer_role: reviewerRole,
+      rating,
+      comment,
+    },
+    headers: { Prefer: 'return=representation' },
+  });
+
+  // Ishchi reytingi saqlanadigan agregat — mijoz baho qo'yganda qayta hisoblanadi.
+  // Mijoz reytingi esa o'qiyotganda hisoblanadi (alohida jadval yo'q).
+  if (reviewerRole === 'client') {
+    await recalculateWorkerRating(supabase, order.worker_user_id).catch((e) =>
+      console.warn('rating recalc warn:', e?.message),
+    );
+  }
+
+  await sendMessage(
+    reviewedId,
+    `⭐ <b>Yangi baho</b>\n\nOrder #${order.id} bo'yicha sizga ${'⭐'.repeat(rating)} (${rating}/5) qo'yildi.${
+      comment ? `\n\n💬 ${comment}` : ''
+    }`,
+  ).catch(() => null);
+
+  return json(200, { ok: true, review: data?.[0] || null });
+}
+
+// Foydalanuvchining o'z reytingi (mijoz sifatida olgan baholari).
+async function handleMyRating(supabase, telegramId) {
+  const { data } = await request(supabase, 'freelance_reviews', {
+    query: `select=rating,comment,created_at&reviewed_id=eq.${encodeURIComponent(telegramId)}&reviewer_role=eq.worker&is_visible=eq.true&order=created_at.desc&limit=20`,
+  }).catch(() => ({ data: [] }));
+
+  const list = data || [];
+  const average = list.length ? list.reduce((sum, r) => sum + Number(r.rating || 0), 0) / list.length : 0;
+  return json(200, {
+    ok: true,
+    avg_rating: Number(average.toFixed(2)),
+    total_reviews: list.length,
+    reviews: list,
+  });
+}
+
 async function handleOrderList(supabase, telegramId) {
   const id = encodeURIComponent(telegramId);
   const { data } = await request(supabase, 'freelance_orders', {
@@ -1395,7 +1474,19 @@ async function handleOrderDetail(supabase, telegramId, body) {
   // Turini imzolangan URL'dan taxmin qilmaymiz — saqlangan yo'l kengaytmasidan aniqlaymiz.
   shaped.result_media_url = await signMedia(order.result_media_url);
   shaped.result_media_kind = mediaKindFromPath(order.result_media_url);
-  return json(200, { ok: true, order: shaped, role: order.client_id === telegramId ? 'client' : 'worker' });
+
+  const role = order.client_id === telegramId ? 'client' : 'worker';
+  // Baho so'rovini ko'rsatish/yashirish uchun: shu tomon allaqachon baho berganmi.
+  const reviews = order.status === 'completed' ? await getOrderReviews(supabase, order.id) : [];
+  const myReview = reviews.find((r) => r.reviewer_role === role) || null;
+
+  return json(200, {
+    ok: true,
+    order: shaped,
+    role,
+    my_review: myReview ? { rating: myReview.rating, comment: myReview.comment || '' } : null,
+    can_review: order.status === 'completed' && !myReview,
+  });
 }
 
 /* ---------------- Admin ---------------- */
@@ -1477,7 +1568,45 @@ async function handleAdminUnban(supabase, body) {
   return json(200, { ok: true, worker: workerShape(worker) });
 }
 
+// Admin: barcha baholar (yashirilganlari bilan) — sokinish/noqonuniy izohlarni topish uchun.
+async function handleAdminReviews(supabase, body) {
+  const filters = ['select=*'];
+  if (body.only_visible) filters.push('is_visible=eq.true');
+  if (body.reviewed_id) filters.push(`reviewed_id=eq.${encodeURIComponent(body.reviewed_id)}`);
+  filters.push('order=created_at.desc', 'limit=100');
+
+  const { data } = await request(supabase, 'freelance_reviews', { query: filters.join('&') }).catch(() => ({
+    data: [],
+  }));
+  return json(200, { ok: true, reviews: data || [] });
+}
+
+// Baho o'chirilmaydi, yashiriladi (is_visible=false) — qaytarish mumkin bo'lsin
+// va reyting tarixini yo'qotmaylik. Yashirilgach reyting qayta hisoblanadi.
+async function handleAdminReviewVisibility(supabase, body) {
+  const reviewId = Number(body.review_id);
+  if (!reviewId) return json(400, { ok: false, error: 'invalid_review' });
+
+  const { data } = await request(supabase, 'freelance_reviews', {
+    method: 'PATCH',
+    query: `id=eq.${reviewId}`,
+    body: { is_visible: body.is_visible === undefined ? false : Boolean(body.is_visible) },
+    headers: { Prefer: 'return=representation' },
+  });
+  const review = data?.[0];
+  if (!review) return json(404, { ok: false, error: 'not_found' });
+
+  if (review.reviewer_role === 'client') {
+    await recalculateWorkerRating(supabase, review.reviewed_id).catch((e) =>
+      console.warn('rating recalc warn:', e?.message),
+    );
+  }
+  return json(200, { ok: true, review });
+}
+
 const ADMIN_ACTIONS = {
+  'admin/reviews': handleAdminReviews,
+  'admin/review-visibility': handleAdminReviewVisibility,
   'admin/workers': handleAdminWorkers,
   'admin/worker-approve': handleAdminApprove,
   'admin/worker-reject': handleAdminReject,
@@ -1569,6 +1698,10 @@ exports.handler = async (event) => {
         return await handleApproveResult(supabase, telegramId, body);
       case 'order-request-revision':
         return await handleRequestRevision(supabase, telegramId, body);
+      case 'order-review':
+        return await handleOrderReview(supabase, telegramId, body);
+      case 'my-rating':
+        return await handleMyRating(supabase, telegramId);
       default:
         return json(400, { ok: false, error: 'unknown_action' });
     }
