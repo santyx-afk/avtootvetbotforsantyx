@@ -17,7 +17,7 @@ const {
   request,
 } = require('./db');
 const { sendMessage } = require('./telegram');
-const { decryptText } = require('./encryption');
+const { decryptText, isEncryptionKeyHealthy } = require('./encryption');
 const { nextRetryAt, hasRetriesLeft } = require('./retry-policy');
 const { processReferralPayout } = require('./referral-service');
 
@@ -38,10 +38,6 @@ function parseExtraData(raw) {
   }
 }
 
-function decryptOptional(value) {
-  return value ? decryptText(value) : null;
-}
-
 // Akkauntning o'zidagi nuqson (format/tur/shifr) — Telegram yuborish xatosidan farqlash uchun.
 function inventoryFault(message) {
   const error = new Error(message);
@@ -49,8 +45,21 @@ function inventoryFault(message) {
   return error;
 }
 
-function parseInventoryExtraData(item = {}) {
-  const encryptedExtra = decryptOptional(item.extra_data_encrypted);
+// Deshifrlash xatosi zanjirni to'xtatmasligi kerak: qiymat ochilmasa null qaytaramiz
+// va nosozlikni `failures` ga yozamiz. Aks holda bitta buzuq ustun tufayli
+// yaroqli muqobil qiymat (masalan extra_data ichidagi parol) ham ishlatilmay qolardi.
+function tryDecrypt(value, failures) {
+  if (!value) return null;
+  try {
+    return decryptText(value);
+  } catch (error) {
+    failures.push(error?.message || 'decrypt_failed');
+    return null;
+  }
+}
+
+function parseInventoryExtraData(item = {}, failures = []) {
+  const encryptedExtra = tryDecrypt(item.extra_data_encrypted, failures);
   return parseExtraData(
     item.extra_data
       || item.extra_data_plain
@@ -64,29 +73,46 @@ function firstValue(...values) {
   return values.find((value) => value !== undefined && value !== null && String(value).trim() !== '') || null;
 }
 
-function resolveAutoAccount(item = {}) {
-  const extra = parseInventoryExtraData(item);
+// `failures` — ixtiyoriy: berilsa, deshifrlash nosozliklari shunga yig'iladi.
+// Chaqiruvchi shu orqali "format xato" bilan "shifr ochilmadi" ni ajratadi.
+function resolveAutoAccount(item = {}, failures = []) {
+  const extra = parseInventoryExtraData(item, failures);
   const login = firstValue(item.login, item.email, item.username, extra.login, extra.email, extra.username);
   const password = firstValue(
     item.password,
-    item.password_encrypted ? decryptText(item.password_encrypted) : null,
+    tryDecrypt(item.password_encrypted, failures),
     extra.password,
     extra.pass,
-    extra.password_encrypted ? decryptText(extra.password_encrypted) : null,
+    tryDecrypt(extra.password_encrypted, failures),
   );
   return { login, password };
 }
 
-function resolveLicenseKey(item = {}) {
-  const extra = parseInventoryExtraData(item);
+function resolveLicenseKey(item = {}, failures = []) {
+  const extra = parseInventoryExtraData(item, failures);
   return firstValue(
     item.license_key,
     item.key,
-    item.license_key_encrypted ? decryptText(item.license_key_encrypted) : null,
+    tryDecrypt(item.license_key_encrypted, failures),
     extra.key,
     extra.license_key,
-    extra.license_key_encrypted ? decryptText(extra.license_key_encrypted) : null,
+    tryDecrypt(extra.license_key_encrypted, failures),
   );
+}
+
+// Kredensial chiqmadi. Sababi shifrmi yoki formatmi — shuni aniqlaymiz, chunki
+// oqibati boshqacha: buzuq akkaunt karantinga olinadi, kalit nosoz bo'lsa esa
+// akkaunt aybdor emas (aks holda butun zaxira o'chib ketardi).
+function credentialFault(failures) {
+  if (!failures.length) {
+    return inventoryFault('Inventory format noto‘g‘ri: kerakli maydonlar topilmadi');
+  }
+  if (!isEncryptionKeyHealthy()) {
+    const error = new Error('INVENTORY_ENCRYPTION_KEY nosoz — hech qanday shifrlangan maʼlumot ochilmaydi');
+    error.encryptionKeyFault = true;
+    return error;
+  }
+  return inventoryFault(`Inventory shifri ochilmadi (kalit soz, akkaunt buzuq): ${failures[0]}`);
 }
 
 
@@ -111,6 +137,27 @@ function escapeHtml(value) {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
+}
+
+// Buzuq akkaunt karantinga olindi — admin buni bilishi kerak, aks holda
+// zaxira jimgina kamayib ketadi.
+async function notifyAdminsBrokenInventory(supabase, { order, plan, item, reason }) {
+  const settings = await fetchSettings(supabase).catch(() => null);
+  const text = [
+    '🔒 <b>Buzuq akkaunt karantinga olindi</b>',
+    '',
+    `Reja: ${escapeHtml(plan?.name || '-')}`,
+    `Akkaunt ID: <code>${escapeHtml(item?.id)}</code>`,
+    `Login: ${escapeHtml(item?.login || '-')}`,
+    `Sabab: ${escapeHtml(reason || '-')}`,
+    `Buyurtma: #${escapeHtml(order?.order_number || '-')}`,
+    '',
+    'Akkaunt "disabled" holatiga o‘tkazildi va boshqa mijozga tushmaydi.',
+    'Buyurtma zaxiradagi keyingi akkaunt bilan qayta uriniladi.',
+  ].join('\n');
+  for (const adminChatId of resolveAdminChatIds(settings)) {
+    await sendMessage(adminChatId, text, null).catch((e) => console.warn('admin notify warn:', e?.message));
+  }
 }
 
 // Zaxira tugaganda (to'lov qabul qilingan, lekin akkaunt yo'q) adminlarni ogohlantiradi.
@@ -275,27 +322,38 @@ async function processApprovedDelivery({ supabase, order, adminTelegramId = 'web
     }
 
     if (deliveryType === 'auto_account') {
-      const { login, password } = resolveAutoAccount(item);
+      const failures = [];
+      const { login, password } = resolveAutoAccount(item, failures);
       if (!login || !password) {
-        throw inventoryFault('Inventory account format noto‘g‘ri: login/email/username va password topilmadi');
+        throw credentialFault(failures);
       }
       const sent = await safeSendMessage(userChatId, `To‘lovingiz tasdiqlandi.\n\nObuna: ${plan.name}\nBuyurtma: #${order.order_number}\n\nKirish ma’lumotlari:\nLogin: ${login}\nParol: ${password}\n\nMuhim: ma’lumotlarni hech kimga yubormang.`, { orderId: order.id, deliveryType });
       if (!sent.ok) throw sent.error;
     } else if (deliveryType === 'license_key') {
-      const key = resolveLicenseKey(item);
-      if (!key) throw inventoryFault('Inventory key format noto‘g‘ri: key/license_key topilmadi');
+      const failures = [];
+      const key = resolveLicenseKey(item, failures);
+      if (!key) throw credentialFault(failures);
       const sent = await safeSendMessage(userChatId, `To‘lovingiz tasdiqlandi.\n\nObuna: ${plan.name}\nBuyurtma: #${order.order_number}\n\nAktivatsiya kodi:\n${key}\n\nQo‘llanma:\n${plan.deliveryInstructions || '-'}`, { orderId: order.id, deliveryType });
       if (!sent.ok) throw sent.error;
     }
   } catch (error) {
     console.error('Delivery send/decrypt error', { orderId: order.id, error: error?.message, stack: error?.stack });
-    const userError = mapTelegramSendError(error);
+    // Kalit nosozligi konfiguratsiya muammosi — akkaunt aybdor emas va uni
+    // karantinga olish butun zaxirani yo'q qilardi. Adminga aniq xabar beramiz.
+    const keyFault = error?.encryptionKeyFault === true;
+    const userError = keyFault ? error.message : mapTelegramSendError(error);
     await createDeliveryLog(supabase, { order_id: order.id, user_telegram_id: userChatId, plan_id: plan.id, inventory_item_id: item.id, delivery_type: deliveryType, admin_telegram_id: String(adminTelegramId), status: 'error', error_message: String(error?.message || 'decrypt_or_send_failed') });
     // Akkauntning o'zi buzuq bo'lsa (format/shifr xatosi) — zaxiraga qaytarmaymiz, karantinga olamiz,
-    // aks holda o'sha buzuq akkaunt keyingi mijozga ham tushib qolaveradi. Telegram tomonidagi
+    // aks holda o'sha buzuq akkaunt keyingi mijozga ham tushib qolaveradi (bitta buzuq
+    // yozuv butun yetkazishni to'xtatib qo'yardi). Telegram yoki kalit tomonidagi
     // xatolarda esa akkaunt aybdor emas — 'available' ga qaytariladi.
     const brokenItem = error?.inventoryFault === true;
     await markInventoryDelivered(supabase, item.id, brokenItem ? 'disabled' : 'available');
+    if (brokenItem) {
+      await notifyAdminsBrokenInventory(supabase, { order, plan, item, reason: error.message }).catch((e) =>
+        console.warn('broken inventory alert warn:', e?.message),
+      );
+    }
     const nextCount = Number(order.delivery_attempts || 0) + 1;
     // Buyurtmaga akkauntni yopishtirib qo'ymaymiz — keyingi urinish zaxiradan yangisini oladi.
     await updateOrderStatus(supabase, order.id, 'delivering', { inventory_item_id: null, delivery_status: 'failed', delivery_error: String(error?.message || 'delivery_failed'), delivery_attempts: nextCount });
