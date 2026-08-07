@@ -1776,7 +1776,122 @@ async function handleAdminReviewVisibility(supabase, body) {
   return json(200, { ok: true, review });
 }
 
+// Admin: orderlar ro'yxati (status bo'yicha filtr bilan).
+async function handleAdminOrders(supabase, body) {
+  const filters = ['select=*'];
+  if (body.status) filters.push(`status=eq.${encodeURIComponent(body.status)}`);
+  if (body.unpaid_only) filters.push('status=eq.completed', 'worker_paid=eq.false');
+  filters.push('order=created_at.desc', 'limit=100');
+
+  const { data } = await request(supabase, 'freelance_orders', { query: filters.join('&') }).catch(() => ({
+    data: [],
+  }));
+  const orders = data || [];
+
+  // Montajor karta raqami — admin qo'lda pul o'tkazishi uchun.
+  const workerIds = [...new Set(orders.map((o) => o.worker_user_id))];
+  const cards = {};
+  if (workerIds.length) {
+    const { data: workers } = await request(supabase, 'workers', {
+      query: `select=user_id,name,card_number&user_id=in.(${workerIds.map((id) => `"${id}"`).join(',')})`,
+    }).catch(() => ({ data: [] }));
+    for (const w of workers || []) cards[w.user_id] = { name: w.name, card_number: w.card_number };
+  }
+
+  return json(200, {
+    ok: true,
+    orders: orders.map((o) => ({
+      ...orderShape(o),
+      worker_paid: Boolean(o.worker_paid),
+      worker_name: cards[o.worker_user_id]?.name || null,
+      worker_card: cards[o.worker_user_id]?.card_number || null,
+    })),
+  });
+}
+
+// Admin montajorga qo'lda pul o'tkazgach "To'landi" bosadi.
+async function handleAdminOrderPaid(supabase, body) {
+  const orderId = Number(body.order_id);
+  if (!orderId) return json(400, { ok: false, error: 'invalid_order' });
+
+  const { data: found } = await request(supabase, 'freelance_orders', {
+    query: `select=*&id=eq.${orderId}&limit=1`,
+  }).catch(() => ({ data: [] }));
+  const order = found?.[0];
+  if (!order) return json(404, { ok: false, error: 'not_found' });
+  if (order.status !== 'completed') return json(400, { ok: false, error: 'not_completed' });
+  if (order.worker_paid) return json(400, { ok: false, error: 'already_paid' });
+
+  const updated = await patchOrder(supabase, orderId, { worker_paid: true });
+
+  await sendMessage(
+    order.worker_user_id,
+    `💰 <b>Sizga to'lov o'tkazildi</b>\n\nOrder #${order.id}\nSumma: ${formatUzs(order.worker_amount)}\n\nOrder yakunlandi. Rahmat!`,
+  ).catch(() => null);
+
+  return json(200, { ok: true, order: orderShape(updated) });
+}
+
+// Admin: vakansiya bo'limi statistikasi.
+async function handleAdminStats(supabase) {
+  const now = Date.now();
+  const dayAgo = new Date(now - 86400000).toISOString();
+  const weekAgo = new Date(now - 7 * 86400000).toISOString();
+  const monthAgo = new Date(now - 30 * 86400000).toISOString();
+
+  const [ordersRes, workersRes] = await Promise.all([
+    request(supabase, 'freelance_orders', { query: 'select=amount,commission,worker_amount,status,created_at,worker_user_id&limit=2000' }).catch(
+      () => ({ data: [] }),
+    ),
+    request(supabase, 'workers', { query: 'select=user_id,name,completed_orders,total_earnings,is_approved,is_banned' }).catch(
+      () => ({ data: [] }),
+    ),
+  ]);
+
+  const orders = ordersRes.data || [];
+  const workers = workersRes.data || [];
+  const completed = orders.filter((o) => o.status === 'completed');
+
+  const countSince = (iso) => orders.filter((o) => o.created_at >= iso).length;
+  const revenue = completed.reduce((sum, o) => sum + Number(o.commission || 0), 0);
+  const avgAmount = completed.length
+    ? Math.round(completed.reduce((sum, o) => sum + Number(o.amount || 0), 0) / completed.length)
+    : 0;
+
+  const topWorkers = [...workers]
+    .filter((w) => Number(w.completed_orders || 0) > 0)
+    .sort((a, b) => Number(b.total_earnings || 0) - Number(a.total_earnings || 0))
+    .slice(0, 5)
+    .map((w) => ({
+      name: w.name,
+      user_id: w.user_id,
+      completed_orders: Number(w.completed_orders || 0),
+      total_earnings: Number(w.total_earnings || 0),
+    }));
+
+  return json(200, {
+    ok: true,
+    stats: {
+      orders_today: countSince(dayAgo),
+      orders_week: countSince(weekAgo),
+      orders_month: countSince(monthAgo),
+      orders_total: orders.length,
+      orders_completed: completed.length,
+      commission_total: revenue,
+      avg_order_amount: avgAmount,
+      active_workers: workers.filter((w) => w.is_approved && !w.is_banned).length,
+      pending_workers: workers.filter((w) => !w.is_approved && !w.is_banned).length,
+      banned_workers: workers.filter((w) => w.is_banned).length,
+      unpaid_completed: completed.filter((o) => !o.worker_paid).length,
+      top_workers: topWorkers,
+    },
+  });
+}
+
 const ADMIN_ACTIONS = {
+  'admin/orders': handleAdminOrders,
+  'admin/order-paid': handleAdminOrderPaid,
+  'admin/stats': handleAdminStats,
   'admin/reports': handleAdminReports,
   'admin/report-resolve': handleAdminReportResolve,
   'admin/reviews': handleAdminReviews,
@@ -1887,3 +2002,8 @@ exports.handler = async (event) => {
     return json(500, { ok: false, error: 'server_error' });
   }
 };
+
+// Admin amallari alohida ham ishlatiladi: vacancy-admin.js (admin panel, cookie
+// sessiyasi bilan) shu xaritani qayta ishlatadi — mantiq bir joyda qoladi.
+exports.ADMIN_ACTIONS = ADMIN_ACTIONS;
+exports.json = json;

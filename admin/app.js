@@ -11,6 +11,7 @@ const views = {
   reviews: document.getElementById('reviewsView'),
   faq: document.getElementById('faqView'),
   users: document.getElementById('usersView'),
+  vacancy: document.getElementById('vacancyView'),
   messages: document.getElementById('messagesView'),
   settings: document.getElementById('settingsView'),
   help: document.getElementById('helpView'),

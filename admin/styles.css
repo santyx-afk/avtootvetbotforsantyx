@@ -479,3 +479,46 @@ input[type="checkbox"] { width: 20px; height: 20px; min-height: auto; flex: 0 0 
   .balance-controls { grid-template-columns: 1fr 1fr; align-items: end; }
   .balance-btns { grid-column: 1 / -1; }
 }
+
+/* --- Vakansiya bo'limi --- */
+.muted { color: var(--muted); font-size: 0.88rem; }
+
+.nav-badge {
+  display: inline-block;
+  min-width: 18px;
+  padding: 1px 6px;
+  margin-left: 4px;
+  border-radius: 999px;
+  background: #e5484d;
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.vac-tabs {
+  display: flex;
+  gap: 8px;
+  margin: 12px 0 16px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+.vac-tab {
+  flex: none;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border, #e3e6ea);
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.vac-tab.active {
+  border-color: #7c5cff;
+  background: rgba(124, 92, 255, 0.12);
+  color: #7c5cff;
+  font-weight: 600;
+}
+.vac-pane h3 { margin: 20px 0 10px; font-size: 0.95rem; }
