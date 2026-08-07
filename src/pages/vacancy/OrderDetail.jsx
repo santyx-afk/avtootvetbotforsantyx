@@ -40,6 +40,7 @@ const ERRORS = {
   already_reviewed: 'Siz allaqachon baho qo‘ygansiz',
   invalid_reason: 'Sababni batafsilroq yozing',
   already_reported: 'Bu order bo‘yicha shikoyatingiz ko‘rib chiqilmoqda',
+  storage_unavailable: 'Fayl saqlash sozlanmagan. Admin bilan bog’laning.',
 };
 
 // Uzoq muddat uchun format: "02 kun 06:00:00" (deadline va 3 kunlik to'lov oynasi).
@@ -228,9 +229,15 @@ export default function OrderDetail({ orderId, onBack }) {
             <div className={styles.statValue}>{formatUzs(order.amount)}</div>
             <div className={styles.statLabel}>Umumiy summa</div>
           </div>
+          {/* Mijozga komissiya ko'rsatilmaydi — u platforma bilan montajor
+              o'rtasidagi hisob. Mijozga kerak bo'lgani: qancha va qachon to'lashi. */}
           <div className={styles.stat}>
-            <div className={styles.statValue}>{formatUzs(isClient ? order.commission : order.worker_amount)}</div>
-            <div className={styles.statLabel}>{isClient ? 'Komissiya (10%)' : 'Sizga tushadi'}</div>
+            <div className={styles.statValue}>
+              {formatUzs(isClient ? order.first_payment : order.worker_amount)}
+            </div>
+            <div className={styles.statLabel}>
+              {isClient ? 'Oldindan (50%)' : 'Sizga tushadi'}
+            </div>
           </div>
         </div>
 

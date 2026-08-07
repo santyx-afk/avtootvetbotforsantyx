@@ -411,15 +411,19 @@
 }
 
 /* ---------- Qoidalar modali ---------- */
+/* Tab bar z-index: 100 — modal undan yuqorida turishi shart, aks holda
+   pastdagi tugmalar (Yuborish/Bekor qilish) tab bar ostida qolib ketadi. */
 .modalOverlay {
   position: fixed;
   inset: 0;
-  z-index: 60;
+  z-index: 200;
   display: flex;
   align-items: flex-end;
   justify-content: center;
   background: rgba(0, 0, 0, 0.5);
   padding: 16px;
+  /* Telegram'da pastki xavfsiz zona bor — modal unga tegib qolmasin. */
+  padding-bottom: calc(16px + var(--safe-bottom, 0px));
 }
 .modal {
   width: 100%;

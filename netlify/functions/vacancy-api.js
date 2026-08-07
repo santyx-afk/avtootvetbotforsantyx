@@ -713,6 +713,10 @@ async function handleChatMessages(supabase, telegramId, body) {
     ok: true,
     messages,
     has_more: (data || []).length === 40,
+    // `me` — so'rov yuborgan foydalanuvchi id'si. Frontend xabar kimniki ekanini
+    // shunga qarab aniqlaydi (ilgari faqat o'zi xabar yuborgandan keyin bilardi,
+    // shuning uchun chatga qayta kirilganda hamma xabar chapda ko'rinardi).
+    me: telegramId,
     chat: {
       id: chat.id,
       listing_id: chat.listing_id,
@@ -751,7 +755,14 @@ async function handleMessageSend(supabase, telegramId, body) {
     if (buffer.length > MAX_MEDIA_BYTES) return json(400, { ok: false, error: 'media_too_large' });
 
     const path = `chat/${chat.id}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${meta.ext}`;
-    await uploadMedia(buffer, body.media.type, path);
+    try {
+      await uploadMedia(buffer, body.media.type, path);
+    } catch (error) {
+      // Eng ko'p uchraydigan sabab — bucket yaratilmagan (19_vacancy_storage.sql).
+      // Umumiy 500 o'rniga aniq kod qaytaramiz, aks holda sabab ko'rinmay qoladi.
+      console.error('vacancy media upload failed', { bucket: MEDIA_BUCKET, error: error?.message });
+      return json(503, { ok: false, error: 'storage_unavailable' });
+    }
     payload.message_type = meta.kind;
     payload.media_url = path;
     payload.content = trimText(body.content, 500);
@@ -1234,7 +1245,12 @@ async function handleResultSend(supabase, telegramId, body) {
   if (buffer.length > MAX_MEDIA_BYTES) return json(400, { ok: false, error: 'media_too_large' });
 
   const path = `result/${order.id}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${meta.ext}`;
-  await uploadMedia(buffer, media.type, path);
+  try {
+    await uploadMedia(buffer, media.type, path);
+  } catch (error) {
+    console.error('vacancy result upload failed', { bucket: MEDIA_BUCKET, error: error?.message });
+    return json(503, { ok: false, error: 'storage_unavailable' });
+  }
 
   const updated = await patchOrder(supabase, order.id, { status: 'result_sent', result_media_url: path });
 

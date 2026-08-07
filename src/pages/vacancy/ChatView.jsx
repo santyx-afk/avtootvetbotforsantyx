@@ -21,6 +21,7 @@ const ERRORS = {
   not_cancellable: 'Bu orderni endi bekor qilib bo’lmaydi',
   not_counterable: 'Bu orderga qarshi taklif berib bo’lmaydi',
   counter_limit: 'Qarshi takliflar limiti tugadi (3 ta)',
+  storage_unavailable: 'Fayl saqlash sozlanmagan. Admin bilan bog’laning.',
 };
 
 function fileToBase64(file) {
@@ -50,9 +51,9 @@ export default function ChatView({ chatId, onBack }) {
   const [orderModal, setOrderModal] = useState(null); // null | 'create' | order (counter-offer)
   const [orderBusy, setOrderBusy] = useState(false);
   const [openOrder, setOpenOrder] = useState(null);
+  const [me, setMe] = useState(null);
   const bottomRef = useRef(null);
   const fileRef = useRef(null);
-  const meRef = useRef(null);
 
   // Telegram "orqaga" tugmasi: ochiq order tafsilotini, aks holda chatni yopadi.
   useVacancyBack(() => (openOrder ? setOpenOrder(null) : onBack?.()));
@@ -62,6 +63,7 @@ export default function ChatView({ chatId, onBack }) {
       const res = await vacancyCall('chat-messages', { chat_id: chatId });
       setMessages(res.messages || []);
       setMeta(res.chat || null);
+      if (res.me) setMe(String(res.me));
     } catch {
       setError('Xabarlar yuklanmadi.');
     } finally {
@@ -79,8 +81,9 @@ export default function ChatView({ chatId, onBack }) {
     bottomRef.current?.scrollIntoView({ block: 'end' });
   }, [messages.length]);
 
-  // O'z xabarlarimizni ajratish uchun: yuborgandan keyin sender_id ni eslab qolamiz.
-  const isMine = (msg) => meRef.current != null && msg.sender_id === meRef.current;
+  // Xabar kimniki — serverdan kelgan `me` bo'yicha. Chatga birinchi kirganda ham
+  // to'g'ri ishlaydi (ilgari faqat o'zi xabar yuborgandan keyin aniqlanardi).
+  const isMine = (msg) => me != null && String(msg.sender_id) === me;
 
   async function send() {
     if (!text.trim() || sending) return;
@@ -92,7 +95,7 @@ export default function ChatView({ chatId, onBack }) {
         content: text.trim(),
         reply_to_id: replyTo?.id || null,
       });
-      meRef.current = res.message.sender_id;
+      setMe(String(res.message.sender_id));
       setMessages((prev) => [...prev, res.message]);
       setText('');
       setReplyTo(null);
@@ -118,7 +121,7 @@ export default function ChatView({ chatId, onBack }) {
         media: { type: file.type, data },
         reply_to_id: replyTo?.id || null,
       });
-      meRef.current = res.message.sender_id;
+      setMe(String(res.message.sender_id));
       setMessages((prev) => [...prev, res.message]);
       setReplyTo(null);
     } catch (err) {
@@ -180,8 +183,9 @@ export default function ChatView({ chatId, onBack }) {
   }
 
   const activeOrder = meta?.active_order;
-  const myId = activeOrder ? (meta.role === 'client' ? activeOrder.client_id : activeOrder.worker_user_id) : null;
-  const canRespondToOrder = activeOrder?.status === 'created' && activeOrder.created_by !== myId;
+  // Order'ni ikkinchi tomon qabul qiladi — o'zi yaratgan odam emas.
+  const canRespondToOrder =
+    activeOrder?.status === 'created' && me != null && String(activeOrder.created_by) !== me;
 
   if (openOrder) {
     return (
