@@ -221,6 +221,86 @@ async function handleAcceptRules(supabase, telegramId) {
   return json(200, { ok: true });
 }
 
+/* ---------------- Ishchi profili ---------------- */
+
+const DAY_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
+
+// Ish vaqti: {"mon": {"from":"09:00","to":"18:00"}, ...}
+// Kun ko'rsatilmasa yoki vaqt noto'g'ri bo'lsa — o'sha kun dam olish deb qabul qilinadi.
+// "HH:MM" formatida leksikografik solishtirish vaqt bo'yicha solishtirish bilan bir xil.
+function sanitizeSchedule(raw) {
+  if (!raw || typeof raw !== 'object') return {};
+  const out = {};
+  for (const day of DAY_KEYS) {
+    const entry = raw[day];
+    if (!entry || typeof entry !== 'object') continue;
+    const from = String(entry.from || '').trim();
+    const to = String(entry.to || '').trim();
+    if (!TIME_RE.test(from) || !TIME_RE.test(to) || from >= to) continue;
+    out[day] = { from, to };
+  }
+  return out;
+}
+
+// Profilni tahrirlash. Faqat yuborilgan maydonlar yangilanadi (qisman yangilash).
+// Ism, telefon, kategoriya va tajriba o'zgartirilmaydi — ular admin tasdig'iga bog'liq.
+async function handleWorkerProfileUpdate(supabase, telegramId, body) {
+  const { worker, error } = await requireWorker(supabase, telegramId);
+  if (error) return error;
+
+  const patch = { updated_at: new Date().toISOString() };
+
+  if (body.bio !== undefined) {
+    patch.bio = trimText(body.bio, 1000);
+  }
+
+  if (body.portfolio_urls !== undefined) {
+    const urls = (Array.isArray(body.portfolio_urls) ? body.portfolio_urls : [])
+      .map(sanitizeUrl)
+      .filter(Boolean)
+      .slice(0, 2);
+    if (!urls.length) return json(400, { ok: false, error: 'invalid_portfolio' });
+    patch.portfolio_urls = urls;
+  }
+
+  if (body.show_phone !== undefined) {
+    patch.show_phone = Boolean(body.show_phone);
+  }
+
+  if (body.card_number !== undefined) {
+    const card = String(body.card_number || '').replace(/\D/g, '').slice(0, 20);
+    if (card.length < 16) return json(400, { ok: false, error: 'invalid_card' });
+    patch.card_number = card;
+  }
+
+  if (body.work_schedule !== undefined) {
+    patch.work_schedule = sanitizeSchedule(body.work_schedule);
+  }
+
+  const { data } = await request(supabase, 'workers', {
+    method: 'PATCH',
+    query: `id=eq.${worker.id}`,
+    body: patch,
+    headers: { Prefer: 'return=representation' },
+  });
+  return json(200, { ok: true, worker: workerShape(data[0]) });
+}
+
+// "Hozir band" tugmasi — yoqilganda e'lonlarda band ko'rinadi va yangi chat ochilmaydi.
+async function handleWorkerBusy(supabase, telegramId, body) {
+  const { worker, error } = await requireWorker(supabase, telegramId);
+  if (error) return error;
+
+  const { data } = await request(supabase, 'workers', {
+    method: 'PATCH',
+    query: `id=eq.${worker.id}`,
+    body: { is_busy: Boolean(body.is_busy), updated_at: new Date().toISOString() },
+    headers: { Prefer: 'return=representation' },
+  });
+  return json(200, { ok: true, worker: workerShape(data[0]) });
+}
+
 /* ---------------- E'lonlar ---------------- */
 
 const MAX_ACTIVE_LISTINGS = 3;
@@ -1247,6 +1327,10 @@ exports.handler = async (event) => {
         return await handleWorkerRegister(supabase, telegramId, body);
       case 'worker-accept-rules':
         return await handleAcceptRules(supabase, telegramId);
+      case 'worker-profile-update':
+        return await handleWorkerProfileUpdate(supabase, telegramId, body);
+      case 'worker-busy':
+        return await handleWorkerBusy(supabase, telegramId, body);
       case 'worker-public':
         return await handleWorkerPublic(supabase, body);
       case 'catalog':
