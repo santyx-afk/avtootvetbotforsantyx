@@ -24,7 +24,7 @@
           <button data-view="reviews" class="nav-link"><span class="nav-ico">⭐</span> Sharhlar</button>
           <button data-view="users" class="nav-link"><span class="nav-ico">👥</span> Foydalanuvchilar</button>
           <button data-view="orders" class="nav-link"><span class="nav-ico">🛒</span> Buyurtmalar</button>
-          <button data-view="vacancy" class="nav-link"><span class="nav-ico">💼</span> Vakansiyalar <span id="vacReportsBadge" class="nav-badge" hidden></span></button>
+          <button data-view="vacancy" class="nav-link"><span class="nav-ico">💼</span> Vakansiyalar <span id="vacPendingBadge" class="nav-badge" hidden></span></button>
           <button data-view="messages" class="nav-link"><span class="nav-ico">✉️</span> Xabar yuborish</button>
           <button data-view="settings" class="nav-link"><span class="nav-ico">⚙️</span> Sozlamalar</button>
           <button data-view="help" class="nav-link"><span class="nav-ico">🆘</span> Yordam</button>
@@ -268,17 +268,12 @@
               <p id="vacError" class="muted"></p>
 
               <div class="vac-tabs">
-                <button class="vac-tab active" data-tab="stats">📊 Statistika</button>
-                <button class="vac-tab" data-tab="workers">👷 Ishchilar <span id="vacWorkersBadge" class="nav-badge" hidden></span></button>
-                <button class="vac-tab" data-tab="orders">📋 Orderlar <span id="vacOrdersBadge" class="nav-badge" hidden></span></button>
-                <button class="vac-tab" data-tab="reports">🚩 Shikoyatlar</button>
-                <button class="vac-tab" data-tab="reviews">⭐ Baholar</button>
+                <button class="vac-tab active" data-tab="stats">Statistika</button>
+                <button class="vac-tab" data-tab="workers">Ishchilar </button>
               </div>
 
               <div class="vac-pane" data-pane="stats">
                 <div id="vacStatsCards" class="cards"></div>
-                <h3>Eng ko'p ishlagan montajorlar</h3>
-                <div id="vacTopWorkers" class="table-card"></div>
               </div>
 
               <div class="vac-pane" data-pane="workers" hidden>
@@ -292,34 +287,6 @@
                 <div id="vacWorkersList" class="table-card"></div>
               </div>
 
-              <div class="vac-pane" data-pane="orders" hidden>
-                <div class="toolbar">
-                  <select id="vacOrderStatus">
-                    <option value="">Barchasi</option>
-                    <option value="created">Yaratildi</option>
-                    <option value="accepted">Qabul qilindi</option>
-                    <option value="payment_pending">To'lov kutilmoqda</option>
-                    <option value="materials_pending">Material kutilmoqda</option>
-                    <option value="in_progress">Jarayonda</option>
-                    <option value="result_sent">Natija yuborildi</option>
-                    <option value="reviewing">Tekshiruvda</option>
-                    <option value="revising">Qayta ishlanmoqda</option>
-                    <option value="final_payment_pending">Qolgan to'lov kutilmoqda</option>
-                    <option value="completed">Yakunlandi</option>
-                    <option value="cancelled">Bekor qilindi</option>
-                    <option value="disputed">Nizoli</option>
-                  </select>
-                </div>
-                <div id="vacOrdersList" class="table-card"></div>
-              </div>
-
-              <div class="vac-pane" data-pane="reports" hidden>
-                <div id="vacReportsList" class="table-card"></div>
-              </div>
-
-              <div class="vac-pane" data-pane="reviews" hidden>
-                <div id="vacReviewsList" class="table-card"></div>
-              </div>
             </section>
 
             <section id="reviewsView" class="view" hidden>

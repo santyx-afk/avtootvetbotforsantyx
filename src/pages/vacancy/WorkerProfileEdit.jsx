@@ -9,20 +9,18 @@ const DAYS = [
 
 const ERRORS = {
   invalid_portfolio: 'Kamida bitta to‘g‘ri havola kerak (https://...)',
-  invalid_card: 'Karta raqami 16 xonali bo‘lsin',
   not_worker: 'Siz ishchi sifatida ro‘yxatdan o‘tmagansiz',
   banned: 'Hisobingiz to‘xtatilgan',
 };
 
 const DEFAULT_HOURS = { from: '09:00', to: '18:00' };
 
-// Profilni tahrirlash: bio, portfolio, telefon ko'rinishi, karta, ish vaqti.
+// Profilni tahrirlash: bio, portfolio havolalari, telefon ko'rinishi, ish vaqti.
 // Ism/telefon/kategoriya/tajriba bu yerda o'zgarmaydi — ular admin tasdig'iga bog'liq.
 export default function WorkerProfileEdit({ worker, onSaved, onCancel }) {
   const [bio, setBio] = useState(worker.bio || '');
   const [urls, setUrls] = useState(worker.portfolio_urls?.length ? [...worker.portfolio_urls] : ['']);
   const [showPhone, setShowPhone] = useState(Boolean(worker.show_phone));
-  const [cardNumber, setCardNumber] = useState(worker.card_number || '');
   const [schedule, setSchedule] = useState(() => ({ ...(worker.work_schedule || {}) }));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -49,7 +47,6 @@ export default function WorkerProfileEdit({ worker, onSaved, onCancel }) {
     setError('');
     const cleanUrls = urls.map((u) => u.trim()).filter(Boolean);
     if (!cleanUrls.length) return setError(ERRORS.invalid_portfolio);
-    if (String(cardNumber).replace(/\D/g, '').length < 16) return setError(ERRORS.invalid_card);
 
     // Boshlanish vaqti tugashdan keyin bo'lgan kunlar saqlanmaydi — oldindan ogohlantiramiz.
     const badDay = DAYS.find(([key]) => schedule[key] && schedule[key].from >= schedule[key].to);
@@ -61,7 +58,6 @@ export default function WorkerProfileEdit({ worker, onSaved, onCancel }) {
         bio,
         portfolio_urls: cleanUrls,
         show_phone: showPhone,
-        card_number: cardNumber,
         work_schedule: schedule,
       });
       onSaved(res.worker);
@@ -103,15 +99,6 @@ export default function WorkerProfileEdit({ worker, onSaved, onCancel }) {
           </button>
         )}
 
-        <label className={styles.fieldLabel}>Karta raqami (to&apos;lov olish uchun)</label>
-        <input
-          className={styles.input}
-          inputMode="numeric"
-          value={cardNumber}
-          onChange={(e) => setCardNumber(e.target.value)}
-          placeholder="8600 XXXX XXXX XXXX"
-          maxLength={20}
-        />
 
         <label className={styles.checkRow}>
           <input type="checkbox" checked={showPhone} onChange={(e) => setShowPhone(e.target.checked)} />

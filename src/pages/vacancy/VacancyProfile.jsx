@@ -14,9 +14,6 @@ const DAYS = [
   ['fri', 'Ju'], ['sat', 'Sha'], ['sun', 'Ya'],
 ];
 
-function money(value) {
-  return new Intl.NumberFormat('uz-UZ').format(Number(value || 0));
-}
 
 // Vakansiya profili: ishchi holatiga qarab ro'yxatdan o'tish, kutish yoki profil ko'rsatadi.
 export default function VacancyProfile() {
@@ -26,7 +23,6 @@ export default function VacancyProfile() {
   const [showRules, setShowRules] = useState(false);
   const [editing, setEditing] = useState(false);
   const [busyPending, setBusyPending] = useState(false);
-  const [myRating, setMyRating] = useState(null);
 
   const load = useCallback(async () => {
     try {
@@ -42,10 +38,6 @@ export default function VacancyProfile() {
 
   useEffect(() => {
     load();
-    // Mijoz sifatidagi reyting — ishchi bo'lmaganlarga ham ko'rsatiladi.
-    vacancyCall('my-rating')
-      .then(setMyRating)
-      .catch(() => setMyRating(null));
   }, [load]);
 
   async function acceptRules() {
@@ -100,22 +92,10 @@ export default function VacancyProfile() {
 
       {state === 'none' && (
         <>
-          {/* Mijoz sifatidagi reyting — montajorlar qo'ygan baholardan */}
-          {myRating && myRating.total_reviews > 0 && (
-            <div className={styles.workerCard}>
-              <div className={styles.workerName}>
-                ★ {myRating.avg_rating.toFixed(1)}
-              </div>
-              <div className={styles.workerMeta}>
-                Mijoz sifatidagi reytingingiz ({myRating.total_reviews} ta baho)
-              </div>
-            </div>
-          )}
-
           <div className={styles.profileCard}>
             <div className={styles.profileTitle}>Ishchi bo&apos;ling</div>
             <p className={styles.profileDesc}>
-              Montaj yoki dizayn bo&apos;yicha xizmat ko&apos;rsating, buyurtma oling va daromad qiling.
+              Montaj yoki dizayn bo&apos;yicha e&apos;lon joylang — mijozlar siz bilan bevosita bog&apos;lanadi.
             </p>
             <button type="button" className={styles.cta} onClick={() => setRegistering(true)}>
               Ro&apos;yxatdan o&apos;tish
@@ -177,7 +157,6 @@ export default function VacancyProfile() {
               <span className={worker.is_busy ? styles.dotBusy : styles.dotFree} />
             </div>
             <div className={styles.workerMeta}>
-              ★ {worker.avg_rating.toFixed(1)} ({worker.total_reviews} ta baho) •{' '}
               {worker.categories.map((c) => CATEGORY_LABEL[c] || c).join(', ')}
             </div>
             {worker.bio && <p className={styles.workerBio}>{worker.bio}</p>}
@@ -196,7 +175,7 @@ export default function VacancyProfile() {
             <div>
               <div className={styles.busyTitle}>Hozir band</div>
               <div className={styles.busyDesc}>
-                Yoqilsa e&apos;lonlaringizda &quot;Band&quot; ko&apos;rinadi va yangi suhbat ochilmaydi.
+                Yoqilsa e&apos;lonlaringizda &quot;Band&quot; deb ko&apos;rinadi.
               </div>
             </div>
             <input
@@ -207,25 +186,6 @@ export default function VacancyProfile() {
               onChange={(e) => toggleBusy(e.target.checked)}
             />
           </label>
-
-          <div className={styles.statsGrid}>
-            <div className={styles.stat}>
-              <div className={styles.statValue}>{money(worker.total_earnings)}</div>
-              <div className={styles.statLabel}>Umumiy daromad (UZS)</div>
-            </div>
-            <div className={styles.stat}>
-              <div className={styles.statValue}>{worker.completed_orders}</div>
-              <div className={styles.statLabel}>Tugallangan ishlar</div>
-            </div>
-            <div className={styles.stat}>
-              <div className={styles.statValue}>{worker.avg_rating.toFixed(1)}</div>
-              <div className={styles.statLabel}>O&apos;rtacha reyting</div>
-            </div>
-            <div className={styles.stat}>
-              <div className={styles.statValue}>{worker.deadline_violations}</div>
-              <div className={styles.statLabel}>Deadline buzilishlar</div>
-            </div>
-          </div>
 
           <div className={styles.workerCard}>
             <div className={styles.sheetBlockTitle}>Ish vaqti</div>

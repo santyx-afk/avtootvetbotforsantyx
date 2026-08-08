@@ -20,12 +20,11 @@ const ERRORS = {
   invalid_categories: 'Kamida bitta kategoriya tanlang',
   invalid_experience: 'Tajribangizni tanlang',
   invalid_portfolio: 'Kamida bitta to’g’ri havola kiriting (https://...)',
-  invalid_card: 'Karta raqami 16 xonali bo’lishi kerak',
   already_approved: 'Siz allaqachon tasdiqlangansiz',
   banned: 'Hisobingiz to’xtatilgan',
 };
 
-const STEPS = ['phone', 'name', 'categories', 'experience', 'portfolio', 'bio', 'card'];
+const STEPS = ['phone', 'name', 'categories', 'experience', 'portfolio', 'bio'];
 
 function formatPhone(raw) {
   const digits = raw.replace(/\D/g, '').replace(/^998/, '').slice(0, 9);
@@ -43,7 +42,6 @@ export default function WorkerRegister({ onDone, onCancel }) {
     experience: '',
     portfolio: ['', ''],
     bio: '',
-    card: '',
   });
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -63,7 +61,6 @@ export default function WorkerRegister({ onDone, onCancel }) {
     experience: Boolean(form.experience),
     portfolio: form.portfolio.some((u) => /^https?:\/\/\S+$/i.test(u.trim())),
     bio: true,
-    card: form.card.replace(/\D/g, '').length >= 16,
   }[current];
 
   async function submit() {
@@ -77,7 +74,6 @@ export default function WorkerRegister({ onDone, onCancel }) {
         experience: form.experience,
         portfolio_urls: form.portfolio.map((u) => u.trim()).filter(Boolean),
         bio: form.bio.trim(),
-        card_number: form.card,
       });
       onDone(res);
     } catch (err) {
@@ -205,19 +201,6 @@ export default function WorkerRegister({ onDone, onCancel }) {
         </div>
       )}
 
-      {current === 'card' && (
-        <div className={styles.regStep}>
-          <h2 className={styles.regTitle}>Karta raqamingiz</h2>
-          <p className={styles.regDesc}>To&apos;lovni shu kartaga olasiz. Istalgan O&apos;zbek kartasi.</p>
-          <input
-            className={styles.input}
-            inputMode="numeric"
-            value={form.card}
-            onChange={(e) => set('card', e.target.value.replace(/\D/g, '').slice(0, 16).replace(/(.{4})/g, '$1 ').trim())}
-            placeholder="8600 0000 0000 0000"
-          />
-        </div>
-      )}
 
       {error && <div className={styles.regError}>{error}</div>}
 

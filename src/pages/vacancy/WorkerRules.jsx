@@ -1,12 +1,15 @@
 import { useState } from 'react';
 import styles from './vacancy.module.css';
 
+// Xizmat bepul: platforma faqat e'lon joylash uchun. Shartnoma, to'lov va
+// muddat masalalari ishchi bilan mijoz o'rtasida bevosita hal qilinadi.
 const RULES = [
-  'Yakuniy to’lovni so’rashdan oldin mijozdan natija qabul qilinganini tasdiqlang',
-  'Deadline ga rioya qiling. 3 marta buzilsa — vaqtincha ban',
+  'E’londa faqat o’zingiz bajaradigan xizmatlarni ko’rsating',
+  'Narx va shartlarni aniq yozing — mijoz siz bilan bevosita bog’lanadi',
+  'Bog’lanish ma’lumotlaringiz (telefon yoki havola) ishlayotgan bo’lsin',
   'Mijoz bilan hurmatli munosabatda bo’ling',
-  'So’kinish, haqoratga yo’l qo’yilmaydi',
-  'Sifatsiz ish topshirsangiz shtraf yoki ban olishingiz mumkin',
+  'So’kinish, haqorat va yolg’on ma’lumotga yo’l qo’yilmaydi',
+  'Qoida buzilsa e’lon o’chiriladi yoki hisob to’xtatiladi',
 ];
 
 // Tasdiqlangan ishchi birinchi marta profilga kirganda ko'rsatiladigan qoidalar modali.

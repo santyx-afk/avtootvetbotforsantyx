@@ -401,14 +401,7 @@ async function clearCart(client, telegramId) { return request(client, 'cart_item
 async function generateUniquePrice(client, basePrice) {
   const base = Math.floor(Number(basePrice || 0));
   const { data } = await request(client, 'orders', { query: 'select=unique_price&status=in.(waiting_payment,pending_payment)&unique_price=not.is.null' });
-  // HumoCardBot to'lovni faqat summa bo'yicha topadi — shuning uchun vakansiya
-  // modulida band qilingan summalar ham hisobga olinadi (aks holda bir xil summa
-  // ikkala modulda ochiq bo'lib, to'lov noto'g'ri buyurtmaga biriktirilishi mumkin).
-  // Jadval hali yaratilmagan bo'lsa (migratsiya qo'llanmagan) — do'kon ishlayveradi.
-  const { data: vacancyData } = await request(client, 'freelance_orders', {
-    query: 'select=unique_price&status=in.(payment_pending,final_payment_pending)&unique_price=not.is.null',
-  }).catch(() => ({ data: [] }));
-  const reserved = new Set([...(data || []), ...(vacancyData || [])].map((row) => Number(row.unique_price)));
+  const reserved = new Set((data || []).map((row) => Number(row.unique_price)));
   const start = Math.floor(Math.random() * 999) + 1;
   for (let i = 0; i < 999; i += 1) {
     const candidate = base + (((start + i - 1) % 999) + 1);

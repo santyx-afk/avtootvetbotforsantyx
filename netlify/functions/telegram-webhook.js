@@ -1,7 +1,6 @@
 const { getAdminClient, request } = require('../../shared/db');
 const { handleStart, handleCallback, handleReceipt, handleTextCommand } = require('../../shared/bot-service');
 const { handleHumoPaymentNotification } = require('../../shared/humo-payment-service');
-const { handleVacancyFileRelay } = require('../../shared/vacancy-bot-service');
 
 async function isUserBlocked(supabase, telegramUserId) {
   if (!telegramUserId) return false;
@@ -164,19 +163,8 @@ exports.handler = async (event) => {
       if (blocked) return { statusCode: 200, body: 'blocked' };
       const payment = await handleHumoPaymentNotification({ supabase, message: update.message });
       if (!payment.handled) {
-        // Vakansiya fayl almashinuvi (isxodnik materiallar / tayyor ish).
-        // Faqat shu oqimdagi foydalanuvchilarda `true` qaytaradi — aks holda
-        // xabar pastdagi do'kon mantiqiga o'zgarishsiz o'tadi. Bu tekshiruv
-        // handleReceipt'dan OLDIN turishi shart: aks holda montajorga yuborilgan
-        // material chek (to'lov kvitansiyasi) deb qabul qilinardi.
-        const relayed = await handleVacancyFileRelay({ supabase, message: update.message }).catch((e) => {
-          console.warn('vacancy relay warn:', e?.message);
-          return false;
-        });
-        if (!relayed) {
-          const commandHandled = update.message.text ? await handleTextCommand({ supabase, message: update.message }) : false;
-          if (!commandHandled) await handleReceipt({ supabase, message: update.message });
-        }
+        const commandHandled = update.message.text ? await handleTextCommand({ supabase, message: update.message }) : false;
+        if (!commandHandled) await handleReceipt({ supabase, message: update.message });
       }
     } else if (update.callback_query) {
       const blocked = await isUserBlocked(supabase, update.callback_query.from?.id);

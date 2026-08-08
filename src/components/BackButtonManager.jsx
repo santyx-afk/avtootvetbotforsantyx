@@ -7,7 +7,7 @@ import { showBackButton, hideBackButton } from '../telegram/webapp.js';
 // uchun esa tab bar'da alohida "← Do'kon" tugmasi bor.
 const ROOT_PATHS = [
   '/catalog', '/cart', '/wishlist', '/history', '/profile', '/',
-  '/vacancy', '/vacancy/chats', '/vacancy/orders', '/vacancy/profile',
+  '/vacancy', '/vacancy/profile',
 ];
 
 // Joriy yo'nalishga qarab Telegram BackButton'ni ko'rsatadi/yashiradi.

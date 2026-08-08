@@ -13,7 +13,6 @@ const {
 } = require('./db');
 const { sendMessage } = require('./telegram');
 const { processApprovedOrderDelivery } = require('./delivery-service');
-const { matchVacancyPayment } = require('./vacancy-order-service');
 
 function parseHumoAmount(text = '') {
   const match = String(text).match(/➕\s*([\d\s.]+)(?:,\d{1,2})?\s*UZS/i);
@@ -82,24 +81,6 @@ async function handleHumoPaymentNotification({ supabase, message }) {
 
   const order = confirmation?.order || null;
   if (!order) {
-    // Do'kon buyurtmasi topilmadi — vakansiya (freelance) orderi bo'lishi mumkin.
-    try {
-      const vacancy = await matchVacancyPayment({ supabase, amount, messageKey: key });
-      if (vacancy?.matched) {
-        await insertPaymentLog(supabase, {
-          source: 'humo_card_bot',
-          message_key: key,
-          amount,
-          raw_payload: message,
-          status: 'matched_vacancy',
-          paid_amount: amount,
-        });
-        return { handled: true, matched: true, vacancy: true, order: vacancy.order };
-      }
-    } catch (err) {
-      console.warn('vacancy payment match warn:', err?.message);
-    }
-
     const baseOrder = await findWaitingOrderByBasePrice(supabase, amount);
     if (baseOrder?.user_telegram_id && Number(baseOrder.unique_price) !== amount) {
       await sendMessage(baseOrder.user_telegram_id, ['To‘lov summasi mos kelmadi.', '', `Siz ${new Intl.NumberFormat('uz-UZ').format(amount)} so‘m yuborgansiz.`, '', 'Kutilayotgan summa:', `${new Intl.NumberFormat('uz-UZ').format(Number(baseOrder.unique_price || 0))} so‘m.`, '', 'Iltimos admin bilan bog‘laning.'].join('\n'), null);

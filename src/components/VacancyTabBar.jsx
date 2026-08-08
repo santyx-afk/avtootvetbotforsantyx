@@ -10,8 +10,6 @@ import styles from './VacancyTabBar.module.css';
 // o'zbekcha hardcode qilingani uchun ruscha interfeysda menyu tili o'zgarib ketardi.
 const TABS = [
   { to: '/vacancy', icon: 'briefcase', key: 'home', end: true },
-  { to: '/vacancy/chats', icon: 'chat', key: 'chats' },
-  { to: '/vacancy/orders', icon: 'clipboard', key: 'orders' },
   { to: '/vacancy/profile', icon: 'profile', key: 'profile' },
 ];
 

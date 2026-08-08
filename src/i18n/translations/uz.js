@@ -32,9 +32,7 @@ export default {
   // Vakansiya bo'limining pastki menyusi — do'kon menyusi bilan bir xil tilda bo'lishi uchun.
   vacancyTabs: {
     store: 'Do\'kon',
-    home: 'Bosh sahifa',
-    chats: 'Chatlar',
-    orders: 'Buyurtmalar',
+    home: 'Bosh sahifa',
     profile: 'Profil',
   },
   // --- Vakansiyalar bo'limi (vaqtinchalik — vacancies/feedback prefiksi bilan guruhlangan) ---

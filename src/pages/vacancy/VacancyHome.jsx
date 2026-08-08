@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import Spinner from '../../components/Spinner.jsx';
 import { vacancyCall } from '../../lib/vacancyApi.js';
 import WorkerProfileSheet from './WorkerProfileSheet.jsx';
@@ -14,10 +13,12 @@ const FILTERS = [
 // Saralash — bir vaqtda bittasi. "Online" bu ro'yxatda emas: u mustaqil filtr
 // bo'lib, istalgan saralash bilan birga ishlaydi.
 const SORTS = [
-  { value: 'rating', label: 'Reyting' },
+  { value: 'newest', label: 'Yangi' },
   { value: 'price_asc', label: 'Narx ↑' },
   { value: 'price_desc', label: 'Narx ↓' },
 ];
+
+const EXPERIENCE_LABEL = { 0: '1 yildan kam', 1: '1-2 yil', 2: '2-5 yil', 5: '5+ yil' };
 
 const CATEGORY_LABEL = { montaj: 'Montaj', dizayn: 'Dizayn' };
 
@@ -29,12 +30,11 @@ function money(value) {
 export default function VacancyHome() {
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('');
-  const [sort, setSort] = useState('rating');
+  const [sort, setSort] = useState('newest');
   const [onlyOnline, setOnlyOnline] = useState(false);
   const [listings, setListings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [openWorkerId, setOpenWorkerId] = useState(null);
-  const navigate = useNavigate();
 
   const load = useCallback(
     async (signal) => {
@@ -145,23 +145,20 @@ export default function VacancyHome() {
               <span className={item.worker.is_busy ? styles.dotBusy : styles.dotFree} />
             </div>
             <div className={styles.listingMeta}>
-              ★ {item.worker.avg_rating.toFixed(1)} • {CATEGORY_LABEL[item.category] || item.category}
+              {CATEGORY_LABEL[item.category] || item.category} •{' '}
+              {EXPERIENCE_LABEL[item.worker.experience_years] || '—'}
             </div>
             <div className={styles.listingTitle}>{item.title}</div>
             <div className={styles.listingFoot}>
               <span className={styles.listingPrice}>{money(item.min_price)} UZS dan</span>
-              <span className={styles.listingDone}>{item.worker.completed_orders} ish ✓</span>
+              <span className={styles.listingDone}>{item.worker.is_busy ? 'Band' : "Bo'sh"}</span>
             </div>
           </div>
         ))}
       </div>
 
       {openWorkerId && (
-        <WorkerProfileSheet
-          workerId={openWorkerId}
-          onClose={() => setOpenWorkerId(null)}
-          onOpenChat={(chatId) => navigate('/vacancy/chats', { state: { openChat: chatId } })}
-        />
+        <WorkerProfileSheet workerId={openWorkerId} onClose={() => setOpenWorkerId(null)} />
       )}
     </div>
   );

@@ -16,8 +16,6 @@ import History from './pages/History.jsx';
 import Profile from './pages/Profile.jsx';
 import VacancyLayout from './components/VacancyLayout.jsx';
 import VacancyHome from './pages/vacancy/VacancyHome.jsx';
-import VacancyChats from './pages/vacancy/VacancyChats.jsx';
-import VacancyOrders from './pages/vacancy/VacancyOrders.jsx';
 import VacancyProfile from './pages/vacancy/VacancyProfile.jsx';
 import Landing from './pages/Landing.jsx';
 import WebLogin from './pages/WebLogin.jsx';
@@ -135,12 +133,12 @@ export default function App() {
           <Route path="/history" element={<History />} />
           <Route path="/profile" element={<Profile />} />
         </Route>
-        {/* Vakansiya (super-app) rejimi — mustaqil navigatsiya */}
+        {/* Vakansiya (super-app) rejimi — bepul e'lonlar doskasi */}
         <Route element={<VacancyLayout />}>
           <Route path="/vacancy" element={<VacancyHome />} />
-          <Route path="/vacancy/chats" element={<VacancyChats />} />
-          <Route path="/vacancy/orders" element={<VacancyOrders />} />
           <Route path="/vacancy/profile" element={<VacancyProfile />} />
+          {/* Eski chat/order yo'llari — bosh sahifaga qaytariladi */}
+          <Route path="/vacancy/*" element={<Navigate to="/vacancy" replace />} />
         </Route>
         <Route path="/" element={<Navigate to="/catalog" replace />} />
         <Route path="*" element={<Navigate to="/catalog" replace />} />

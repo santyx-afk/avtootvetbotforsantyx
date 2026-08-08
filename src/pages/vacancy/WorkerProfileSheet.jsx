@@ -9,35 +9,14 @@ const DAYS = [
   ['fri', 'Ju'], ['sat', 'Sha'], ['sun', 'Ya'],
 ];
 
-const CHAT_ERRORS = {
-  self_chat: 'O’zingizga yoza olmaysiz',
-  worker_busy: 'Ishchi hozir band',
-  worker_banned: 'Ishchi mavjud emas',
-};
-
 function money(value) {
   return new Intl.NumberFormat('uz-UZ').format(Number(value || 0));
 }
 
-// Ishchining ochiq profili — e'lonlari, ish vaqti va sharhlari.
-export default function WorkerProfileSheet({ workerId, onClose, onOpenChat }) {
+// Ishchining ochiq profili — e'lonlari, ish vaqti va bog'lanish ma'lumotlari.
+// Mijoz ishchi bilan to'g'ridan-to'g'ri (telefon yoki havola orqali) bog'lanadi.
+export default function WorkerProfileSheet({ workerId, onClose }) {
   const [data, setData] = useState(null);
-  const [allReviews, setAllReviews] = useState(false);
-  const [starting, setStarting] = useState(false);
-  const [chatError, setChatError] = useState('');
-
-  async function startChat(listingId) {
-    setStarting(true);
-    setChatError('');
-    try {
-      const res = await vacancyCall('chat-start', { listing_id: listingId });
-      onOpenChat?.(res.chat_id);
-    } catch (err) {
-      setChatError(CHAT_ERRORS[err.message] || 'Chat ochilmadi.');
-    } finally {
-      setStarting(false);
-    }
-  }
 
   useEffect(() => {
     let alive = true;
@@ -50,10 +29,10 @@ export default function WorkerProfileSheet({ workerId, onClose, onOpenChat }) {
   }, [workerId]);
 
   const worker = data?.worker;
-  const reviews = data?.reviews || [];
-  const shownReviews = allReviews ? reviews : reviews.slice(0, 2);
   const schedule = worker?.work_schedule || {};
   const hasSchedule = DAYS.some(([key]) => schedule[key]?.from);
+  // Bog'lanish: telefon (agar ishchi ko'rsatishga ruxsat bergan bo'lsa) yoki havolalar.
+  const hasContact = Boolean(worker?.phone) || Boolean(worker?.portfolio_urls?.length);
 
   return (
     <div className={styles.modalOverlay} onClick={onClose}>
@@ -81,7 +60,26 @@ export default function WorkerProfileSheet({ workerId, onClose, onOpenChat }) {
               {worker.categories.map((c) => CATEGORY_LABEL[c] || c).join(', ')}
             </div>
             <div className={styles.workerMeta}>Tajriba: {EXPERIENCE_LABEL[worker.experience_years] || '—'}</div>
-            {worker.phone && <div className={styles.workerMeta}>{worker.phone}</div>}
+
+            {/* Xizmat bepul: mijoz ishchi bilan to'g'ridan-to'g'ri bog'lanadi */}
+            <div className={styles.sheetBlock}>
+              <div className={styles.sheetBlockTitle}>Bog&apos;lanish</div>
+              {worker.phone ? (
+                <a className={styles.contactLink} href={`tel:${worker.phone.replace(/\s/g, '')}`}>
+                  {worker.phone}
+                </a>
+              ) : null}
+              {worker.portfolio_urls?.map((url) => (
+                <a key={url} className={styles.contactLink} href={url} target="_blank" rel="noreferrer noopener">
+                  {url}
+                </a>
+              ))}
+              {!hasContact && (
+                <p className={styles.miniListingDesc}>
+                  Ishchi bog&apos;lanish ma&apos;lumotini ko&apos;rsatmagan.
+                </p>
+              )}
+            </div>
 
             {hasSchedule && (
               <div className={styles.sheetBlock}>
@@ -95,17 +93,6 @@ export default function WorkerProfileSheet({ workerId, onClose, onOpenChat }) {
               </div>
             )}
 
-            {Boolean(worker.portfolio_urls?.length) && (
-              <div className={styles.sheetBlock}>
-                <div className={styles.sheetBlockTitle}>Ishlarim</div>
-                {worker.portfolio_urls.map((url) => (
-                  <a key={url} className={styles.portfolioLink} href={url} target="_blank" rel="noreferrer noopener">
-                    {url} 
-                  </a>
-                ))}
-              </div>
-            )}
-
             {Boolean(data.listings?.length) && (
               <div className={styles.sheetBlock}>
                 <div className={styles.sheetBlockTitle}>E&apos;lonlari</div>
@@ -115,38 +102,11 @@ export default function WorkerProfileSheet({ workerId, onClose, onOpenChat }) {
                     <div className={styles.miniListingDesc}>{l.description}</div>
                     <div className={styles.listingFoot}>
                       <span className={styles.listingPrice}>{money(l.min_price)} UZS dan</span>
-                      <button
-                        type="button"
-                        className={styles.writeBtn}
-                        disabled={starting}
-                        onClick={() => startChat(l.id)}
-                      >
-                        Yozish
-                      </button>
                     </div>
                   </div>
                 ))}
               </div>
             )}
-
-            {Boolean(reviews.length) && (
-              <div className={styles.sheetBlock}>
-                <div className={styles.sheetBlockTitle}>★ Izohlar</div>
-                {shownReviews.map((r, i) => (
-                  <div key={i} className={styles.reviewCard}>
-                    <div>{'★'.repeat(r.rating)}</div>
-                    {r.comment && <div className={styles.reviewText}>{r.comment}</div>}
-                  </div>
-                ))}
-                {reviews.length > 2 && !allReviews && (
-                  <button type="button" className={styles.btnGhost} onClick={() => setAllReviews(true)}>
-                    Batafsil
-                  </button>
-                )}
-              </div>
-            )}
-
-            {chatError && <div className={styles.regError}>{chatError}</div>}
           </>
         )}
       </div>
