@@ -5,8 +5,16 @@
 const { request } = require('./db');
 const { sendMessage } = require('./telegram');
 
-const FIRST_PAYMENT_WINDOW_MS = 10 * 60 * 1000; // 10 daqiqa
-const FINAL_PAYMENT_WINDOW_MS = 72 * 60 * 60 * 1000; // 3 kun
+// To'lov qo'lda (kartaga o'tkazma) qilinadi, shuning uchun muddat do'konnikiga
+// (PAYMENT_EXPIRES_MINUTES, standart 30 daq) tenglashtirildi — ilgari 10 daqiqa
+// edi va orderlar mijoz ulgurmasdan bekor bo'lib ketardi.
+const FIRST_PAYMENT_WINDOW_MS =
+  Number(process.env.VACANCY_FIRST_PAYMENT_MINUTES || process.env.PAYMENT_EXPIRES_MINUTES || 30) * 60 * 1000;
+const FINAL_PAYMENT_WINDOW_MS = Number(process.env.VACANCY_FINAL_PAYMENT_HOURS || 72) * 60 * 60 * 1000;
+
+// Muddat tugashidan shuncha vaqt oldin mijozga eslatma yuboriladi.
+const FIRST_PAYMENT_WARNING_MS = 10 * 60 * 1000; // 10 daqiqa qolganda
+const FINAL_PAYMENT_WARNING_MS = 24 * 60 * 60 * 1000; // 1 kun qolganda
 const DEADLINE_WARNING_RATIO = 0.2; // 20% vaqt qolganda ogohlantirish
 const MAX_DEADLINE_VIOLATIONS = 3;
 const BAN_DURATION_MS = 7 * 24 * 60 * 60 * 1000;
@@ -124,6 +132,7 @@ async function openPaymentWindow(supabase, order, stage) {
     payment_stage: stage,
     unique_price: uniquePrice,
     payment_expires_at: new Date(Date.now() + windowMs).toISOString(),
+    payment_warning_sent: false, // yangi oyna — ogohlantirish qaytadan yuboriladi
   });
 }
 
@@ -198,7 +207,7 @@ async function applyDeadlinePenalty(supabase, order) {
 
   const violations = Number(worker.deadline_violations || 0) + 1;
   const patch = { deadline_violations: violations, updated_at: new Date().toISOString() };
-  let notice = `⚠️ <b>Ogohlantirish</b>\n\nOrder #${order.id} bo'yicha deadline buzildi (${violations}-marta).`;
+  let notice = `<b>Ogohlantirish</b>\n\nOrder #${order.id} bo'yicha deadline buzildi (${violations}-marta).`;
 
   if (violations === 2) {
     // Jarima alohida ustunda to'planadi; avg_rating undan keyin qayta hisoblanadi.
@@ -208,7 +217,7 @@ async function applyDeadlinePenalty(supabase, order) {
     patch.is_banned = true;
     patch.ban_reason = '3 marta deadline buzilishi';
     patch.banned_until = new Date(Date.now() + BAN_DURATION_MS).toISOString();
-    notice = `🚫 <b>Hisobingiz 7 kunga to'xtatildi</b>\n\nSiz 3 marta deadline buzganingiz uchun vaqtincha to'xtatildingiz.`;
+    notice = `<b>Hisobingiz 7 kunga to'xtatildi</b>\n\nSiz 3 marta deadline buzganingiz uchun vaqtincha to'xtatildingiz.`;
   }
 
   await request(supabase, 'workers', { method: 'PATCH', query: `id=eq.${worker.id}`, body: patch }).catch(() => null);
@@ -252,35 +261,35 @@ async function confirmFirstPayment({ supabase, order, messageKey }) {
     await insertSystemMessage(
       supabase,
       order.chat_id,
-      `✅ 50% to'lov qabul qilindi (${formatUzs(order.first_payment)}). Isxodnik materiallarni botga yuboring.`,
+      `50% to'lov qabul qilindi (${formatUzs(order.first_payment)}). Isxodnik materiallarni botga yuboring.`,
     );
     await sendMessage(
       order.client_id,
-      `✅ <b>To'lov qabul qilindi!</b>\n\nOrder #${order.id}\n💰 ${formatUzs(order.first_payment)} (50%)\n\n📦 Endi isxodnik materiallarni shu botga yuboring, so'ng Mini App'da "Materiallarni jo'natdim" tugmasini bosing.`,
+      `<b>To'lov qabul qilindi!</b>\n\nOrder #${order.id}\n${formatUzs(order.first_payment)} (50%)\n\nEndi isxodnik materiallarni shu botga yuboring, so'ng Mini App'da "Materiallarni jo'natdim" tugmasini bosing.`,
     ).catch(() => null);
     await sendMessage(
       order.worker_user_id,
-      `✅ Order #${order.id} bo'yicha 50% to'lov qabul qilindi. Mijoz materiallarni yuborishi kutilmoqda.`,
+      `Order #${order.id} bo'yicha 50% to'lov qabul qilindi. Mijoz materiallarni yuborishi kutilmoqda.`,
     ).catch(() => null);
   } else {
     updated = await startWork(supabase, { ...order, ...paidPatch }, paidPatch);
     await insertSystemMessage(
       supabase,
       order.chat_id,
-      `✅ 50% to'lov qabul qilindi (${formatUzs(order.first_payment)}). Ish boshlandi — deadline: ${formatDateTime(updated.deadline_at)}`,
+      `50% to'lov qabul qilindi (${formatUzs(order.first_payment)}). Ish boshlandi — deadline: ${formatDateTime(updated.deadline_at)}`,
     );
     await sendMessage(
       order.client_id,
-      `✅ <b>To'lov qabul qilindi!</b>\n\nOrder #${order.id}\n💰 ${formatUzs(order.first_payment)} (50%)\n⏰ Deadline: ${formatDateTime(updated.deadline_at)}`,
+      `<b>To'lov qabul qilindi!</b>\n\nOrder #${order.id}\n${formatUzs(order.first_payment)} (50%)\nDeadline: ${formatDateTime(updated.deadline_at)}`,
     ).catch(() => null);
     await sendMessage(
       order.worker_user_id,
-      `✅ <b>To'lov qabul qilindi!</b>\n\nOrder #${order.id} — ish boshlandi.\n⏰ Deadline: ${formatDateTime(updated.deadline_at)}`,
+      `<b>To'lov qabul qilindi!</b>\n\nOrder #${order.id} — ish boshlandi.\nDeadline: ${formatDateTime(updated.deadline_at)}`,
     ).catch(() => null);
   }
 
   await notifyAdmins(
-    `💼 <b>Vakansiya to'lovi</b>\n\nOrder #${order.id} — 50%\n💰 ${formatUzs(order.unique_price)}\nMijoz: <code>${order.client_id}</code>`,
+    `<b>Vakansiya to'lovi</b>\n\nOrder #${order.id} — 50%\n${formatUzs(order.unique_price)}\nMijoz: <code>${order.client_id}</code>`,
   );
   return { matched: true, vacancy: true, order: updated, messageKey };
 }
@@ -299,14 +308,14 @@ async function confirmFinalPayment({ supabase, order, messageKey }) {
   // Ishchi statistikasi: tugallangan ishlar va daromad.
   await creditWorkerCompletion(supabase, order).catch((e) => console.warn('worker stats warn:', e?.message));
 
-  await insertSystemMessage(supabase, order.chat_id, `🎉 Order #${order.id} yakunlandi — to'lov to'liq qabul qilindi.`);
+  await insertSystemMessage(supabase, order.chat_id, `Order #${order.id} yakunlandi — to'lov to'liq qabul qilindi.`);
   await sendMessage(
     order.client_id,
-    `🎉 <b>Order #${order.id} yakunlandi!</b>\n\nTo'lov to'liq qabul qilindi. Tayyor fayl tez orada yuboriladi.`,
+    `<b>Order #${order.id} yakunlandi!</b>\n\nTo'lov to'liq qabul qilindi. Tayyor fayl tez orada yuboriladi.`,
   ).catch(() => null);
   await sendMessage(
     order.worker_user_id,
-    `🎉 <b>Order #${order.id} yakunlandi!</b>\n\nMijoz qolgan to'lovni amalga oshirdi.\n💰 Sizga to'lanadi: ${formatUzs(order.worker_amount)}\n\nAdmin tez orada o'tkazadi.`,
+    `<b>Order #${order.id} yakunlandi!</b>\n\nMijoz qolgan to'lovni amalga oshirdi.\nSizga to'lanadi: ${formatUzs(order.worker_amount)}\n\nAdmin tez orada o'tkazadi.`,
   ).catch(() => null);
 
   const { data } = await request(supabase, 'workers', {
@@ -314,11 +323,11 @@ async function confirmFinalPayment({ supabase, order, messageKey }) {
   }).catch(() => ({ data: [] }));
 
   await notifyAdmins(
-    `🎉 <b>Order #${order.id} muvaffaqiyatli yakunlandi!</b>\n\n` +
-      `💰 Umumiy summa: ${formatUzs(order.amount)}\n` +
-      `💼 Komissiya (10%): ${formatUzs(order.commission)}\n` +
-      `👷 Montajorga: ${formatUzs(order.worker_amount)}\n` +
-      `💳 Montajor kartasi: <code>${data?.[0]?.card_number || '—'}</code>\n\n` +
+    `<b>Order #${order.id} muvaffaqiyatli yakunlandi!</b>\n\n` +
+      `Umumiy summa: ${formatUzs(order.amount)}\n` +
+      `Komissiya (10%): ${formatUzs(order.commission)}\n` +
+      `Montajorga: ${formatUzs(order.worker_amount)}\n` +
+      `Montajor kartasi: <code>${data?.[0]?.card_number || '—'}</code>\n\n` +
       `Admin panel → Vakansiya orderlari → "To'landi"`,
   );
   return { matched: true, vacancy: true, order: updated, messageKey };
@@ -329,6 +338,40 @@ async function confirmFinalPayment({ supabase, order, messageKey }) {
 // Muddati o'tgan to'lov oynalarini yopadi.
 // 50% oyna (10 daq) — order bekor qilinadi.
 // Qolgan 50% oyna (3 kun) — order bekor, 50% dan 10% komissiya olinib, 40% ishchiga.
+// Muddat tugashidan oldin mijozga eslatma. Order jimgina bekor bo'lib
+// ketmasligi uchun — QA shikoyatlarining asosiy sababi shu edi.
+async function warnExpiringPayments(supabase) {
+  const now = Date.now();
+  const { data } = await request(supabase, 'freelance_orders', {
+    query:
+      'select=*&status=in.(payment_pending,final_payment_pending)' +
+      '&payment_warning_sent=eq.false&payment_expires_at=not.is.null&limit=50',
+  }).catch(() => ({ data: [] }));
+
+  let warned = 0;
+  for (const order of data || []) {
+    const remainingMs = new Date(order.payment_expires_at).getTime() - now;
+    if (remainingMs <= 0) continue; // muddati o'tgan — bekor qilish bosqichi hal qiladi
+
+    const threshold = order.payment_stage === 'second' ? FINAL_PAYMENT_WARNING_MS : FIRST_PAYMENT_WARNING_MS;
+    if (remainingMs > threshold) continue;
+
+    const left =
+      remainingMs >= 60 * 60 * 1000
+        ? `${Math.round(remainingMs / (60 * 60 * 1000))} soat`
+        : `${Math.max(1, Math.round(remainingMs / 60000))} daqiqa`;
+
+    await patchOrder(supabase, order.id, { payment_warning_sent: true });
+    await sendMessage(
+      order.client_id,
+      `<b>To'lov muddati tugayapti</b>\n\nOrder #${order.id}\nSumma: ${formatUzs(order.unique_price)}\n` +
+        `Qolgan vaqt: ${left}\n\nTo'lov amalga oshirilmasa, order bekor qilinadi.`,
+    ).catch(() => null);
+    warned += 1;
+  }
+  return warned;
+}
+
 async function expirePaymentWindows(supabase) {
   const now = new Date().toISOString();
   const { data } = await request(supabase, 'freelance_orders', {
@@ -345,9 +388,9 @@ async function expirePaymentWindows(supabase) {
         payment_stage: null,
         payment_expires_at: null,
       });
-      await insertSystemMessage(supabase, order.chat_id, `❌ Order #${order.id} — to'lov muddati o'tdi, bekor qilindi.`);
-      await sendMessage(order.client_id, `❌ Order #${order.id} bekor qilindi — to'lov muddati o'tdi.`).catch(() => null);
-      await sendMessage(order.worker_user_id, `❌ Order #${order.id} bekor qilindi — mijoz to'lovni amalga oshirmadi.`).catch(
+      await insertSystemMessage(supabase, order.chat_id, `Order #${order.id} — to'lov muddati o'tdi, bekor qilindi.`);
+      await sendMessage(order.client_id, `Order #${order.id} bekor qilindi — to'lov muddati o'tdi.`).catch(() => null);
+      await sendMessage(order.worker_user_id, `Order #${order.id} bekor qilindi — mijoz to'lovni amalga oshirmadi.`).catch(
         () => null,
       );
     } else {
@@ -364,18 +407,18 @@ async function expirePaymentWindows(supabase) {
       await insertSystemMessage(
         supabase,
         order.chat_id,
-        `❌ Order #${order.id} — qolgan to'lov muddati (3 kun) o'tdi, bekor qilindi.`,
+        `Order #${order.id} — qolgan to'lov muddati (3 kun) o'tdi, bekor qilindi.`,
       );
-      await sendMessage(order.client_id, `❌ Order #${order.id} bekor qilindi — to'lov muddati o'tdi.`).catch(() => null);
+      await sendMessage(order.client_id, `Order #${order.id} bekor qilindi — to'lov muddati o'tdi.`).catch(() => null);
       await sendMessage(
         order.worker_user_id,
-        `❌ Order #${order.id}: mijoz qolgan to'lovni amalga oshirmadi.\n\n💰 Sizga ${formatUzs(workerShare)} to'lanadi.`,
+        `Order #${order.id}: mijoz qolgan to'lovni amalga oshirmadi.\n\nSizga ${formatUzs(workerShare)} to'lanadi.`,
       ).catch(() => null);
       await notifyAdmins(
-        `⚠️ <b>Order #${order.id} — qolgan to'lov kelmadi</b>\n\n` +
+        `<b>Order #${order.id} — qolgan to'lov kelmadi</b>\n\n` +
           `Ushlab qolindi: ${formatUzs(order.first_payment)}\n` +
           `Komissiya: ${formatUzs(order.commission)}\n` +
-          `👷 Montajorga to'lanadi: ${formatUzs(workerShare)}`,
+          `Montajorga to'lanadi: ${formatUzs(workerShare)}`,
       );
     }
     handled += 1;
@@ -400,12 +443,12 @@ async function checkDeadlines(supabase) {
 
     if (remainingMs <= 0 && !order.deadline_expired) {
       await patchOrder(supabase, order.id, { deadline_expired: true });
-      await insertSystemMessage(supabase, order.chat_id, `⏰ Order #${order.id} — deadline o'tdi.`);
+      await insertSystemMessage(supabase, order.chat_id, `Order #${order.id} — deadline o'tdi.`);
       await sendMessage(
         order.client_id,
-        `⏰ <b>Montajor belgilangan muddatga ulgurmadi</b>\n\nOrder #${order.id}\n\nMini App → Orderlar bo'limidan tanlang:\n⏳ Kutaman (1–24 soat qo'shimcha)\n❌ Bekor qilish (50% qaytariladi)`,
+        `<b>Montajor belgilangan muddatga ulgurmadi</b>\n\nOrder #${order.id}\n\nMini App → Orderlar bo'limidan tanlang:\nKutaman (1–24 soat qo'shimcha)\nBekor qilish (50% qaytariladi)`,
       ).catch(() => null);
-      await sendMessage(order.worker_user_id, `⏰ Order #${order.id} deadline o'tdi. Mijoz qaror qabul qilmoqda.`).catch(
+      await sendMessage(order.worker_user_id, `Order #${order.id} deadline o'tdi. Mijoz qaror qabul qilmoqda.`).catch(
         () => null,
       );
       expired += 1;
@@ -417,7 +460,7 @@ async function checkDeadlines(supabase) {
       await patchOrder(supabase, order.id, { deadline_warning_sent: true });
       await sendMessage(
         order.worker_user_id,
-        `⚠️ <b>Deadline yaqinlashmoqda</b>\n\nOrder #${order.id} bo'yicha ~${hoursLeft} soat qoldi!`,
+        `<b>Deadline yaqinlashmoqda</b>\n\nOrder #${order.id} bo'yicha ~${hoursLeft} soat qoldi!`,
       ).catch(() => null);
       warned += 1;
     }
@@ -429,6 +472,9 @@ async function checkDeadlines(supabase) {
 module.exports = {
   FIRST_PAYMENT_WINDOW_MS,
   FINAL_PAYMENT_WINDOW_MS,
+  FIRST_PAYMENT_WARNING_MS,
+  FINAL_PAYMENT_WARNING_MS,
+  warnExpiringPayments,
   COMMISSION_RATE,
   calculateOrderMoney,
   workerShareOnTimeout,

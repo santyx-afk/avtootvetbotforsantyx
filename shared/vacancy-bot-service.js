@@ -72,7 +72,7 @@ async function handleVacancyFileRelay({ supabase, message }) {
     const total = await countPendingFiles(supabase, materialsOrder.id, 'material');
     await sendMessage(
       telegramId,
-      `📎 Fayl qabul qilindi (${total} ta).\n\nHammasini yuborib bo'lgach, Mini App'da <b>"Materiallarni jo'natdim ✓"</b> tugmasini bosing.`,
+      `Fayl qabul qilindi (${total} ta).\n\nHammasini yuborib bo'lgach, Mini App'da <b>"Materiallarni jo'natdim ✓"</b> tugmasini bosing.`,
     ).catch(() => null);
     return true;
   }
@@ -84,14 +84,14 @@ async function handleVacancyFileRelay({ supabase, message }) {
       deliveryOrder.client_id,
       message.chat.id,
       message.message_id,
-      `✅ Order #${deliveryOrder.id} — tayyor ish`,
+      `Order #${deliveryOrder.id} — tayyor ish`,
     ).catch((e) => {
       console.warn('final file copy warn:', e?.message);
       return null;
     });
 
     if (!copied) {
-      await sendMessage(telegramId, '❌ Faylni mijozga yuborib bo‘lmadi. Admin bilan bog‘laning.').catch(() => null);
+      await sendMessage(telegramId, 'Faylni mijozga yuborib bo‘lmadi. Admin bilan bog‘laning.').catch(() => null);
       return true;
     }
 
@@ -101,10 +101,10 @@ async function handleVacancyFileRelay({ supabase, message }) {
       body: { final_file_sent: true, updated_at: new Date().toISOString() },
     }).catch(() => null);
 
-    await sendMessage(telegramId, `✅ Fayl mijozga yuborildi. Order #${deliveryOrder.id} yopildi.`).catch(() => null);
+    await sendMessage(telegramId, `Fayl mijozga yuborildi. Order #${deliveryOrder.id} yopildi.`).catch(() => null);
     await sendMessage(
       deliveryOrder.client_id,
-      `🎁 <b>Order #${deliveryOrder.id} — tayyor ish yuborildi!</b>\n\nFaylni yuqorida topasiz. Hamkorlik uchun rahmat!`,
+      `<b>Order #${deliveryOrder.id} — tayyor ish yuborildi!</b>\n\nFaylni yuqorida topasiz. Hamkorlik uchun rahmat!`,
     ).catch(() => null);
     return true;
   }
@@ -124,7 +124,7 @@ async function forwardPendingMaterials(supabase, order) {
 
   await sendMessage(
     order.worker_user_id,
-    `📦 <b>Order #${order.id} — isxodnik materiallar</b>\n\n${files.length} ta fayl yuborilmoqda...`,
+    `<b>Order #${order.id} — isxodnik materiallar</b>\n\n${files.length} ta fayl yuborilmoqda...`,
   ).catch(() => null);
 
   let sent = 0;
@@ -145,7 +145,7 @@ async function forwardPendingMaterials(supabase, order) {
   if (sent < files.length) {
     await sendMessage(
       order.worker_user_id,
-      `⚠️ ${files.length} ta fayldan ${sent} tasi yuborildi. Qolgani uchun mijoz bilan chatda bog'laning.`,
+      `${files.length} ta fayldan ${sent} tasi yuborildi. Qolgani uchun mijoz bilan chatda bog'laning.`,
     ).catch(() => null);
   }
   return sent;

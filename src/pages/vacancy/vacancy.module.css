@@ -238,6 +238,47 @@
   border-color: #7c5cff;
 }
 
+/* Xato holatidagi maydon — .input/.textarea ustiga qo'shib beriladi.
+   (composes ishlatilmaydi: u faqat bitta klassli selektorda amal qiladi.) */
+.invalid {
+  border-color: #ff4d4f;
+}
+.invalid:focus {
+  border-color: #ff4d4f;
+}
+.fieldError {
+  margin-top: -4px;
+  font-size: 12.5px;
+  color: #ff4d4f;
+}
+
+/* Xavfli amal (o'chirish) tugmasi */
+.btnDanger {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px;
+  border-radius: var(--app-radius);
+  border: none;
+  background: #ff4d4f;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+}
+.btnDanger:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* Tugma ichidagi kichik yuklash indikatori */
+.btnSpinner {
+  margin-left: 6px;
+  vertical-align: -1px;
+}
+
 .chips {
   display: flex;
   gap: 10px;

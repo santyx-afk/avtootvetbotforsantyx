@@ -194,11 +194,11 @@ async function handleWorkerRegister(supabase, telegramId, body) {
   });
 
   const adminText =
-    `🧑‍💻 <b>Yangi ishchi arizasi</b>\n\n` +
-    `👤 ${name}\n📱 ${phone}\n🔑 Kod: <code>${code}</code>\n` +
-    `📂 ${categories.join(', ')}\n💼 Tajriba: ${body.experience}\n` +
-    `🔗 ${portfolio.join('\n🔗 ')}\n\n` +
-    `${bio ? `📝 ${bio}\n\n` : ''}Admin panel → Ishchilar → Kutilmoqda`;
+    `<b>Yangi ishchi arizasi</b>\n\n` +
+    `${name}\n${phone}\nKod: <code>${code}</code>\n` +
+    `${categories.join(', ')}\nTajriba: ${body.experience}\n` +
+    `${portfolio.join('\n')}\n\n` +
+    `${bio ? `${bio}\n\n` : ''}Admin panel → Ishchilar → Kutilmoqda`;
   for (const chatId of adminChatIds()) {
     await sendMessage(chatId, adminText).catch((e) => console.warn('admin notify warn:', e?.message));
   }
@@ -474,11 +474,15 @@ async function handleCatalog(supabase, body) {
   const search = trimText(body.search, 60).replace(/[,()*."\\]/g, ' ').trim();
   if (search) params.push(`title=ilike.*${encodeURIComponent(search)}*`);
 
+  // "Online" — saralash emas, mustaqil filtr: band bo'lmagan ishchilarni qoldiradi.
+  // Ilgari u sortMap ichida edi, shuning uchun saralash bilan birga ishlatib
+  // bo'lmasdi (birini tanlash ikkinchisini bekor qilardi).
+  if (body.only_online) params.push('workers.is_busy=eq.false');
+
   const sortMap = {
     rating: 'workers(avg_rating).desc',
     price_asc: 'min_price.asc',
     price_desc: 'min_price.desc',
-    online: 'workers(is_busy).asc',
   };
   params.push(`order=${sortMap[body.sort] || 'created_at.desc'}`);
   params.push('limit=60');
@@ -626,7 +630,7 @@ async function handleChatStart(supabase, telegramId, body) {
 
   await sendMessage(
     workerUserId,
-    `💬 <b>Yangi suhbat</b>\n\n"${listing.title}" e'loni bo'yicha mijoz siz bilan bog'landi.`,
+    `<b>Yangi suhbat</b>\n\n"${listing.title}" e'loni bo'yicha mijoz siz bilan bog'landi.`,
   ).catch(() => null);
 
   return json(200, { ok: true, chat_id: created[0].id, created: true });
@@ -677,7 +681,7 @@ async function handleChatList(supabase, telegramId) {
             ? last.content
             : last.message_type === 'system'
               ? last.content
-              : '📎 Media'
+              : 'Media'
           : '',
         last_message_at: last?.created_at || c.last_message_at,
         active_order: orderByChat[c.id] ? { id: orderByChat[c.id].id, status: orderByChat[c.id].status } : null,
@@ -775,7 +779,7 @@ async function handleMessageSend(supabase, telegramId, body) {
 
   const row = await insertMessage(supabase, chat.id, payload);
   const peerId = chat.client_id === telegramId ? chat.worker_user_id : chat.client_id;
-  await sendMessage(peerId, "💬 Sizga yangi xabar keldi. Mini App → Vakansiyalar → Chatlar").catch(() => null);
+  await sendMessage(peerId, "Sizga yangi xabar keldi. Mini App → Vakansiyalar → Chatlar").catch(() => null);
 
   return json(200, { ok: true, message: await messageShape(row) });
 }
@@ -814,7 +818,7 @@ async function handleMessageReport(supabase, telegramId, body) {
   });
 
   for (const chatId of adminChatIds()) {
-    await sendMessage(chatId, `🚩 <b>Yangi shikoyat</b>\n\nChat #${chat.id}\nSabab: ${reason}`).catch(() => null);
+    await sendMessage(chatId, `<b>Yangi shikoyat</b>\n\nChat #${chat.id}\nSabab: ${reason}`).catch(() => null);
   }
   return json(200, { ok: true });
 }
@@ -957,9 +961,9 @@ async function handleOrderCreate(supabase, telegramId, body) {
   await insertMessage(supabase, chat.id, {
     sender_id: telegramId,
     message_type: 'system',
-    content: `📋 Order #${order.id} yaratildi: "${order.title}"`,
+    content: `Order #${order.id} yaratildi: "${order.title}"`,
   });
-  await notifyOrderPeer(order, telegramId, `📋 Yangi order #${order.id}\n📝 ${order.title}\n💰 ${order.amount} UZS`);
+  await notifyOrderPeer(order, telegramId, `Yangi order #${order.id}\n${order.title}\n${order.amount} UZS`);
 
   return json(200, { ok: true, order: orderShape(order) });
 }
@@ -998,9 +1002,9 @@ async function handleOrderCounter(supabase, telegramId, body) {
   await insertMessage(supabase, original.chat_id, {
     sender_id: telegramId,
     message_type: 'system',
-    content: `🔄 Order #${original.id} o'rniga yangi taklif #${order.id}: "${order.title}", ${order.amount} UZS`,
+    content: `Order #${original.id} o'rniga yangi taklif #${order.id}: "${order.title}", ${order.amount} UZS`,
   });
-  await notifyOrderPeer(order, telegramId, `🔄 Order #${original.id} bo'yicha yangi taklif keldi: ${order.amount} UZS`);
+  await notifyOrderPeer(order, telegramId, `Order #${original.id} bo'yicha yangi taklif keldi: ${order.amount} UZS`);
 
   return json(200, { ok: true, order: orderShape(order) });
 }
@@ -1022,9 +1026,9 @@ async function handleOrderAccept(supabase, telegramId, body) {
   await insertMessage(supabase, order.chat_id, {
     sender_id: telegramId,
     message_type: 'system',
-    content: `✅ Order #${order.id} qabul qilindi`,
+    content: `Order #${order.id} qabul qilindi`,
   });
-  await notifyOrderPeer(updated, telegramId, `✅ Order #${order.id} qabul qilindi!`);
+  await notifyOrderPeer(updated, telegramId, `Order #${order.id} qabul qilindi!`);
 
   return json(200, { ok: true, order: orderShape(updated) });
 }
@@ -1045,9 +1049,9 @@ async function handleOrderCancel(supabase, telegramId, body) {
   await insertMessage(supabase, order.chat_id, {
     sender_id: telegramId,
     message_type: 'system',
-    content: `❌ Order #${order.id} bekor qilindi`,
+    content: `Order #${order.id} bekor qilindi`,
   });
-  await notifyOrderPeer(updated, telegramId, `❌ Order #${order.id} bekor qilindi.`);
+  await notifyOrderPeer(updated, telegramId, `Order #${order.id} bekor qilindi.`);
 
   return json(200, { ok: true, order: orderShape(updated) });
 }
@@ -1085,7 +1089,7 @@ async function handleOrderPaymentStart(supabase, telegramId, body) {
     await insertMessage(supabase, order.chat_id, {
       sender_id: telegramId,
       message_type: 'system',
-      content: `💳 Order #${order.id} — 50% to'lov kutilmoqda (${formatUzs(current.unique_price)})`,
+      content: `Order #${order.id} — 50% to'lov kutilmoqda (${formatUzs(current.unique_price)})`,
     });
   }
 
@@ -1152,11 +1156,11 @@ async function handleMaterialsSent(supabase, telegramId, body) {
   await insertMessage(supabase, order.chat_id, {
     sender_id: telegramId,
     message_type: 'system',
-    content: `📦 Materiallar yuborildi — ish boshlandi. Deadline: ${formatDateTime(updated.deadline_at)}`,
+    content: `Materiallar yuborildi — ish boshlandi. Deadline: ${formatDateTime(updated.deadline_at)}`,
   });
   await sendMessage(
     order.worker_user_id,
-    `📦 <b>Materiallar keldi</b> (${forwarded} ta fayl)\n\nOrder #${order.id} bo'yicha ish boshlandi.\n⏰ Deadline: ${formatDateTime(updated.deadline_at)}`,
+    `<b>Materiallar keldi</b> (${forwarded} ta fayl)\n\nOrder #${order.id} bo'yicha ish boshlandi.\nDeadline: ${formatDateTime(updated.deadline_at)}`,
   ).catch(() => null);
 
   return json(200, { ok: true, order: orderShape(updated), forwarded_files: forwarded });
@@ -1182,11 +1186,11 @@ async function handleDeadlineRespond(supabase, telegramId, body) {
     await insertMessage(supabase, order.chat_id, {
       sender_id: telegramId,
       message_type: 'system',
-      content: `⏳ Mijoz ${hours} soat qo'shimcha vaqt berdi`,
+      content: `Mijoz ${hours} soat qo'shimcha vaqt berdi`,
     });
     await sendMessage(
       order.worker_user_id,
-      `⏳ Order #${order.id}: mijoz ${hours} soat qo'shimcha vaqt berdi. Ulgurishga harakat qiling.`,
+      `Order #${order.id}: mijoz ${hours} soat qo'shimcha vaqt berdi. Ulgurishga harakat qiling.`,
     ).catch(() => null);
     return json(200, { ok: true, order: orderShape(updated) });
   }
@@ -1203,16 +1207,16 @@ async function handleDeadlineRespond(supabase, telegramId, body) {
     await insertMessage(supabase, order.chat_id, {
       sender_id: telegramId,
       message_type: 'system',
-      content: `❌ Order #${order.id} deadline buzilgani uchun bekor qilindi`,
+      content: `Order #${order.id} deadline buzilgani uchun bekor qilindi`,
     });
     await sendMessage(
       order.worker_user_id,
-      `❌ Order #${order.id} bekor qilindi — deadline buzildi.\n\nMijozga ${formatUzs(order.first_payment)} qaytariladi.`,
+      `Order #${order.id} bekor qilindi — deadline buzildi.\n\nMijozga ${formatUzs(order.first_payment)} qaytariladi.`,
     ).catch(() => null);
     for (const chatId of adminChatIds()) {
       await sendMessage(
         chatId,
-        `↩️ <b>Qaytarish kerak</b>\n\nOrder #${order.id}\nMijoz: <code>${order.client_id}</code>\nSumma: ${formatUzs(order.first_payment)}`,
+        `<b>Qaytarish kerak</b>\n\nOrder #${order.id}\nMijoz: <code>${order.client_id}</code>\nSumma: ${formatUzs(order.first_payment)}`,
       ).catch(() => null);
     }
     return json(200, { ok: true, order: orderShape(updated) });
@@ -1264,12 +1268,12 @@ async function handleResultSend(supabase, telegramId, body) {
   await insertMessage(supabase, order.chat_id, {
     sender_id: telegramId,
     message_type: 'system',
-    content: `📤 Order #${order.id} bo'yicha natija yuborildi`,
+    content: `Order #${order.id} bo'yicha natija yuborildi`,
   });
 
   await sendMessage(
     order.client_id,
-    `📤 <b>Natija tayyor!</b>\n\nOrder #${order.id} bo'yicha montajor natijani yubordi.\n\nMini App → Orderlar bo'limidan ko'ring va qaror qabul qiling.`,
+    `<b>Natija tayyor!</b>\n\nOrder #${order.id} bo'yicha montajor natijani yubordi.\n\nMini App → Orderlar bo'limidan ko'ring va qaror qabul qiling.`,
   ).catch(() => null);
 
   return json(200, { ok: true, order: orderShape(updated) });
@@ -1288,11 +1292,11 @@ async function handleRequestPayment(supabase, telegramId, body) {
   await insertMessage(supabase, order.chat_id, {
     sender_id: telegramId,
     message_type: 'system',
-    content: `❓ Montajor natijani qabul qilishingizni so'rayapti`,
+    content: `Montajor natijani qabul qilishingizni so'rayapti`,
   });
   await sendMessage(
     order.client_id,
-    `❓ <b>Natijani qabul qilasizmi?</b>\n\nOrder #${order.id}\n\nQabul qilsangiz, qolgan ${formatUzs(order.second_payment)} to'lovga o'tasiz.\nAgar kamchilik bo'lsa — "O'zgartirish kerak" tugmasini bosing.`,
+    `<b>Natijani qabul qilasizmi?</b>\n\nOrder #${order.id}\n\nQabul qilsangiz, qolgan ${formatUzs(order.second_payment)} to'lovga o'tasiz.\nAgar kamchilik bo'lsa — "O'zgartirish kerak" tugmasini bosing.`,
   ).catch(() => null);
 
   return json(200, { ok: true, order: orderShape(updated) });
@@ -1313,15 +1317,15 @@ async function handleApproveResult(supabase, telegramId, body) {
   await insertMessage(supabase, order.chat_id, {
     sender_id: telegramId,
     message_type: 'system',
-    content: `✅ Mijoz natijani qabul qildi — qolgan to'lov kutilmoqda`,
+    content: `Mijoz natijani qabul qildi — qolgan to'lov kutilmoqda`,
   });
   await sendMessage(
     order.client_id,
-    `✅ <b>Natijani qabul qildingiz</b>\n\nOrder #${order.id}\nQolgan ${formatUzs(order.second_payment)} ni 3 kun ichida to'lang.\n\n⚠️ To'lanmasa order bekor qilinadi.`,
+    `<b>Natijani qabul qildingiz</b>\n\nOrder #${order.id}\nQolgan ${formatUzs(order.second_payment)} ni 3 kun ichida to'lang.\n\nTo'lanmasa order bekor qilinadi.`,
   ).catch(() => null);
   await sendMessage(
     order.worker_user_id,
-    `🎉 <b>Mijoz natijani qabul qildi!</b>\n\nOrder #${order.id}\nQolgan to'lov kutilmoqda (3 kun muddat).`,
+    `<b>Mijoz natijani qabul qildi!</b>\n\nOrder #${order.id}\nQolgan to'lov kutilmoqda (3 kun muddat).`,
   ).catch(() => null);
 
   return json(200, { ok: true, order: orderShape(updated) });
@@ -1359,15 +1363,15 @@ async function handleRequestRevision(supabase, telegramId, body) {
     await insertMessage(supabase, order.chat_id, {
       sender_id: telegramId,
       message_type: 'system',
-      content: `🚩 O'zgartirish limiti tugadi — nizo ochildi, admin ko'rib chiqadi`,
+      content: `O'zgartirish limiti tugadi — nizo ochildi, admin ko'rib chiqadi`,
     });
     for (const chatId of adminChatIds()) {
       await sendMessage(
         chatId,
-        `🚩 <b>Avtomatik nizo</b>\n\nOrder #${order.id} — ${MAX_REVISIONS} ta o'zgartirishdan keyin kelishilmadi.\nMijoz: <code>${order.client_id}</code>\nMontajor: <code>${order.worker_user_id}</code>`,
+        `<b>Avtomatik nizo</b>\n\nOrder #${order.id} — ${MAX_REVISIONS} ta o'zgartirishdan keyin kelishilmadi.\nMijoz: <code>${order.client_id}</code>\nMontajor: <code>${order.worker_user_id}</code>`,
       ).catch(() => null);
     }
-    await sendMessage(order.worker_user_id, `🚩 Order #${order.id} bo'yicha nizo ochildi. Admin ko'rib chiqadi.`).catch(
+    await sendMessage(order.worker_user_id, `Order #${order.id} bo'yicha nizo ochildi. Admin ko'rib chiqadi.`).catch(
       () => null,
     );
     return json(200, { ok: true, order: orderShape(updated), disputed: true });
@@ -1380,18 +1384,18 @@ async function handleRequestRevision(supabase, telegramId, body) {
   await insertMessage(supabase, order.chat_id, {
     sender_id: telegramId,
     message_type: 'system',
-    content: `✏️ O'zgartirish so'raldi (${count}/${MAX_REVISIONS})`,
+    content: `O'zgartirish so'raldi (${count}/${MAX_REVISIONS})`,
   });
 
   const left = MAX_REVISIONS - count;
   await sendMessage(
     order.worker_user_id,
-    `✏️ <b>O'zgartirish so'raldi</b> (${count}/${MAX_REVISIONS})\n\nOrder #${order.id}\n💬 ${comment}`,
+    `<b>O'zgartirish so'raldi</b> (${count}/${MAX_REVISIONS})\n\nOrder #${order.id}\n${comment}`,
   ).catch(() => null);
 
   // Limit tugaganda ikkala tomon ham ogohlantiriladi.
   if (left === 0) {
-    const warning = `⚠️ Order #${order.id}: ${MAX_REVISIONS} ta o'zgartirish limiti tugadi. Kelisha olmasangiz, istalgan tomon shikoyat yuborishi mumkin.`;
+    const warning = `Order #${order.id}: ${MAX_REVISIONS} ta o'zgartirish limiti tugadi. Kelisha olmasangiz, istalgan tomon shikoyat yuborishi mumkin.`;
     await sendMessage(order.client_id, warning).catch(() => null);
     await sendMessage(order.worker_user_id, warning).catch(() => null);
   }
@@ -1453,8 +1457,8 @@ async function handleOrderReview(supabase, telegramId, body) {
 
   await sendMessage(
     reviewedId,
-    `⭐ <b>Yangi baho</b>\n\nOrder #${order.id} bo'yicha sizga ${'⭐'.repeat(rating)} (${rating}/5) qo'yildi.${
-      comment ? `\n\n💬 ${comment}` : ''
+    `<b>Yangi baho</b>\n\nOrder #${order.id} bo'yicha sizga ${''.repeat(rating)} (${rating}/5) qo'yildi.${
+      comment ? `\n\n${comment}` : ''
     }`,
   ).catch(() => null);
 
@@ -1509,13 +1513,13 @@ async function handleOrderReport(supabase, telegramId, body) {
   await insertMessage(supabase, order.chat_id, {
     sender_id: telegramId,
     message_type: 'system',
-    content: `🚩 Order #${order.id} bo'yicha shikoyat yuborildi — admin ko'rib chiqadi`,
+    content: `Order #${order.id} bo'yicha shikoyat yuborildi — admin ko'rib chiqadi`,
   });
 
   for (const chatId of adminChatIds()) {
     await sendMessage(
       chatId,
-      `🚩 <b>Order bo'yicha shikoyat</b>\n\nOrder #${order.id}\nKimdan: <code>${telegramId}</code>\nKimga: <code>${reportedId}</code>\n\n${reason}`,
+      `<b>Order bo'yicha shikoyat</b>\n\nOrder #${order.id}\nKimdan: <code>${telegramId}</code>\nKimga: <code>${reportedId}</code>\n\n${reason}`,
     ).catch(() => null);
   }
 
@@ -1595,7 +1599,7 @@ async function handleAdminReportResolve(supabase, body, adminTelegramId) {
   if (action === 'dismiss') {
     notice = null;
   } else if (action === 'warn') {
-    notice = `⚠️ <b>Ogohlantirish</b>\n\nSizga qarshi shikoyat tasdiqlandi.\nSabab: ${report.reason}\n\nQoidalarga rioya qiling.`;
+    notice = `<b>Ogohlantirish</b>\n\nSizga qarshi shikoyat tasdiqlandi.\nSabab: ${report.reason}\n\nQoidalarga rioya qiling.`;
   } else if (action === 'penalty') {
     await request(supabase, 'workers', {
       method: 'PATCH',
@@ -1603,7 +1607,7 @@ async function handleAdminReportResolve(supabase, body, adminTelegramId) {
       body: { rating_penalty: Number(worker.rating_penalty || 0) + 0.5, updated_at: new Date().toISOString() },
     }).catch(() => null);
     await recalculateWorkerRating(supabase, report.reported_id).catch(() => null);
-    notice = `⚠️ <b>Shtraf</b>\n\nShikoyat tasdiqlandi, reytingingiz 0.5 ball tushirildi.\nSabab: ${report.reason}`;
+    notice = `<b>Shtraf</b>\n\nShikoyat tasdiqlandi, reytingingiz 0.5 ball tushirildi.\nSabab: ${report.reason}`;
   } else if (action === 'ban') {
     const days = Number(body.ban_days);
     const permanent = body.permanent === true;
@@ -1621,8 +1625,8 @@ async function handleAdminReportResolve(supabase, body, adminTelegramId) {
       },
     }).catch(() => null);
     notice = permanent
-      ? `🚫 <b>Hisobingiz to'xtatildi</b>\n\nSabab: ${notes || report.reason}`
-      : `🚫 <b>Hisobingiz ${Number.isFinite(days) && days > 0 ? days : REPORT_BAN_DAYS} kunga to'xtatildi</b>\n\nSabab: ${notes || report.reason}`;
+      ? `<b>Hisobingiz to'xtatildi</b>\n\nSabab: ${notes || report.reason}`
+      : `<b>Hisobingiz ${Number.isFinite(days) && days > 0 ? days : REPORT_BAN_DAYS} kunga to'xtatildi</b>\n\nSabab: ${notes || report.reason}`;
   }
 
   const { data: updated } = await request(supabase, 'freelance_reports', {
@@ -1642,8 +1646,8 @@ async function handleAdminReportResolve(supabase, body, adminTelegramId) {
   await sendMessage(
     report.reporter_id,
     action === 'dismiss'
-      ? `ℹ️ Shikoyatingiz ko'rib chiqildi. Qoida buzilishi aniqlanmadi.`
-      : `✅ Shikoyatingiz ko'rib chiqildi va chora ko'rildi. Rahmat.`,
+      ? `Shikoyatingiz ko'rib chiqildi. Qoida buzilishi aniqlanmadi.`
+      : `Shikoyatingiz ko'rib chiqildi va chora ko'rildi. Rahmat.`,
   ).catch(() => null);
 
   return json(200, { ok: true, report: updated?.[0] || null, applied: action });
@@ -1720,7 +1724,7 @@ async function handleAdminApprove(supabase, body) {
   }).catch(() => null);
   await sendMessage(
     worker.user_id,
-    '🎉 <b>Tabriklaymiz!</b>\n\nSiz montajor/dizayner sifatida tasdiqlandingiz. Endi e\'lon joylashingiz mumkin.',
+    '<b>Tabriklaymiz!</b>\n\nSiz montajor/dizayner sifatida tasdiqlandingiz. Endi e\'lon joylashingiz mumkin.',
   ).catch((e) => console.warn('worker notify warn:', e?.message));
   return json(200, { ok: true, worker: workerShape(worker) });
 }
@@ -1734,7 +1738,7 @@ async function handleAdminReject(supabase, body) {
     query: `user_id=eq.${encodeURIComponent(worker.user_id)}&status=eq.pending`,
     body: { status: 'rejected' },
   }).catch(() => null);
-  await sendMessage(worker.user_id, `❌ <b>Arizangiz rad etildi</b>\n\nSabab: ${reason}`).catch((e) =>
+  await sendMessage(worker.user_id, `<b>Arizangiz rad etildi</b>\n\nSabab: ${reason}`).catch((e) =>
     console.warn('worker notify warn:', e?.message),
   );
   return json(200, { ok: true, worker: workerShape(worker) });
@@ -1748,7 +1752,7 @@ async function handleAdminBan(supabase, body) {
     banned_until: body.until || null,
   });
   if (!worker) return json(404, { ok: false, error: 'not_found' });
-  await sendMessage(worker.user_id, `🚫 <b>Hisobingiz to'xtatildi</b>\n\nSabab: ${reason}`).catch(() => null);
+  await sendMessage(worker.user_id, `<b>Hisobingiz to'xtatildi</b>\n\nSabab: ${reason}`).catch(() => null);
   return json(200, { ok: true, worker: workerShape(worker) });
 }
 
@@ -1759,7 +1763,7 @@ async function handleAdminUnban(supabase, body) {
     banned_until: null,
   });
   if (!worker) return json(404, { ok: false, error: 'not_found' });
-  await sendMessage(worker.user_id, '✅ Hisobingiz tiklandi. Ishni davom ettirishingiz mumkin.').catch(() => null);
+  await sendMessage(worker.user_id, 'Hisobingiz tiklandi. Ishni davom ettirishingiz mumkin.').catch(() => null);
   return json(200, { ok: true, worker: workerShape(worker) });
 }
 
@@ -1851,7 +1855,7 @@ async function handleAdminOrderPaid(supabase, body) {
   // yuklab olinadigan holda uzatadi (vacancy-bot-service).
   await sendMessage(
     order.worker_user_id,
-    `💰 <b>Sizga to'lov o'tkazildi</b>\n\nOrder #${order.id}\nSumma: ${formatUzs(order.worker_amount)}\n\n📤 Endi tayyor faylni <b>shu botga yuboring</b> — u mijozga avtomatik yetkaziladi.`,
+    `<b>Sizga to'lov o'tkazildi</b>\n\nOrder #${order.id}\nSumma: ${formatUzs(order.worker_amount)}\n\nEndi tayyor faylni <b>shu botga yuboring</b> — u mijozga avtomatik yetkaziladi.`,
   ).catch(() => null);
 
   return json(200, { ok: true, order: orderShape(updated) });

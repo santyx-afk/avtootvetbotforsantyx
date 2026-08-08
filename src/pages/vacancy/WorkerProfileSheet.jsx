@@ -70,7 +70,7 @@ export default function WorkerProfileSheet({ workerId, onClose, onOpenChat }) {
             <div className={styles.sheetHead}>
               <div className={styles.workerName}>{worker.name}</div>
               <div className={styles.workerMeta}>
-                ⭐ {worker.avg_rating.toFixed(1)} ({worker.total_reviews} ta baho) •{' '}
+                ★ {worker.avg_rating.toFixed(1)} ({worker.total_reviews} ta baho) •{' '}
                 {worker.is_busy ? 'Band' : 'Bo‘sh'}
               </div>
             </div>
@@ -78,14 +78,14 @@ export default function WorkerProfileSheet({ workerId, onClose, onOpenChat }) {
             {worker.bio && <p className={styles.workerBio}>{worker.bio}</p>}
 
             <div className={styles.workerMeta}>
-              📂 {worker.categories.map((c) => CATEGORY_LABEL[c] || c).join(', ')}
+              {worker.categories.map((c) => CATEGORY_LABEL[c] || c).join(', ')}
             </div>
-            <div className={styles.workerMeta}>💼 Tajriba: {EXPERIENCE_LABEL[worker.experience_years] || '—'}</div>
-            {worker.phone && <div className={styles.workerMeta}>📱 {worker.phone}</div>}
+            <div className={styles.workerMeta}>Tajriba: {EXPERIENCE_LABEL[worker.experience_years] || '—'}</div>
+            {worker.phone && <div className={styles.workerMeta}>{worker.phone}</div>}
 
             {hasSchedule && (
               <div className={styles.sheetBlock}>
-                <div className={styles.sheetBlockTitle}>🕐 Ish vaqti</div>
+                <div className={styles.sheetBlockTitle}>Ish vaqti</div>
                 {DAYS.map(([key, label]) => (
                   <div key={key} className={styles.scheduleRow}>
                     <span>{label}</span>
@@ -97,10 +97,10 @@ export default function WorkerProfileSheet({ workerId, onClose, onOpenChat }) {
 
             {Boolean(worker.portfolio_urls?.length) && (
               <div className={styles.sheetBlock}>
-                <div className={styles.sheetBlockTitle}>🔗 Ishlarim</div>
+                <div className={styles.sheetBlockTitle}>Ishlarim</div>
                 {worker.portfolio_urls.map((url) => (
                   <a key={url} className={styles.portfolioLink} href={url} target="_blank" rel="noreferrer noopener">
-                    {url} ↗
+                    {url} 
                   </a>
                 ))}
               </div>
@@ -108,7 +108,7 @@ export default function WorkerProfileSheet({ workerId, onClose, onOpenChat }) {
 
             {Boolean(data.listings?.length) && (
               <div className={styles.sheetBlock}>
-                <div className={styles.sheetBlockTitle}>📋 E&apos;lonlari</div>
+                <div className={styles.sheetBlockTitle}>E&apos;lonlari</div>
                 {data.listings.map((l) => (
                   <div key={l.id} className={styles.miniListing}>
                     <div className={styles.miniListingTitle}>{l.title}</div>
@@ -131,10 +131,10 @@ export default function WorkerProfileSheet({ workerId, onClose, onOpenChat }) {
 
             {Boolean(reviews.length) && (
               <div className={styles.sheetBlock}>
-                <div className={styles.sheetBlockTitle}>⭐ Izohlar</div>
+                <div className={styles.sheetBlockTitle}>★ Izohlar</div>
                 {shownReviews.map((r, i) => (
                   <div key={i} className={styles.reviewCard}>
-                    <div>{'⭐'.repeat(r.rating)}</div>
+                    <div>{'★'.repeat(r.rating)}</div>
                     {r.comment && <div className={styles.reviewText}>{r.comment}</div>}
                   </div>
                 ))}

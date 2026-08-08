@@ -56,7 +56,7 @@ export default function OrderModal({ initial, busy, onSubmit, onClose }) {
   return (
     <div className={styles.modalOverlay}>
       <div className={styles.modal} style={{ maxHeight: '86vh', overflowY: 'auto' }}>
-        <h2 className={styles.modalTitle}>{initial ? '🔄 Qarshi taklif' : '📋 Order yaratish'}</h2>
+        <h2 className={styles.modalTitle}>{initial ? 'Qarshi taklif' : 'Order yaratish'}</h2>
 
         <div className={styles.regStep}>
           <input

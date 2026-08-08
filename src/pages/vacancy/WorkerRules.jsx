@@ -16,7 +16,7 @@ export default function WorkerRules({ onAccept }) {
   return (
     <div className={styles.modalOverlay}>
       <div className={styles.modal}>
-        <h2 className={styles.modalTitle}>📋 Ishchi qoidalari</h2>
+        <h2 className={styles.modalTitle}>Ishchi qoidalari</h2>
         <ol className={styles.rulesList}>
           {RULES.map((rule) => (
             <li key={rule}>{rule}</li>

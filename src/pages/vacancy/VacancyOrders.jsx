@@ -40,7 +40,6 @@ export default function VacancyOrders() {
 
       {!loading && !orders.length && (
         <div className={styles.empty}>
-          <span className={styles.emptyEmoji}>📋</span>
           <span className={styles.emptyTitle}>Hozircha buyurtmalar yo'q</span>
           <span className={styles.emptyDesc}>
             Ishchiga buyurtma berganingizdan so'ng, jarayoni shu yerda kuzatiladi.

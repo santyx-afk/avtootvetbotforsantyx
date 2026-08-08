@@ -30,6 +30,14 @@ export default {
     profile: 'Profile',
   },
   // --- Vacancies section (temporary — grouped under vacancies/feedback) ---
+  // Vacancy section bottom menu — same language as the store menu.
+  vacancyTabs: {
+    store: 'Store',
+    home: 'Home',
+    chats: 'Chats',
+    orders: 'Orders',
+    profile: 'Profile',
+  },
   vacancies: {
     title: 'Coming soon!',
     desc: 'The vacancies section is under development. Stay tuned for updates.',

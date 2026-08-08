@@ -243,7 +243,7 @@ export default function OrderDetail({ orderId, onBack }) {
 
         {order.reference_urls?.length > 0 && (
           <div className={styles.sheetBlock}>
-            <div className={styles.sheetBlockTitle}>🔗 Referanslar</div>
+            <div className={styles.sheetBlockTitle}>Referanslar</div>
             {order.reference_urls.map((url) => (
               <a key={url} className={styles.portfolioLink} href={url} target="_blank" rel="noreferrer">
                 {url}
@@ -254,7 +254,7 @@ export default function OrderDetail({ orderId, onBack }) {
 
         {order.notes && (
           <div className={styles.sheetBlock}>
-            <div className={styles.sheetBlockTitle}>📝 Izoh</div>
+            <div className={styles.sheetBlockTitle}>Izoh</div>
             <div className={styles.miniListingDesc}>{order.notes}</div>
           </div>
         )}
@@ -265,7 +265,6 @@ export default function OrderDetail({ orderId, onBack }) {
       {/* 50% to'lovni boshlash — order qabul qilingandan keyin, mijoz uchun */}
       {order.status === 'accepted' && isClient && (
         <div className={styles.statusCard}>
-          <span className={styles.statusEmoji}>💳</span>
           <div className={styles.statusTitle}>Oldindan to'lov (50%)</div>
           <p className={styles.statusDesc}>
             Ish boshlanishi uchun {formatUzs(order.first_payment)} to'lang. To'lovga 10 daqiqa vaqt beriladi.
@@ -278,7 +277,6 @@ export default function OrderDetail({ orderId, onBack }) {
 
       {order.status === 'accepted' && !isClient && (
         <div className={styles.statusCard}>
-          <span className={styles.statusEmoji}>⏳</span>
           <div className={styles.statusTitle}>To'lov kutilmoqda</div>
           <p className={styles.statusDesc}>Mijoz 50% oldindan to'lovni amalga oshirishi kutilmoqda.</p>
         </div>
@@ -308,7 +306,7 @@ export default function OrderDetail({ orderId, onBack }) {
               <CopyField label="Karta raqami" value={payment.card_number || '—'} />
 
               <div className={styles.paymentWarning}>
-                ⚠️ Agar kartaga tashlanadigan summa yuqoridagidan farq qilsa, to'lov tizim tomonidan aniqlanmay
+                Agar kartaga tashlanadigan summa yuqoridagidan farq qilsa, to'lov tizim tomonidan aniqlanmay
                 qolishi mumkin. Agar siz bankomatdan yoki chet eldan pul tashlayotgan bo'lsangiz {SUPPORT} ga
                 murojaat qiling.
               </div>
@@ -324,7 +322,6 @@ export default function OrderDetail({ orderId, onBack }) {
 
       {paying && !isClient && (
         <div className={styles.statusCard}>
-          <span className={styles.statusEmoji}>⏳</span>
           <div className={styles.statusTitle}>To'lov kutilmoqda</div>
           <p className={styles.statusDesc}>
             {order.status === 'payment_pending'
@@ -337,7 +334,6 @@ export default function OrderDetail({ orderId, onBack }) {
       {/* Isxodnik materiallar */}
       {order.status === 'materials_pending' && (
         <div className={styles.statusCard}>
-          <span className={styles.statusEmoji}>📦</span>
           <div className={styles.statusTitle}>Isxodnik materiallar</div>
           {isClient ? (
             <>
@@ -363,7 +359,6 @@ export default function OrderDetail({ orderId, onBack }) {
       {/* Deadline taymeri */}
       {['in_progress', 'revising'].includes(order.status) && !order.deadline_expired && (
         <div className={styles.statusCard}>
-          <span className={styles.statusEmoji}>⏰</span>
           <div className={styles.statusTitle}>Deadline</div>
           <div className={styles.verifyCode} key={tick}>
             {longCountdown(order.deadline_at)}
@@ -377,7 +372,6 @@ export default function OrderDetail({ orderId, onBack }) {
       {/* Deadline o'tdi — mijozning tanlovi */}
       {order.deadline_expired && ['in_progress', 'revising'].includes(order.status) && (
         <div className={styles.statusCard}>
-          <span className={styles.statusEmoji}>⏰</span>
           <div className={styles.statusTitle}>Muddat o'tdi</div>
           {isClient ? (
             <>
@@ -397,7 +391,7 @@ export default function OrderDetail({ orderId, onBack }) {
                   disabled={busy}
                   onClick={() => call('order-deadline-respond', { choice: 'wait', extra_hours: Number(extraHours) })}
                 >
-                  ⏳ Kutaman
+                  Kutaman
                 </button>
                 <button
                   type="button"
@@ -405,7 +399,7 @@ export default function OrderDetail({ orderId, onBack }) {
                   disabled={busy}
                   onClick={() => call('order-deadline-respond', { choice: 'cancel' })}
                 >
-                  ❌ Bekor qilish
+                  Bekor qilish
                 </button>
               </div>
               <p className={styles.note}>
@@ -423,7 +417,6 @@ export default function OrderDetail({ orderId, onBack }) {
       {/* Montajor natijani yuboradi (in_progress / revising) */}
       {['in_progress', 'revising'].includes(order.status) && !isClient && (
         <div className={styles.statusCard}>
-          <span className={styles.statusEmoji}>📤</span>
           <div className={styles.statusTitle}>Natijani yuborish</div>
           <p className={styles.statusDesc}>
             Tayyor ishni yuboring — mijoz uni himoyalangan ko&apos;rinishda ko&apos;radi (yuklab bo&apos;lmaydi).
@@ -447,7 +440,7 @@ export default function OrderDetail({ orderId, onBack }) {
             disabled={busy}
             onClick={() => resultFileRef.current?.click()}
           >
-            {busy ? 'Yuklanmoqda...' : '📎 Natijani tanlash'}
+            {busy ? 'Yuklanmoqda...' : 'Natijani tanlash'}
           </button>
         </div>
       )}
@@ -455,7 +448,6 @@ export default function OrderDetail({ orderId, onBack }) {
       {/* Natija yuborildi — montajor tomonida kutish + to'lov so'rash */}
       {['result_sent', 'reviewing'].includes(order.status) && !isClient && (
         <div className={styles.statusCard}>
-          <span className={styles.statusEmoji}>⏳</span>
           <div className={styles.statusTitle}>
             {order.status === 'reviewing' ? 'Mijoz tekshirmoqda' : 'Natija yuborildi'}
           </div>
@@ -471,7 +463,6 @@ export default function OrderDetail({ orderId, onBack }) {
       {/* Mijoz natijani ko'radi va 3 ta tanlovdan birini qiladi */}
       {['result_sent', 'reviewing'].includes(order.status) && isClient && (
         <div className={styles.statusCard}>
-          <span className={styles.statusEmoji}>🎬</span>
           <div className={styles.statusTitle}>Natija tayyor</div>
 
           {order.result_media_url && (
@@ -484,7 +475,7 @@ export default function OrderDetail({ orderId, onBack }) {
           </p>
 
           <button type="button" className={styles.btnPrimary} disabled={busy} onClick={() => call('order-approve-result')}>
-            ✅ Qabul qildim
+            Qabul qildim
           </button>
 
           <div className={styles.regActions}>
@@ -494,7 +485,7 @@ export default function OrderDetail({ orderId, onBack }) {
               disabled={busy}
               onClick={() => setRevising(true)}
             >
-              ✏️ O&apos;zgartirish kerak
+              O&apos;zgartirish kerak
             </button>
           </div>
           <p className={styles.note}>
@@ -506,7 +497,6 @@ export default function OrderDetail({ orderId, onBack }) {
 
       {order.status === 'disputed' && (
         <div className={styles.statusCard}>
-          <span className={styles.statusEmoji}>🚩</span>
           <div className={styles.statusTitle}>Nizo ochildi</div>
           <p className={styles.statusDesc}>
             O&apos;zgartirish limiti tugadi va tomonlar kelisha olmadi. Admin ko&apos;rib chiqmoqda.
@@ -516,7 +506,6 @@ export default function OrderDetail({ orderId, onBack }) {
 
       {order.status === 'completed' && (
         <div className={styles.statusCard}>
-          <span className={styles.statusEmoji}>🎉</span>
           <div className={styles.statusTitle}>Order yakunlandi</div>
           <p className={styles.statusDesc}>
             {isClient
@@ -530,12 +519,12 @@ export default function OrderDetail({ orderId, onBack }) {
       {order.status === 'completed' && (canReview || myReview) && (
         <div className={styles.statusCard}>
           <div className={styles.statusTitle}>
-            {myReview ? 'Sizning bahoyingiz' : `⭐ ${isClient ? 'Montajorni' : 'Mijozni'} baholang`}
+            {myReview ? 'Sizning bahoyingiz' : `★ ${isClient ? 'Montajorni' : 'Mijozni'} baholang`}
           </div>
 
           {myReview ? (
             <>
-              <div className={styles.starsStatic}>{'⭐'.repeat(myReview.rating)}</div>
+              <div className={styles.starsStatic}>{'★'.repeat(myReview.rating)}</div>
               {myReview.comment && <p className={styles.statusDesc}>{myReview.comment}</p>}
             </>
           ) : (
@@ -577,7 +566,6 @@ export default function OrderDetail({ orderId, onBack }) {
 
       {order.status === 'cancelled' && (
         <div className={styles.statusCard}>
-          <span className={styles.statusEmoji}>❌</span>
           <div className={styles.statusTitle}>Order bekor qilindi</div>
         </div>
       )}
@@ -586,10 +574,10 @@ export default function OrderDetail({ orderId, onBack }) {
       {!['cancelled'].includes(order.status) && (
         <div className={styles.reportRow}>
           {reportSent ? (
-            <span className={styles.note}>🚩 Shikoyatingiz yuborildi — admin ko&apos;rib chiqadi.</span>
+            <span className={styles.note}>Shikoyatingiz yuborildi — admin ko&apos;rib chiqadi.</span>
           ) : (
             <button type="button" className={styles.reportBtn} onClick={() => setReporting(true)}>
-              🚩 Shikoyat qilish
+              Shikoyat qilish
             </button>
           )}
         </div>
@@ -598,7 +586,7 @@ export default function OrderDetail({ orderId, onBack }) {
       {reporting && (
         <div className={styles.modalOverlay}>
           <div className={styles.modal}>
-            <h2 className={styles.modalTitle}>🚩 Shikoyat</h2>
+            <h2 className={styles.modalTitle}>Shikoyat</h2>
             <p className={styles.statusDesc}>
               Muammoni batafsil yozing. Admin chat tarixi va order tafsilotlarini ko&apos;rib chiqadi.
             </p>
@@ -631,7 +619,7 @@ export default function OrderDetail({ orderId, onBack }) {
       {revising && (
         <div className={styles.modalOverlay}>
           <div className={styles.modal}>
-            <h2 className={styles.modalTitle}>✏️ O&apos;zgartirish kerak</h2>
+            <h2 className={styles.modalTitle}>O&apos;zgartirish kerak</h2>
             <p className={styles.statusDesc}>
               Nima o&apos;zgartirish kerakligini aniq yozing. Bu {order.revision_count + 1}-o&apos;zgartirish
               (limit: {MAX_REVISIONS}).
@@ -665,7 +653,7 @@ export default function OrderDetail({ orderId, onBack }) {
       {confirmPayment && (
         <div className={styles.modalOverlay}>
           <div className={styles.modal}>
-            <h2 className={styles.modalTitle}>⚠️ Muhim!</h2>
+            <h2 className={styles.modalTitle}>Muhim!</h2>
             <p className={styles.statusDesc}>Mijoz natijadan qanoatlandimi?</p>
             <p className={styles.statusDesc}>
               Yakuniy to&apos;lovni so&apos;rashdan oldin mijoz natijani qabul qilganini tasdiqlang.

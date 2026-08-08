@@ -49,7 +49,6 @@ export default function VacancyChats() {
 
       {!loading && !chats.length && (
         <div className={styles.empty}>
-          <span className={styles.emptyEmoji}>💬</span>
           <div className={styles.emptyTitle}>Suhbatlar yo&apos;q</div>
           <p className={styles.emptyDesc}>
             Bosh sahifadan e&apos;lon tanlang va ishchi bilan bog&apos;laning.
@@ -67,7 +66,7 @@ export default function VacancyChats() {
             <div className={styles.chatPreview}>{chat.last_message || 'Xabar yo‘q'}</div>
             {chat.active_order && (
               <div className={styles.chatOrderTag}>
-                📋 Order #{chat.active_order.id} — {ORDER_STATUS_LABEL[chat.active_order.status] || chat.active_order.status}
+                Order #{chat.active_order.id} — {ORDER_STATUS_LABEL[chat.active_order.status] || chat.active_order.status}
               </div>
             )}
           </button>

@@ -213,7 +213,7 @@ export default function ChatView({ chatId, onBack }) {
             style={{ marginLeft: 'auto' }}
             onClick={() => setOrderModal('create')}
           >
-            📋 Order
+            Order
           </button>
         )}
       </div>
@@ -221,13 +221,13 @@ export default function ChatView({ chatId, onBack }) {
       {activeOrder && (
         <div className={styles.chatOrderTag} style={{ padding: '10px var(--app-pad)' }}>
           <button type="button" className={styles.orderLink} onClick={() => setOpenOrder(activeOrder.id)}>
-            📋 Order #{activeOrder.id} — {ORDER_STATUS_LABEL[activeOrder.status] || activeOrder.status} •{' '}
+            Order #{activeOrder.id} — {ORDER_STATUS_LABEL[activeOrder.status] || activeOrder.status} •{' '}
             {activeOrder.amount.toLocaleString('uz-UZ')} UZS
           </button>
           {canRespondToOrder && (
             <div className={styles.regActions} style={{ marginTop: 8 }}>
               <button type="button" className={styles.btnPrimary} disabled={orderBusy} onClick={() => orderAction('order-accept')}>
-                ✅ Qabul qilish
+                Qabul qilish
               </button>
               <button
                 type="button"
@@ -235,7 +235,7 @@ export default function ChatView({ chatId, onBack }) {
                 disabled={orderBusy || activeOrder.counter_offer_count >= 3}
                 onClick={() => setOrderModal(activeOrder)}
               >
-                🔄 Qarshi taklif
+                Qarshi taklif
               </button>
             </div>
           )}
@@ -247,7 +247,7 @@ export default function ChatView({ chatId, onBack }) {
               disabled={orderBusy}
               onClick={() => orderAction('order-cancel')}
             >
-              ❌ Bekor qilish
+              Bekor qilish
             </button>
           )}
         </div>
@@ -267,16 +267,16 @@ export default function ChatView({ chatId, onBack }) {
           const replied = msg.reply_to_id ? messages.find((m) => m.id === msg.reply_to_id) : null;
           return (
             <div key={msg.id} className={isMine(msg) ? styles.bubbleMine : styles.bubble}>
-              {replied && <div className={styles.replyQuote}>{replied.content || '📎 Media'}</div>}
+              {replied && <div className={styles.replyQuote}>{replied.content || 'Media'}</div>}
               {msg.media_url && <ProtectedMedia url={msg.media_url} type={msg.message_type} />}
               {msg.content && <div className={styles.bubbleText}>{msg.content}</div>}
               <div className={styles.bubbleFoot}>
                 <span>{timeLabel(msg.created_at)}</span>
                 <button type="button" className={styles.bubbleAction} onClick={() => setReplyTo(msg)}>
-                  ↩︎
+                  Javob
                 </button>
                 <button type="button" className={styles.bubbleAction} onClick={() => setReporting(msg)}>
-                  🚩
+                  Shikoyat
                 </button>
               </div>
             </div>
@@ -289,7 +289,7 @@ export default function ChatView({ chatId, onBack }) {
 
       {replyTo && (
         <div className={styles.replyBar}>
-          <span>↩︎ {replyTo.content || '📎 Media'}</span>
+          <span>Javob: {replyTo.content || 'Media'}</span>
           <button type="button" className={styles.bubbleAction} onClick={() => setReplyTo(null)}>
             ✕
           </button>
@@ -298,7 +298,7 @@ export default function ChatView({ chatId, onBack }) {
 
       <div className={styles.chatInputRow}>
         <button type="button" className={styles.attachBtn} onClick={() => fileRef.current?.click()} disabled={sending}>
-          📎
+          
         </button>
         <input
           ref={fileRef}
@@ -322,7 +322,7 @@ export default function ChatView({ chatId, onBack }) {
       {reporting && (
         <div className={styles.modalOverlay}>
           <div className={styles.modal}>
-            <h2 className={styles.modalTitle}>🚩 Shikoyat</h2>
+            <h2 className={styles.modalTitle}>Shikoyat</h2>
             <textarea
               className={styles.textarea}
               rows={4}

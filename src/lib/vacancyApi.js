@@ -14,10 +14,24 @@ function getInitData() {
   }
 }
 
+// So'rov shu muddatdan oshsa uziladi. Timeout'siz javob kelmagan so'rov abadiy
+// osilib qolardi — chaqiruvchidagi `finally` ishlamay, sahifa "Yuklanmoqda"
+// holatida qotib qolardi (Netlify funksiyasining sovuq startida uchraydi).
+const REQUEST_TIMEOUT_MS = 15000;
+
 export async function vacancyCall(action, payload = {}, { signal } = {}) {
   const headers = { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': getInitData() };
   const token = getToken();
   if (token) headers.Authorization = `Bearer ${token}`;
+
+  // Chaqiruvchining signali (masalan qidiruv debounce'i) timeout bilan birlashtiriladi.
+  const controller = new AbortController();
+  const onAbort = () => controller.abort();
+  if (signal) {
+    if (signal.aborted) controller.abort();
+    else signal.addEventListener('abort', onAbort, { once: true });
+  }
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   let res;
   try {
@@ -25,11 +39,16 @@ export async function vacancyCall(action, payload = {}, { signal } = {}) {
       method: 'POST',
       headers,
       body: JSON.stringify({ action, ...payload }),
-      signal,
+      signal: controller.signal,
     });
   } catch (err) {
-    if (err?.name === 'AbortError') throw err;
-    throw new ApiError('network', 0);
+    // Chaqiruvchi bekor qilgan bo'lsa — AbortError'ni o'tkazamiz (kutilgan holat).
+    // Timeout bo'lsa oddiy tarmoq xatosi sifatida ko'rsatiladi.
+    if (signal?.aborted) throw err;
+    throw new ApiError('timeout', 0);
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', onAbort);
   }
 
   let data = null;

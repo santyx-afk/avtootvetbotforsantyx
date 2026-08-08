@@ -104,7 +104,7 @@ export default function VacancyProfile() {
           {myRating && myRating.total_reviews > 0 && (
             <div className={styles.workerCard}>
               <div className={styles.workerName}>
-                ⭐ {myRating.avg_rating.toFixed(1)}
+                ★ {myRating.avg_rating.toFixed(1)}
               </div>
               <div className={styles.workerMeta}>
                 Mijoz sifatidagi reytingingiz ({myRating.total_reviews} ta baho)
@@ -113,7 +113,6 @@ export default function VacancyProfile() {
           )}
 
           <div className={styles.profileCard}>
-            <span className={styles.profileEmoji}>💼</span>
             <div className={styles.profileTitle}>Ishchi bo&apos;ling</div>
             <p className={styles.profileDesc}>
               Montaj yoki dizayn bo&apos;yicha xizmat ko&apos;rsating, buyurtma oling va daromad qiling.
@@ -128,7 +127,6 @@ export default function VacancyProfile() {
 
       {state === 'pending' && (
         <div className={styles.statusCard}>
-          <span className={styles.statusEmoji}>⏳</span>
           <div className={styles.statusTitle}>Arizangiz ko&apos;rib chiqilmoqda</div>
           <p className={styles.statusDesc}>Tasdiqlangandan keyin sizga bot orqali xabar yuboriladi.</p>
           {verification?.code && (
@@ -145,7 +143,6 @@ export default function VacancyProfile() {
 
       {state === 'rejected' && (
         <div className={styles.statusCard}>
-          <span className={styles.statusEmoji}>❌</span>
           <div className={styles.statusTitle}>Ariza rad etildi</div>
           <p className={styles.statusDesc}>{status.reason || 'Ariza talablarga javob bermadi.'}</p>
           <button type="button" className={styles.btnPrimary} onClick={() => setRegistering(true)}>
@@ -156,7 +153,6 @@ export default function VacancyProfile() {
 
       {state === 'banned' && (
         <div className={styles.statusCard}>
-          <span className={styles.statusEmoji}>🚫</span>
           <div className={styles.statusTitle}>Hisobingiz to&apos;xtatilgan</div>
           <p className={styles.statusDesc}>{worker?.ban_reason || 'Qoidalar buzilishi.'}</p>
         </div>
@@ -181,17 +177,17 @@ export default function VacancyProfile() {
               <span className={worker.is_busy ? styles.dotBusy : styles.dotFree} />
             </div>
             <div className={styles.workerMeta}>
-              ⭐ {worker.avg_rating.toFixed(1)} ({worker.total_reviews} ta baho) •{' '}
+              ★ {worker.avg_rating.toFixed(1)} ({worker.total_reviews} ta baho) •{' '}
               {worker.categories.map((c) => CATEGORY_LABEL[c] || c).join(', ')}
             </div>
             {worker.bio && <p className={styles.workerBio}>{worker.bio}</p>}
-            <div className={styles.workerMeta}>💼 Tajriba: {EXPERIENCE_LABEL[worker.experience_years] || '—'}</div>
+            <div className={styles.workerMeta}>Tajriba: {EXPERIENCE_LABEL[worker.experience_years] || '—'}</div>
             <div className={styles.workerMeta}>
-              📱 {worker.phone} {worker.show_phone ? '(profilda ko‘rinadi)' : '(yashirin)'}
+              {worker.phone} {worker.show_phone ? '(profilda ko‘rinadi)' : '(yashirin)'}
             </div>
 
             <button type="button" className={styles.btnGhost} onClick={() => setEditing(true)}>
-              ✏️ Profilni tahrirlash
+              Profilni tahrirlash
             </button>
           </div>
 
@@ -232,7 +228,7 @@ export default function VacancyProfile() {
           </div>
 
           <div className={styles.workerCard}>
-            <div className={styles.sheetBlockTitle}>🕐 Ish vaqti</div>
+            <div className={styles.sheetBlockTitle}>Ish vaqti</div>
             {DAYS.map(([key, label]) => {
               const day = worker.work_schedule?.[key];
               return (
