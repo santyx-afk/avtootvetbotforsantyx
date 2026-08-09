@@ -135,12 +135,15 @@ function parsePromoOptions(tokens = []) {
 
 
 // Bosh menyu: inline katalog o'rniga bitta "Mini ilovani ochish" (WebApp) tugmasi.
-const MINI_APP_URL = process.env.APP_BASE_URL || 'https://santyx.uz';
+const MINI_APP_URL = (process.env.APP_BASE_URL || 'https://santyx.uz').replace(/\/+$/, '');
 
 async function showCategories({ supabase, chatId, messageId, telegramId, asEdit = false }) {
   const settings = await fetchSettings(supabase);
   const text = `${welcomeText(settings)}\n\n🚀 Barcha obunalarni ko'rish va xarid qilish uchun Mini ilovani oching:`;
-  const keyboardRows = [[{ text: '🚀 Mini ilovani ochish', web_app: { url: MINI_APP_URL } }]];
+  const keyboardRows = [
+    [{ text: '🚀 Mini ilovani ochish', web_app: { url: MINI_APP_URL } }],
+    [{ text: '💼 Vakansiya qidirish/joylash', web_app: { url: `${MINI_APP_URL}/vacancy` } }],
+  ];
   if (asEdit && messageId) {
     return editMessage(chatId, messageId, text, inlineKeyboard(keyboardRows));
   }

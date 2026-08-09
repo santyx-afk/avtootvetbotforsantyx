@@ -61,6 +61,10 @@ const FAQ = [
     q: 'Bu rasmiy obunami?',
     a: 'Ha, xizmatlar rasmiy obunalar asosida beriladi. Farqi — narx: biz uni sezilarli hamyonbop qilamiz.',
   },
+  {
+    q: 'Vakansiya e‘lonini qanday joylayman?',
+    a: 'Botni oching, “Vakansiya qidirish/joylash” tugmasini bosing, ro‘yxatdan o‘ting va e‘loningizni yarating — butunlay tekin.',
+  },
 ];
 
 // Kategoriya nomlaridagi bezak emojilarni ko'rsatishda olib tashlaymiz.
@@ -316,6 +320,24 @@ export default function Landing() {
               <div className={styles.featureText}>{p.text}</div>
             </div>
           ))}
+        </div>
+      </section>
+
+      <section className={`${styles.section} ${styles.reveal}`}>
+        <h2 className={styles.sectionTitle}>Vakansiya e&apos;lonlari</h2>
+        <p className={styles.heroText}>
+          Endi bot ichida ishchi qidirish yoki o&apos;z xizmatingizni taklif qilish uchun e&apos;lon
+          joylash mumkin — butunlay tekin. Ro&apos;yxatdan o&apos;ting va e&apos;loningizni bir necha
+          daqiqada chop eting.
+        </p>
+        <div className={styles.heroActions}>
+          <button
+            type="button"
+            className={styles.cta}
+            onClick={() => window.open(BOT_URL, '_blank', 'noopener')}
+          >
+            Vakansiyalarni ko&apos;rish
+          </button>
         </div>
       </section>
 
