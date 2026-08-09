@@ -33,7 +33,7 @@ export default {
   // Нижнее меню раздела вакансий — на одном языке с меню магазина.
   vacancyTabs: {
     store: 'Магазин',
-    home: 'Главная',
+    home: 'Главная',
     profile: 'Профиль',
   },
   vacancies: {
@@ -140,7 +140,7 @@ export default {
     searchPlaceholder: 'Поиск подписок...',
     sort: 'Сортировка',
     sortDefault: 'По умолчанию',
-    sortPriceAsc: 'Сначала дешёвые',
+    sortPriceAsc: 'Сначала доступные',
     sortPriceDesc: 'Сначала дорогие',
     sortPopular: 'По популярности',
     popular: 'Популярное',

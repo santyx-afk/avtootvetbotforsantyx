@@ -301,3 +301,134 @@
     grid-template-columns: repeat(4, 1fr);
   }
 }
+
+/* ---------- Hero: qo'shimcha amallar va ishonch belgilari ---------- */
+.heroActions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.ctaGhost {
+  padding: 15px 26px;
+  border-radius: 14px;
+  border: 1px solid var(--app-separator);
+  background: transparent;
+  color: var(--app-text);
+  font-size: 16px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+.ctaGhost:hover {
+  border-color: var(--app-text);
+}
+.trust {
+  list-style: none;
+  margin: 26px 0 0;
+  padding: 0;
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.trust li {
+  padding: 7px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--app-separator);
+  background: var(--app-surface);
+  font-size: 13px;
+  color: var(--app-hint);
+}
+
+/* ---------- "Qanday ishlaydi" ---------- */
+.steps {
+  display: grid;
+  gap: 14px;
+}
+.step {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 20px;
+  border-radius: 16px;
+  background: var(--app-surface);
+  border: 1px solid var(--app-separator);
+}
+.stepNum {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+}
+.step .featureTitle,
+.step .featureText {
+  text-align: left;
+}
+
+/* ---------- Mahsulot skeletlari ---------- */
+.skeleton {
+  border-radius: 16px;
+  background: var(--app-surface);
+  border: 1px solid var(--app-separator);
+  min-height: 210px;
+  position: relative;
+  overflow: hidden;
+}
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(127, 127, 127, 0.12), transparent);
+  transform: translateX(-100%);
+  animation: shimmer 1.2s infinite;
+}
+@keyframes shimmer {
+  to {
+    transform: translateX(100%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton::after {
+    animation: none;
+  }
+}
+.cardImgFallback {
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  background: var(--app-separator);
+}
+
+/* ---------- Yakuniy chaqiriq ---------- */
+.finalCta {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 48px 20px 8px;
+  text-align: center;
+}
+.finalTitle {
+  font-size: clamp(24px, 4vw, 32px);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--app-text);
+}
+.finalText {
+  margin: 10px auto 22px;
+  font-size: 16px;
+  color: var(--app-hint);
+  max-width: 460px;
+}
+
+@media (min-width: 720px) {
+  .steps {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}

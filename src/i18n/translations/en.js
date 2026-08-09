@@ -33,7 +33,7 @@ export default {
   // Vacancy section bottom menu — same language as the store menu.
   vacancyTabs: {
     store: 'Store',
-    home: 'Home',
+    home: 'Home',
     profile: 'Profile',
   },
   vacancies: {
@@ -140,7 +140,7 @@ export default {
     searchPlaceholder: 'Search subscriptions...',
     sort: 'Sort',
     sortDefault: 'Default',
-    sortPriceAsc: 'Cheapest first',
+    sortPriceAsc: 'Affordable first',
     sortPriceDesc: 'Most expensive first',
     sortPopular: 'By popularity',
     popular: 'Popular',

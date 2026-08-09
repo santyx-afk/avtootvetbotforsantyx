@@ -1,25 +1,30 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import Layout from './components/Layout.jsx';
 import BackButtonManager from './components/BackButtonManager.jsx';
-import Onboarding from './components/Onboarding.jsx';
-import ContactGate from './components/ContactGate.jsx';
 import EmptyState from './components/EmptyState.jsx';
 import { FullScreenLoader } from './components/Spinner.jsx';
-import Catalog from './pages/Catalog.jsx';
-import ProductDetail from './pages/ProductDetail.jsx';
-import Cart from './pages/Cart.jsx';
-import Checkout from './pages/Checkout.jsx';
-import TopUp from './pages/TopUp.jsx';
-import Wishlist from './pages/Wishlist.jsx';
-import History from './pages/History.jsx';
-import Profile from './pages/Profile.jsx';
-import VacancyLayout from './components/VacancyLayout.jsx';
-import VacancyHome from './pages/vacancy/VacancyHome.jsx';
-import VacancyProfile from './pages/vacancy/VacancyProfile.jsx';
 import Landing from './pages/Landing.jsx';
-import WebLogin from './pages/WebLogin.jsx';
 import { useTelegram } from './telegram/TelegramProvider.jsx';
+
+// Landing — santyx.uz ga kirgan odam ko'radigan yagona sahifa, shuning uchun u
+// asosiy paketda (darhol chiziladi). Qolgan hamma narsa faqat kerak bo'lganda
+// yuklanadi: ilgari tashrifchi butun ilovani (savat, checkout, vakansiya)
+// yuklab olardi va birinchi chizish shuncha kutardi.
+const Layout = lazy(() => import('./components/Layout.jsx'));
+const Onboarding = lazy(() => import('./components/Onboarding.jsx'));
+const ContactGate = lazy(() => import('./components/ContactGate.jsx'));
+const Catalog = lazy(() => import('./pages/Catalog.jsx'));
+const ProductDetail = lazy(() => import('./pages/ProductDetail.jsx'));
+const Cart = lazy(() => import('./pages/Cart.jsx'));
+const Checkout = lazy(() => import('./pages/Checkout.jsx'));
+const TopUp = lazy(() => import('./pages/TopUp.jsx'));
+const Wishlist = lazy(() => import('./pages/Wishlist.jsx'));
+const History = lazy(() => import('./pages/History.jsx'));
+const Profile = lazy(() => import('./pages/Profile.jsx'));
+const VacancyLayout = lazy(() => import('./components/VacancyLayout.jsx'));
+const VacancyHome = lazy(() => import('./pages/vacancy/VacancyHome.jsx'));
+const VacancyProfile = lazy(() => import('./pages/vacancy/VacancyProfile.jsx'));
+const WebLogin = lazy(() => import('./pages/WebLogin.jsx'));
 import { useI18n } from './i18n/I18nProvider.jsx';
 import { apiCall, getToken, clearToken } from './lib/api.js';
 import {
@@ -81,7 +86,14 @@ export default function App() {
   if (!authed) {
     return (
       <Routes>
-        <Route path="/login" element={<WebLogin onSuccess={() => setAuthed(true)} />} />
+        <Route
+          path="/login"
+          element={
+            <Suspense fallback={<FullScreenLoader />}>
+              <WebLogin onSuccess={() => setAuthed(true)} />
+            </Suspense>
+          }
+        />
         <Route path="*" element={<Landing />} />
       </Routes>
     );
@@ -103,22 +115,28 @@ export default function App() {
 
   if (!onboarded) {
     return (
-      <Onboarding
-        onDone={() => {
-          setOnboarded();
-          setOnboardedState(true);
-        }}
-      />
+      <Suspense fallback={<FullScreenLoader />}>
+        <Onboarding
+          onDone={() => {
+            setOnboarded();
+            setOnboardedState(true);
+          }}
+        />
+      </Suspense>
     );
   }
 
   // Kontakt (telefon) — Telegram'da ham, brauzerda ham so'raladi (ContactGate ichida moslashadi).
   if (!contactSaved) {
-    return <ContactGate onDone={() => setContactSavedState(true)} />;
+    return (
+      <Suspense fallback={<FullScreenLoader />}>
+        <ContactGate onDone={() => setContactSavedState(true)} />
+      </Suspense>
+    );
   }
 
   return (
-    <>
+    <Suspense fallback={<FullScreenLoader />}>
       <BackButtonManager />
       <Routes>
         {/* To'liq ekran (tab barsiz) sahifalar */}
@@ -143,6 +161,6 @@ export default function App() {
         <Route path="/" element={<Navigate to="/catalog" replace />} />
         <Route path="*" element={<Navigate to="/catalog" replace />} />
       </Routes>
-    </>
+    </Suspense>
   );
 }

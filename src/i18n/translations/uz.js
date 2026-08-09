@@ -32,7 +32,7 @@ export default {
   // Vakansiya bo'limining pastki menyusi — do'kon menyusi bilan bir xil tilda bo'lishi uchun.
   vacancyTabs: {
     store: 'Do\'kon',
-    home: 'Bosh sahifa',
+    home: 'Bosh sahifa',
     profile: 'Profil',
   },
   // --- Vakansiyalar bo'limi (vaqtinchalik — vacancies/feedback prefiksi bilan guruhlangan) ---
@@ -140,7 +140,7 @@ export default {
     searchPlaceholder: 'Obuna qidirish...',
     sort: 'Saralash',
     sortDefault: 'Standart',
-    sortPriceAsc: 'Avval arzon',
+    sortPriceAsc: 'Avval hamyonbop',
     sortPriceDesc: 'Avval qimmat',
     sortPopular: 'Mashhurlik bo\'yicha',
     popular: 'Ommabop',
