@@ -19,7 +19,7 @@ const ADVANTAGES = [
   { title: 'To‘liq kafolat', text: 'Har bir obuna kafolatlanadi — muammo bo‘lsa almashtiramiz.' },
   { title: 'Tezkor yetkazish', text: 'To‘lovdan so‘ng 10–15 daqiqada obunangiz tayyor.' },
   { title: 'Hamyonbop narxlar', text: 'Rasmiy narxdan sezilarli past — sifatdan yon bermaymiz.' },
-  { title: '24/7 qo‘llab-quvvatlash', text: 'Savollaringizga istalgan vaqt javob beramiz.' },
+  { title: '12/7 qo‘llab-quvvatlash', text: 'Har kuni, kun davomida savollaringizga javob beramiz.' },
 ];
 
 const STEPS = [
@@ -240,7 +240,7 @@ export default function Landing() {
           <ul className={styles.trust}>
             <li>Kafolatlangan</li>
             <li>10–15 daqiqa</li>
-            <li>24/7 yordam</li>
+            <li>12/7 yordam</li>
             {avgRating && (
               <li>
                 {avgRating} / 5 — {reviewStats.count} ta sharh
