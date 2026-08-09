@@ -297,6 +297,8 @@ function listingShape(row) {
     min_price: Number(row.min_price || 0),
     is_published: Boolean(row.is_published),
     is_hidden: Boolean(row.is_hidden),
+    is_archived: Boolean(row.is_archived),
+    archived_at: row.archived_at || null,
     created_at: row.created_at,
   };
 }
@@ -317,9 +319,10 @@ function catalogShape(row) {
 }
 
 // Ishchining faol e'lonlari sonini hisoblaydi (limit tekshiruvi uchun).
+// Arxivdagi e'lonlar faol hisoblanmaydi — limitni band qilmasligi kerak.
 async function countActiveListings(supabase, workerId) {
   const { data } = await request(supabase, 'listings', {
-    query: `select=id&worker_id=eq.${workerId}&is_published=eq.true&is_hidden=eq.false`,
+    query: `select=id&worker_id=eq.${workerId}&is_published=eq.true&is_hidden=eq.false&is_archived=eq.false`,
   });
   return (data || []).length;
 }
@@ -433,18 +436,53 @@ async function handleListingUpdate(supabase, telegramId, body) {
   return json(200, { ok: true, listing: listingShape(data[0]) });
 }
 
+// Arxivga olish / arxivdan tiklash. Yumshoq amal — e'lon saqlanadi, faqat
+// katalogdan chiqadi va faol e'lonlar limitini band qilmaydi.
+// Joylangan/yashirilgan holati tegilmaydi, shuning uchun tiklaganda e'lon
+// avvalgi holatiga qaytadi.
+async function handleListingArchive(supabase, telegramId, body) {
+  const { worker, error } = await requireWorker(supabase, telegramId);
+  if (error) return error;
+  const listing = await getOwnListing(supabase, worker.id, body.listing_id);
+  if (!listing) return json(404, { ok: false, error: 'not_found' });
+
+  const archived = body.archived === undefined ? true : Boolean(body.archived);
+
+  // Arxivdan tiklashda e'lon yana faol bo'lsa — limitni tekshiramiz.
+  if (!archived && listing.is_published && !listing.is_hidden) {
+    if ((await countActiveListings(supabase, worker.id)) >= MAX_ACTIVE_LISTINGS) {
+      return json(400, { ok: false, error: 'listing_limit' });
+    }
+  }
+
+  const { data } = await request(supabase, 'listings', {
+    method: 'PATCH',
+    query: `id=eq.${listing.id}`,
+    body: {
+      is_archived: archived,
+      archived_at: archived ? new Date().toISOString() : null,
+      updated_at: new Date().toISOString(),
+    },
+    headers: { Prefer: 'return=representation' },
+  });
+  return json(200, { ok: true, listing: listingShape(data[0]) });
+}
+
+// Butunlay o'chirish — qaytarib bo'lmaydi. Faqat arxivdagi e'lon uchun,
+// shunda tasodifan o'chirib yuborish ehtimoli kamayadi.
 async function handleListingDelete(supabase, telegramId, body) {
   const { worker, error } = await requireWorker(supabase, telegramId);
   if (error) return error;
   const listing = await getOwnListing(supabase, worker.id, body.listing_id);
   if (!listing) return json(404, { ok: false, error: 'not_found' });
+  if (!listing.is_archived) return json(400, { ok: false, error: 'archive_first' });
   await request(supabase, 'listings', { method: 'DELETE', query: `id=eq.${listing.id}` });
   return json(200, { ok: true });
 }
 
 // Katalog — faqat tasdiqlangan, banlanmagan ishchilarning faol e'lonlari.
 async function handleCatalog(supabase, body) {
-  const params = ['select=*,workers!inner(*)', 'is_published=eq.true', 'is_hidden=eq.false',
+  const params = ['select=*,workers!inner(*)', 'is_published=eq.true', 'is_hidden=eq.false', 'is_archived=eq.false',
     'workers.is_approved=eq.true', 'workers.is_banned=eq.false'];
 
   if (CATEGORIES.includes(body.category)) params.push(`category=eq.${body.category}`);
@@ -482,7 +520,7 @@ async function handleWorkerPublic(supabase, body) {
   if (!worker) return json(404, { ok: false, error: 'not_found' });
 
   const { data: listings } = await request(supabase, 'listings', {
-    query: `select=*&worker_id=eq.${workerId}&is_published=eq.true&is_hidden=eq.false&order=created_at.desc`,
+    query: `select=*&worker_id=eq.${workerId}&is_published=eq.true&is_hidden=eq.false&is_archived=eq.false&order=created_at.desc`,
   }).catch(() => ({ data: [] }));
 
   const shaped = workerShape(worker);
@@ -655,6 +693,8 @@ exports.handler = async (event) => {
         return await handleListingCreate(supabase, telegramId, body);
       case 'listing-update':
         return await handleListingUpdate(supabase, telegramId, body);
+      case 'listing-archive':
+        return await handleListingArchive(supabase, telegramId, body);
       case 'listing-delete':
         return await handleListingDelete(supabase, telegramId, body);
       default:

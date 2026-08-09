@@ -1224,3 +1224,14 @@
   text-decoration: none;
   word-break: break-all;
 }
+
+/* Chernovik holati tegi (arxivdan farqlansin) */
+.tag_chernovik {
+  flex: none;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #111;
+  background: #cfe3ff;
+}

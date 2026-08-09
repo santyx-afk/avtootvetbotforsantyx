@@ -12,21 +12,24 @@ const ERRORS = {
   invalid_category: 'Kategoriyani tanlang',
   invalid_price: 'Narxni to’g’ri kiriting',
   listing_limit: 'Bir vaqtda maksimum 3 ta faol e’lon bo’lishi mumkin',
+  archive_first: 'Avval e’lonni arxivga oling',
   not_approved: 'Tasdiqlanmaguningizcha faqat chernovik saqlashingiz mumkin',
   not_worker: 'Siz ishchi sifatida ro’yxatdan o’tmagansiz',
 };
 
-// E'lon holati mavjud maydonlardan aniqlanadi:
-//   aktiv    — joylangan va ko'rinadi
-//   noaktiv  — joylangan, lekin vaqtincha yashirilgan
-//   arxiv    — hali joylanmagan (chernovik)
+// E'lon holati:
+//   arxiv     — arxivga olingan (katalogda ko'rinmaydi, tiklash mumkin)
+//   chernovik — hali joylanmagan
+//   noaktiv   — joylangan, lekin vaqtincha yashirilgan
+//   aktiv     — joylangan va ko'rinadi
 function statusOf(l) {
-  if (!l.is_published) return 'arxiv';
+  if (l.is_archived) return 'arxiv';
+  if (!l.is_published) return 'chernovik';
   return l.is_hidden ? 'noaktiv' : 'aktiv';
 }
 
-const STATUS_LABEL = { aktiv: 'Aktiv', noaktiv: 'Noaktiv', arxiv: 'Arxiv' };
-const TABS = ['hammasi', 'aktiv', 'noaktiv', 'arxiv'];
+const STATUS_LABEL = { aktiv: 'Aktiv', noaktiv: 'Noaktiv', chernovik: 'Chernovik', arxiv: 'Arxiv' };
+const TABS = ['hammasi', 'aktiv', 'noaktiv', 'chernovik', 'arxiv'];
 const TAB_LABEL = { hammasi: 'Hammasi', ...STATUS_LABEL };
 
 const EMPTY_FORM = { title: '', description: '', category: '', min_price: '' };
@@ -82,7 +85,7 @@ export default function VacancyListings() {
   }, [load]);
 
   const counts = useMemo(() => {
-    const c = { hammasi: state.listings.length, aktiv: 0, noaktiv: 0, arxiv: 0 };
+    const c = { hammasi: state.listings.length, aktiv: 0, noaktiv: 0, chernovik: 0, arxiv: 0 };
     for (const l of state.listings) c[statusOf(l)] += 1;
     return c;
   }, [state.listings]);
@@ -153,6 +156,21 @@ export default function VacancyListings() {
     }
   }
 
+  // Arxivga olish / tiklash — qaytariladigan amal, tasdiq so'ralmaydi.
+  async function setArchived(listing, archived) {
+    setPendingId(listing.id);
+    setError('');
+    try {
+      await vacancyCall('listing-archive', { listing_id: listing.id, archived });
+      await load();
+    } catch (err) {
+      setError(ERRORS[err.message] || 'Amal bajarilmadi.');
+    } finally {
+      setPendingId(null);
+    }
+  }
+
+  // Butunlay o'chirish — faqat arxivdagi e'lon uchun, tasdiq bilan.
   async function remove(listing) {
     setPendingId(listing.id);
     setError('');
@@ -291,38 +309,61 @@ export default function VacancyListings() {
               <div className={styles.miniListingDesc}>{l.description}</div>
 
               <div className={styles.listingActions}>
-                <button
-                  type="button"
-                  className={styles.btnEdit}
-                  onClick={() => openEdit(l)}
-                  disabled={pendingId === l.id}
-                >
-                  Tahrirlash
-                </button>
-                {l.is_published && (
-                  <button
-                    type="button"
-                    className={styles.btnHide}
-                    onClick={() => toggleHidden(l)}
-                    disabled={pendingId === l.id}
-                  >
-                    {pendingId === l.id ? (
-                      <Spinner size={14} stroke={2} />
-                    ) : l.is_hidden ? (
-                      "Ko'rsatish"
-                    ) : (
-                      'Yashirish'
+                {status === 'arxiv' ? (
+                  <>
+                    <button
+                      type="button"
+                      className={styles.btnEdit}
+                      onClick={() => setArchived(l, false)}
+                      disabled={pendingId === l.id}
+                    >
+                      {pendingId === l.id ? <Spinner size={14} stroke={2} /> : 'Tiklash'}
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.btnDeleteSm}
+                      onClick={() => setConfirmDelete(l)}
+                      disabled={pendingId === l.id}
+                    >
+                      Butunlay o&apos;chirish
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      className={styles.btnEdit}
+                      onClick={() => openEdit(l)}
+                      disabled={pendingId === l.id}
+                    >
+                      Tahrirlash
+                    </button>
+                    {l.is_published && (
+                      <button
+                        type="button"
+                        className={styles.btnHide}
+                        onClick={() => toggleHidden(l)}
+                        disabled={pendingId === l.id}
+                      >
+                        {pendingId === l.id ? (
+                          <Spinner size={14} stroke={2} />
+                        ) : l.is_hidden ? (
+                          "Ko'rsatish"
+                        ) : (
+                          'Yashirish'
+                        )}
+                      </button>
                     )}
-                  </button>
+                    <button
+                      type="button"
+                      className={styles.btnDeleteSm}
+                      onClick={() => setArchived(l, true)}
+                      disabled={pendingId === l.id}
+                    >
+                      Arxivlash
+                    </button>
+                  </>
                 )}
-                <button
-                  type="button"
-                  className={styles.btnDeleteSm}
-                  onClick={() => setConfirmDelete(l)}
-                  disabled={pendingId === l.id}
-                >
-                  O&apos;chirish
-                </button>
               </div>
             </div>
           );
@@ -342,9 +383,9 @@ export default function VacancyListings() {
       {confirmDelete && (
         <div className={styles.modalOverlay}>
           <div className={styles.modal}>
-            <h2 className={styles.modalTitle}>E&apos;lonni o&apos;chirish</h2>
+            <h2 className={styles.modalTitle}>Butunlay o&apos;chirish</h2>
             <p className={styles.statusDesc}>
-              &laquo;{confirmDelete.title}&raquo; e&apos;loni butunlay o&apos;chiriladi. Bu amalni qaytarib
+              &laquo;{confirmDelete.title}&raquo; e&apos;loni arxivdan ham o&apos;chiriladi va tiklab
               bo&apos;lmaydi.
             </p>
             <div className={styles.regActions}>
