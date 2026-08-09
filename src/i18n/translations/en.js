@@ -33,7 +33,8 @@ export default {
   // Vacancy section bottom menu — same language as the store menu.
   vacancyTabs: {
     store: 'Store',
-    home: 'Home',
+    home: 'Home',
+    listings: 'My listings',
     profile: 'Profile',
   },
   vacancies: {

@@ -33,7 +33,8 @@ export default {
   // Нижнее меню раздела вакансий — на одном языке с меню магазина.
   vacancyTabs: {
     store: 'Магазин',
-    home: 'Главная',
+    home: 'Главная',
+    listings: 'Мои объявления',
     profile: 'Профиль',
   },
   vacancies: {

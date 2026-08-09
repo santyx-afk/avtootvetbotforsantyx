@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import PageHeader from '../../components/PageHeader.jsx';
 import { vacancyCall } from '../../lib/vacancyApi.js';
-import MyListings from './MyListings.jsx';
 import WorkerRegister from './WorkerRegister.jsx';
 import WorkerRules from './WorkerRules.jsx';
 import WorkerProfileEdit from './WorkerProfileEdit.jsx';
@@ -200,7 +199,6 @@ export default function VacancyProfile() {
             })}
           </div>
 
-          <MyListings />
         </>
       )}
 

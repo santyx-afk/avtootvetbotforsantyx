@@ -23,6 +23,7 @@ const History = lazy(() => import('./pages/History.jsx'));
 const Profile = lazy(() => import('./pages/Profile.jsx'));
 const VacancyLayout = lazy(() => import('./components/VacancyLayout.jsx'));
 const VacancyHome = lazy(() => import('./pages/vacancy/VacancyHome.jsx'));
+const VacancyListings = lazy(() => import('./pages/vacancy/VacancyListings.jsx'));
 const VacancyProfile = lazy(() => import('./pages/vacancy/VacancyProfile.jsx'));
 const WebLogin = lazy(() => import('./pages/WebLogin.jsx'));
 import { useI18n } from './i18n/I18nProvider.jsx';
@@ -154,6 +155,7 @@ export default function App() {
         {/* Vakansiya (super-app) rejimi — bepul e'lonlar doskasi */}
         <Route element={<VacancyLayout />}>
           <Route path="/vacancy" element={<VacancyHome />} />
+          <Route path="/vacancy/listings" element={<VacancyListings />} />
           <Route path="/vacancy/profile" element={<VacancyProfile />} />
           {/* Eski chat/order yo'llari — bosh sahifaga qaytariladi */}
           <Route path="/vacancy/*" element={<Navigate to="/vacancy" replace />} />
