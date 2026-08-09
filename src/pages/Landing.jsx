@@ -51,7 +51,7 @@ const FAQ = [
   },
   {
     q: 'Muammo chiqsa nima bo‘ladi?',
-    a: 'Har bir obuna kafolatlanadi. Ishlamasa yoki muddatidan oldin to‘xtasa — almashtiramiz yoki mablag‘ni qaytaramiz.',
+    a: 'Har bir obuna kafolatlanadi. Ishlamasa yoki kafolat muddatidan oldin to‘xtasa — almashtiramiz yoki mablag‘ni qaytaramiz.',
   },
   {
     q: 'Obunani uzaytirsam bo‘ladimi?',
