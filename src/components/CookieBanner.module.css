@@ -1,0 +1,70 @@
+/* Pastda turadigan bildirishnoma. Tab bar (z-index: 100) va modal (200)
+   oralig'ida emas — u sahifaning eng ustida turadi, lekin modal ochilganda
+   modal undan yuqorida bo'lishi kerak, shuning uchun 150. */
+.banner {
+  position: fixed;
+  left: 0;
+  right: 0;
+  /* Tab bar bo'lgan sahifalarda uning ustida turadi — navigatsiyani to'smaydi.
+     Landing/maxfiylik sahifalarida tab bar yo'q, o'sha yerda --tabbar-offset
+     0 bo'ladi. */
+  bottom: var(--tabbar-offset, 0px);
+  z-index: 150;
+  padding: 12px;
+  padding-bottom: calc(12px + var(--safe-bottom, 0px));
+  background: color-mix(in srgb, var(--app-surface) 92%, transparent);
+  backdrop-filter: saturate(180%) blur(14px);
+  -webkit-backdrop-filter: saturate(180%) blur(14px);
+  border-top: 1px solid var(--app-separator);
+}
+.inner {
+  max-width: 900px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.text {
+  flex: 1 1 260px;
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--app-hint);
+}
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+.link {
+  padding: 10px 4px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--app-text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.accept {
+  padding: 10px 20px;
+  border-radius: var(--app-radius-sm);
+  border: none;
+  background: #3b82f6;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.accept:hover {
+  filter: brightness(1.05);
+}
+
+@media (max-width: 560px) {
+  .actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+}

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { apiCall } from '../lib/api.js';
 import { getTheme, toggleTheme } from '../lib/theme.js';
 import { formatPrice } from '../utils/format.js';
@@ -373,6 +373,7 @@ export default function Landing() {
           <a href={INSTAGRAM_URL} target="_blank" rel="noopener noreferrer">
             Instagram
           </a>
+          <Link to="/maxfiylik">Maxfiylik siyosati</Link>
         </div>
         <div className={styles.copyright}>© 2026 Santyx Pro</div>
       </footer>

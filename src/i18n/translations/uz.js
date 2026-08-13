@@ -276,4 +276,9 @@ export default {
     successTitle: 'Balans to\'ldirildi!',
     successText: 'Hisobingizga {amount} qo\'shildi 🎉',
   },
+  cookies: {
+    text: 'Sayt ishlashi uchun zarur ma\'lumotlarni brauzeringizda saqlaydi: tizimga kirish, til va savat. Reklama yoki uchinchi tomon kuzatuv kodlari ishlatilmaydi.',
+    accept: 'Tushunarli',
+    more: 'Maxfiylik siyosati',
+  },
 };

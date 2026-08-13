@@ -32,7 +32,7 @@ function formatPhone(raw) {
   return `+998 ${parts.join(' ')}`.trim();
 }
 
-// Ishchi (montajor/dizayner) arizasi — 7 bosqichli opros.
+// Ishchi (montajor/dizayner) arizasi — STEPS bo'yicha bosqichma-bosqich opros.
 export default function WorkerRegister({ onDone, onCancel }) {
   const [step, setStep] = useState(0);
   const [form, setForm] = useState({

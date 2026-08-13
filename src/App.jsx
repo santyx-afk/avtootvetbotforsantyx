@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import BackButtonManager from './components/BackButtonManager.jsx';
+import CookieBanner from './components/CookieBanner.jsx';
 import EmptyState from './components/EmptyState.jsx';
 import { FullScreenLoader } from './components/Spinner.jsx';
 import Landing from './pages/Landing.jsx';
@@ -26,6 +27,9 @@ const VacancyHome = lazy(() => import('./pages/vacancy/VacancyHome.jsx'));
 const VacancyListings = lazy(() => import('./pages/vacancy/VacancyListings.jsx'));
 const VacancyProfile = lazy(() => import('./pages/vacancy/VacancyProfile.jsx'));
 const WebLogin = lazy(() => import('./pages/WebLogin.jsx'));
+// Maxfiylik siyosati — kirmagan tashrifchiga ham ochiq bo'lishi shart
+// (cookie bildirishnomasidagi havola shu yerga olib keladi).
+const Privacy = lazy(() => import('./pages/Privacy.jsx'));
 import { useI18n } from './i18n/I18nProvider.jsx';
 import { apiCall, getToken, clearToken } from './lib/api.js';
 import {
@@ -83,20 +87,31 @@ export default function App() {
     };
   }, [authed, isTelegram]);
 
-  // Brauzer, hali login qilinmagan → Landing / Login sahifalari
+  // Brauzer, hali login qilinmagan → Landing / Login / Maxfiylik sahifalari
   if (!authed) {
     return (
-      <Routes>
-        <Route
-          path="/login"
-          element={
-            <Suspense fallback={<FullScreenLoader />}>
-              <WebLogin onSuccess={() => setAuthed(true)} />
-            </Suspense>
-          }
-        />
-        <Route path="*" element={<Landing />} />
-      </Routes>
+      <>
+        <Routes>
+          <Route
+            path="/login"
+            element={
+              <Suspense fallback={<FullScreenLoader />}>
+                <WebLogin onSuccess={() => setAuthed(true)} />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/maxfiylik"
+            element={
+              <Suspense fallback={<FullScreenLoader />}>
+                <Privacy />
+              </Suspense>
+            }
+          />
+          <Route path="*" element={<Landing />} />
+        </Routes>
+        <CookieBanner />
+      </>
     );
   }
 
@@ -139,8 +154,10 @@ export default function App() {
   return (
     <Suspense fallback={<FullScreenLoader />}>
       <BackButtonManager />
+      <CookieBanner />
       <Routes>
         {/* To'liq ekran (tab barsiz) sahifalar */}
+        <Route path="/maxfiylik" element={<Privacy />} />
         <Route path="/catalog/:id" element={<ProductDetail />} />
         <Route path="/checkout" element={<Checkout />} />
         <Route path="/profile/topup" element={<TopUp />} />

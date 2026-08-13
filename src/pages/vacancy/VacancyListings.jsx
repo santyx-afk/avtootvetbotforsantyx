@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import PageHeader from '../../components/PageHeader.jsx';
 import Spinner from '../../components/Spinner.jsx';
+import useModalDismiss from '../../hooks/useModalDismiss.js';
 import { vacancyCall } from '../../lib/vacancyApi.js';
 import styles from './vacancy.module.css';
 
@@ -68,6 +69,8 @@ export default function VacancyListings() {
   const [fieldErrors, setFieldErrors] = useState({});
   const [pendingId, setPendingId] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
+  // Barqaror callback — ConfirmDelete uni effekt bog'liqligi sifatida ishlatadi.
+  const closeConfirm = useCallback(() => setConfirmDelete(null), []);
 
   const load = useCallback(async () => {
     try {
@@ -198,6 +201,11 @@ export default function VacancyListings() {
   if (editing) {
     // Majburiy maydonlar to'ldirilmaguncha "Joylash" rangsiz turadi.
     const ready = Object.keys(validateForm(form)).length === 0;
+    // Joylangan e'lonni tahrirlashda faqat "Saqlash" ko'rsatiladi: ilgari shu
+    // yerda "Chernovik" tugmasi ham turardi va u bosilganda e'lon ogohlantirishsiz
+    // katalogdan yo'qolib qolardi. Vaqtincha yashirish uchun ro'yxatdagi
+    // "Yashirish" tugmasi bor.
+    const editingPublished = editing !== 'new' && editing.is_published && state.is_approved;
     return (
       <div className={styles.page}>
         <PageHeader title={editing === 'new' ? "Yangi e'lon" : "E'lonni tahrirlash"} />
@@ -250,18 +258,31 @@ export default function VacancyListings() {
             <button type="button" className={styles.btnCancel} onClick={() => setEditing(null)} disabled={saving}>
               Bekor qilish
             </button>
-            <button type="button" className={styles.btnDraft} onClick={() => save(false)} disabled={saving}>
-              {saving ? <Spinner size={16} stroke={2} /> : 'Chernovik'}
-            </button>
-            {state.is_approved && (
+            {editingPublished ? (
               <button
                 type="button"
                 className={ready ? styles.btnPrimary : styles.btnMuted}
                 onClick={() => save(true)}
                 disabled={saving}
               >
-                {saving ? <Spinner size={16} stroke={2} /> : 'Joylash'}
+                {saving ? <Spinner size={16} stroke={2} /> : 'Saqlash'}
               </button>
+            ) : (
+              <>
+                <button type="button" className={styles.btnDraft} onClick={() => save(false)} disabled={saving}>
+                  {saving ? <Spinner size={16} stroke={2} /> : 'Chernovik'}
+                </button>
+                {state.is_approved && (
+                  <button
+                    type="button"
+                    className={ready ? styles.btnPrimary : styles.btnMuted}
+                    onClick={() => save(true)}
+                    disabled={saving}
+                  >
+                    {saving ? <Spinner size={16} stroke={2} /> : 'Joylash'}
+                  </button>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -381,34 +402,45 @@ export default function VacancyListings() {
       </button>
 
       {confirmDelete && (
-        <div className={styles.modalOverlay}>
-          <div className={styles.modal}>
-            <h2 className={styles.modalTitle}>Butunlay o&apos;chirish</h2>
-            <p className={styles.statusDesc}>
-              &laquo;{confirmDelete.title}&raquo; e&apos;loni arxivdan ham o&apos;chiriladi va tiklab
-              bo&apos;lmaydi.
-            </p>
-            <div className={styles.regActions}>
-              <button
-                type="button"
-                className={styles.btnCancel}
-                onClick={() => setConfirmDelete(null)}
-                disabled={pendingId === confirmDelete.id}
-              >
-                Bekor qilish
-              </button>
-              <button
-                type="button"
-                className={styles.btnDanger}
-                onClick={() => remove(confirmDelete)}
-                disabled={pendingId === confirmDelete.id}
-              >
-                {pendingId === confirmDelete.id ? <Spinner size={16} stroke={2} /> : "O'chirish"}
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConfirmDelete
+          listing={confirmDelete}
+          pending={pendingId === confirmDelete.id}
+          onCancel={closeConfirm}
+          onConfirm={() => remove(confirmDelete)}
+        />
       )}
+    </div>
+  );
+}
+
+// O'chirishni tasdiqlash oynasi. Alohida komponent — Escape/"ortga" bilan
+// yopilishi uchun useModalDismiss shu yerda chaqiriladi (shartli hook bo'lmasin).
+function ConfirmDelete({ listing, pending, onCancel, onConfirm }) {
+  // O'chirish ketayotganda oyna yopilmasin — amal yarim yo'lda uzilib qolmasin.
+  useModalDismiss(pending ? null : onCancel);
+
+  return (
+    <div className={styles.modalOverlay} onClick={pending ? undefined : onCancel}>
+      <div
+        className={styles.modal}
+        role="dialog"
+        aria-modal="true"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className={styles.modalTitle}>Butunlay o&apos;chirish</h2>
+        <p className={styles.statusDesc}>
+          &laquo;{listing.title}&raquo; e&apos;loni arxivdan ham o&apos;chiriladi va tiklab
+          bo&apos;lmaydi.
+        </p>
+        <div className={styles.regActions}>
+          <button type="button" className={styles.btnCancel} onClick={onCancel} disabled={pending}>
+            Bekor qilish
+          </button>
+          <button type="button" className={styles.btnDanger} onClick={onConfirm} disabled={pending}>
+            {pending ? <Spinner size={16} stroke={2} /> : "O'chirish"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

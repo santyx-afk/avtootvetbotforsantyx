@@ -663,6 +663,12 @@
   background: var(--app-surface);
   border: 1px solid var(--app-separator);
 }
+/* Katalogda bosilgan e'lon — profil ichida qaysi e'lon uchun kelgani ko'rinsin */
+.miniListingActive {
+  composes: miniListing;
+  border-color: #7c5cff;
+  background: color-mix(in srgb, #7c5cff 8%, var(--app-surface));
+}
 .miniListingTitle {
   font-size: 15px;
   font-weight: 700;
@@ -1214,6 +1220,7 @@
 /* Bog'lanish havolalari (telefon, portfolio) — ishchining ochiq profilida */
 .contactLink {
   display: block;
+  width: 100%;
   padding: 12px 14px;
   border-radius: var(--app-radius);
   background: var(--app-surface);
@@ -1221,8 +1228,34 @@
   color: #7c5cff;
   font-size: 15px;
   font-weight: 600;
+  font-family: inherit;
+  text-align: left;
   text-decoration: none;
   word-break: break-all;
+  cursor: pointer;
+}
+/* Telefon qatori: havola + nusxalash tugmasi (Telegram'da tel: ochilmasligi mumkin) */
+.contactRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.contactRow .contactLink {
+  flex: 1;
+  min-width: 0;
+}
+.btnCopy {
+  flex: none;
+  padding: 12px 14px;
+  border-radius: var(--app-radius);
+  border: 1px solid var(--app-separator);
+  background: transparent;
+  color: var(--app-hint);
+  font-size: 13.5px;
+  font-weight: 600;
+  font-family: inherit;
+  white-space: nowrap;
+  cursor: pointer;
 }
 
 /* Chernovik holati tegi (arxivdan farqlansin) */

@@ -34,7 +34,12 @@ export default function VacancyHome() {
   const [onlyOnline, setOnlyOnline] = useState(false);
   const [listings, setListings] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [openWorkerId, setOpenWorkerId] = useState(null);
+  // Ochilgan profil: { workerId, listingId } — listingId bosilgan e'lonni
+  // profil ichida ajratib ko'rsatish uchun.
+  const [open, setOpen] = useState(null);
+  // Barqaror callback: WorkerProfileSheet uni effekt bog'liqligi sifatida
+  // ishlatadi (Escape, scroll lock, Telegram "ortga" tugmasi).
+  const closeSheet = useCallback(() => setOpen(null), []);
 
   const load = useCallback(
     async (signal) => {
@@ -131,34 +136,51 @@ export default function VacancyHome() {
       )}
 
       <div className={styles.listingGrid}>
-        {listings.map((item) => (
-          <div
-            key={item.id}
-            className={styles.listingCard}
-            role="button"
-            tabIndex={0}
-            onClick={() => setOpenWorkerId(item.worker.id)}
-            onKeyDown={(e) => e.key === 'Enter' && setOpenWorkerId(item.worker.id)}
-          >
-            <div className={styles.listingTop}>
-              <span className={styles.listingName}>{item.worker.name}</span>
-              <span className={item.worker.is_busy ? styles.dotBusy : styles.dotFree} />
-            </div>
-            <div className={styles.listingMeta}>
-              {CATEGORY_LABEL[item.category] || item.category} •{' '}
-              {EXPERIENCE_LABEL[item.worker.experience_years] || '—'}
-            </div>
-            <div className={styles.listingTitle}>{item.title}</div>
-            <div className={styles.listingFoot}>
-              <span className={styles.listingPrice}>{money(item.min_price)} UZS dan</span>
-              <span className={styles.listingDone}>{item.worker.is_busy ? 'Band' : "Bo'sh"}</span>
-            </div>
-          </div>
-        ))}
+        {/* Ishchisi topilmagan e'lon ko'rsatilmaydi: kartani bosib bo'lmaydi va
+            profil ochilmaydi — foydalanuvchi uchun "o'lik" element bo'lib qolardi. */}
+        {listings
+          .filter((item) => item.worker?.id)
+          .map((item) => {
+            const open = () => setOpen({ workerId: item.worker.id, listingId: item.id });
+            return (
+              <div
+                key={item.id}
+                className={styles.listingCard}
+                role="button"
+                tabIndex={0}
+                aria-label={`${item.worker.name} — ${item.title}`}
+                onClick={open}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    open();
+                  }
+                }}
+              >
+                <div className={styles.listingTop}>
+                  <span className={styles.listingName}>{item.worker.name}</span>
+                  <span className={item.worker.is_busy ? styles.dotBusy : styles.dotFree} />
+                </div>
+                <div className={styles.listingMeta}>
+                  {CATEGORY_LABEL[item.category] || item.category} •{' '}
+                  {EXPERIENCE_LABEL[item.worker.experience_years] || '—'}
+                </div>
+                <div className={styles.listingTitle}>{item.title}</div>
+                <div className={styles.listingFoot}>
+                  <span className={styles.listingPrice}>{money(item.min_price)} UZS dan</span>
+                  <span className={styles.listingDone}>{item.worker.is_busy ? 'Band' : "Bo'sh"}</span>
+                </div>
+              </div>
+            );
+          })}
       </div>
 
-      {openWorkerId && (
-        <WorkerProfileSheet workerId={openWorkerId} onClose={() => setOpenWorkerId(null)} />
+      {open && (
+        <WorkerProfileSheet
+          workerId={open.workerId}
+          highlightListingId={open.listingId}
+          onClose={closeSheet}
+        />
       )}
     </div>
   );

@@ -276,4 +276,9 @@ export default {
     successTitle: 'Balance topped up!',
     successText: '{amount} has been added to your account 🎉',
   },
+  cookies: {
+    text: 'This site stores only what it needs to work in your browser: sign-in, language and cart. No advertising or third-party trackers are used.',
+    accept: 'Got it',
+    more: 'Privacy policy',
+  },
 };

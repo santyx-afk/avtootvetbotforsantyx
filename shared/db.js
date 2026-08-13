@@ -693,8 +693,9 @@ function maskInventory(row = {}) {
 }
 
 async function listInventoryByPlan(client, planId) {
+  // Yangi qo'shilganlar tepada — admin oxirgi kiritganini darhol ko'radi.
   const { data } = await request(client, 'inventory_items', {
-    query: toQuery({ select: '*', plan_id: `eq.${planId}`, order: 'created_at.asc' }),
+    query: toQuery({ select: '*', plan_id: `eq.${planId}`, order: 'created_at.desc' }),
   });
   return (data || []).map(maskInventory);
 }

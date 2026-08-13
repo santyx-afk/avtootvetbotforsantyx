@@ -368,9 +368,9 @@ async function loadInventory() {
   state.inventory = data.items || [];
   const c = data.counts || {};
   document.getElementById('inventoryCounts').innerHTML = `available:${c.available || 0}, reserved:${c.reserved || 0}, delivered:${c.delivered || 0}, sold:${c.sold || 0}, disabled:${c.disabled || 0}`;
-  document.getElementById('inventoryList').innerHTML = `<table><thead><tr><th>Type</th><th>Login</th><th>Password</th><th>Key</th><th>Status</th><th></th></tr></thead><tbody>${state.inventory.map((i) => `<tr>
-  <td>${i.type}</td><td>${i.login || '-'}</td><td>${i.password_encrypted || '-'}</td><td>${i.license_key_encrypted || '-'}</td><td>${i.status}</td>
-  <td><button class="ghost danger inv-disable" data-id="${i.id}">Disable</button></td></tr>`).join('')}</tbody></table>`;
+  document.getElementById('inventoryList').innerHTML = `<table><thead><tr><th>Type</th><th>Login</th><th>Password</th><th>Key</th><th>Status</th><th>Qo'shilgan</th><th></th></tr></thead><tbody>${state.inventory.map((i) => `<tr data-inv-id="${i.id}">
+  <td>${i.type}</td><td class="inv-login">${i.login || '-'}</td><td class="inv-pass">${i.password_encrypted || '-'}</td><td class="inv-key">${i.license_key_encrypted || '-'}</td><td>${i.status}</td><td>${i.created_at ? new Date(i.created_at).toLocaleString('uz-UZ') : '-'}</td>
+  <td><button class="ghost inv-reveal" data-id="${i.id}">Ko'rish</button> <button class="ghost danger inv-disable" data-id="${i.id}">Disable</button></td></tr>`).join('')}</tbody></table>`;
 }
 
 async function loadBanners() {
@@ -880,6 +880,41 @@ document.getElementById('inventoryForm')?.addEventListener('submit', async (even
   await loadInventory();
 });
 document.getElementById('inventoryList')?.addEventListener('click', async (event) => {
+  // "Ko'rish" — maskalangan login/parol/kalit o'rniga haqiqiy qiymatlarni ochadi.
+  // Qayta bosilsa ("Yashirish") ro'yxatdagi maskalangan holatga qaytaradi.
+  const reveal = event.target.closest('.inv-reveal');
+  if (reveal) {
+    const row = reveal.closest('tr');
+    const masked = state.inventory.find((i) => String(i.id) === String(reveal.dataset.id));
+    if (reveal.dataset.open === '1') {
+      row.querySelector('.inv-login').textContent = masked?.login || '-';
+      row.querySelector('.inv-pass').textContent = masked?.password_encrypted || '-';
+      row.querySelector('.inv-key').textContent = masked?.license_key_encrypted || '-';
+      reveal.dataset.open = '';
+      reveal.textContent = "Ko'rish";
+      return;
+    }
+    reveal.disabled = true;
+    try {
+      const data = await api('admin-inventory', { method: 'POST', body: JSON.stringify({ action: 'reveal', id: reveal.dataset.id }) });
+      const item = data.item || {};
+      // textContent — kredensiallardagi maxsus belgilar HTML sifatida talqin qilinmasin
+      row.querySelector('.inv-login').textContent = item.login || '-';
+      row.querySelector('.inv-pass').textContent = item.password || '-';
+      row.querySelector('.inv-key').textContent = item.license_key || '-';
+      if (item.extra_data || item.notes) {
+        row.title = [item.extra_data, item.notes].filter(Boolean).join('\n');
+      }
+      reveal.dataset.open = '1';
+      reveal.textContent = 'Yashirish';
+    } catch (error) {
+      alert(error.message || "Ko'rsatib bo'lmadi");
+    } finally {
+      reveal.disabled = false;
+    }
+    return;
+  }
+
   const btn = event.target.closest('.inv-disable');
   if (!btn) return;
   await api('admin-inventory', { method: 'POST', body: JSON.stringify({ action: 'disable', id: btn.dataset.id }) });

@@ -1,6 +1,6 @@
 const { requireAdmin } = require('../../shared/auth');
-const { getAdminClient, createInventoryItem, listInventoryByPlan, getInventoryCountsByPlan, updateRow } = require('../../shared/db');
-const { encryptText } = require('../../shared/encryption');
+const { getAdminClient, createInventoryItem, listInventoryByPlan, getInventoryCountsByPlan, getInventoryItemById, updateRow } = require('../../shared/db');
+const { encryptText, decryptText } = require('../../shared/encryption');
 
 function json(statusCode, body) {
   return { statusCode, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
@@ -22,6 +22,33 @@ exports.handler = async (event) => {
       if (payload.action === 'disable') {
         const item = await updateRow(supabase, 'inventory_items', payload.id, { status: 'disabled' });
         return json(200, { ok: true, item });
+      }
+      // Ichidagini ko'rish: ro'yxatda login/parol maskalanadi, admin so'raganda
+      // shu action haqiqiy qiymatlarni qaytaradi (sessiya cookie bilan himoyalangan).
+      // Bitta maydon ochilmasa qolganlari baribir ko'rsatiladi (delivery-service
+      // dagi tryDecrypt bilan bir xil yondashuv).
+      if (payload.action === 'reveal') {
+        const item = await getInventoryItemById(supabase, payload.id);
+        if (!item) return json(404, { ok: false, error: 'Topilmadi' });
+        const safeDecrypt = (value) => {
+          if (!value) return null;
+          try {
+            return decryptText(value);
+          } catch {
+            return '(ochib bo‘lmadi — encryption key mos emas)';
+          }
+        };
+        return json(200, {
+          ok: true,
+          item: {
+            id: item.id,
+            login: item.login || null,
+            password: safeDecrypt(item.password_encrypted),
+            license_key: safeDecrypt(item.license_key_encrypted),
+            extra_data: safeDecrypt(item.extra_data_encrypted),
+            notes: item.notes || null,
+          },
+        });
       }
       const type = payload.type === 'account' ? 'auto_account' : payload.type;
       if (!['auto_account', 'license_key'].includes(type)) return json(400, { ok: false, error: 'type noto‘g‘ri' });

@@ -221,6 +221,17 @@ export default function Profile() {
               <Icon name="chevronRight" size={18} className={styles.chevron} />
             </button>
           </li>
+          {/* Maxfiylik siyosati — Telegram ichida ham ochilishi kerak, shuning
+              uchun tashqi havola emas, ilova ichidagi sahifa. */}
+          <li>
+            <button type="button" className={styles.row} onClick={() => navigate('/maxfiylik')}>
+              <span className={styles.rowIcon}>
+                <Icon name="shield" size={20} />
+              </span>
+              <span className={styles.rowLabel}>{t('cookies.more')}</span>
+              <Icon name="chevronRight" size={18} className={styles.chevron} />
+            </button>
+          </li>
         </ul>
       </div>
     </>
