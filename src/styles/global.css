@@ -48,6 +48,17 @@
   --app-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 16px rgba(0, 0, 0, 0.06);
   --app-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto,
     Helvetica, Arial, sans-serif;
+
+  /* Pastda suzuvchi elementlar (cookie bildirishnomasi) qancha ko'tarilishi
+     kerakligi. Tab bar bo'lgan sahifalarda quyida qayta hisoblanadi. */
+  --tabbar-offset: 0px;
+}
+
+/* Sahifada tab bar bo'lsa, suzuvchi elementlar uni to'smasin.
+   :has() qo'llab-quvvatlanmasa 0px qoladi — bildirishnoma tab bar ustiga
+   tushadi, lekin baribir bir marta bosib yopiladi. */
+body:has([data-tabbar]) {
+  --tabbar-offset: calc(var(--tabbar-height) + var(--safe-bottom));
 }
 
 /* Dark rejim uchun fallbacklar (Telegram vars bo'lmaganda, tizim dark) */

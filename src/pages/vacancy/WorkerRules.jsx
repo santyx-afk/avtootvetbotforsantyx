@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import useModalDismiss from '../../hooks/useModalDismiss.js';
 import styles from './vacancy.module.css';
 
 // Xizmat bepul: platforma faqat e'lon joylash uchun. Shartnoma, to'lov va
@@ -15,10 +16,12 @@ const RULES = [
 // Tasdiqlangan ishchi birinchi marta profilga kirganda ko'rsatiladigan qoidalar modali.
 export default function WorkerRules({ onAccept }) {
   const [agreed, setAgreed] = useState(false);
+  // Qoidalarni qabul qilish majburiy — yopib bo'lmaydi, faqat fon aylanmaydi.
+  useModalDismiss(null);
 
   return (
     <div className={styles.modalOverlay}>
-      <div className={styles.modal}>
+      <div className={styles.modal} role="dialog" aria-modal="true">
         <h2 className={styles.modalTitle}>Ishchi qoidalari</h2>
         <ol className={styles.rulesList}>
           {RULES.map((rule) => (

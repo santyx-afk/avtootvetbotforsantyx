@@ -238,7 +238,9 @@
 /* ---------- Footer ---------- */
 .footer {
   border-top: 1px solid var(--app-separator);
-  padding: 32px 20px 40px;
+  /* Cookie bildirishnomasi footer havolalarini to'sib qo'ymasin. Bildirishnoma
+     yopilgach --cookie-banner-h olib tashlanadi va padding normalga qaytadi. */
+  padding: 32px 20px calc(40px + var(--cookie-banner-h, 0px));
   text-align: center;
 }
 .footerLinks {

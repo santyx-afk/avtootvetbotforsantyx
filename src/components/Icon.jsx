@@ -142,6 +142,12 @@ const PATHS = {
       <path d="M8 11h8M8 15h5" />
     </>
   ),
+  shield: (
+    <>
+      <path d="M12 3 5 6v6c0 4.2 2.9 7.6 7 9 4.1-1.4 7-4.8 7-9V6l-7-3z" />
+      <path d="m9 12 2 2 4-4" />
+    </>
+  ),
 };
 
 export default function Icon({ name, size = 24, strokeWidth = 1.9, filled = false, style, className }) {

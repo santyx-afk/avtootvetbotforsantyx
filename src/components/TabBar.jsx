@@ -19,7 +19,7 @@ export default function TabBar() {
   const { count } = useCart();
 
   return (
-    <nav className={styles.tabbar}>
+    <nav className={styles.tabbar} data-tabbar>
       <div className={styles.inner}>
         {TABS.map((tab) => (
           <NavLink

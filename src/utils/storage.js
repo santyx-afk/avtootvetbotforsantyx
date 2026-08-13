@@ -10,7 +10,12 @@ export const KEYS = {
   CART: 'cart',
   RECENT: 'recentlyViewed',
   WISHLIST: 'wishlist',
+  COOKIE_CONSENT: 'cookieConsent',
 };
+
+// Cookie/localStorage bildirishnomasi qaysi versiyada tasdiqlangani. Siyosat
+// jiddiy o'zgarsa shu raqam oshiriladi va bildirishnoma qaytadan ko'rsatiladi.
+export const COOKIE_CONSENT_VERSION = 1;
 
 function safeParse(raw, fallback) {
   if (raw === null || raw === undefined) return fallback;
@@ -68,6 +73,15 @@ export function isContactSaved() {
 }
 export function setContactSaved(v = true) {
   writeStorage(KEYS.CONTACT_SAVED, v);
+}
+
+/* ---- Cookie / localStorage bildirishnomasi ---- */
+export function isCookieNoticeAccepted() {
+  const saved = readStorage(KEYS.COOKIE_CONSENT, null);
+  return Boolean(saved) && saved.v === COOKIE_CONSENT_VERSION;
+}
+export function acceptCookieNotice() {
+  writeStorage(KEYS.COOKIE_CONSENT, { v: COOKIE_CONSENT_VERSION, at: new Date().toISOString() });
 }
 
 /* ---- Savat (offline nusxa) ---- */

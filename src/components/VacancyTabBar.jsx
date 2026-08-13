@@ -24,7 +24,7 @@ export default function VacancyTabBar() {
   };
 
   return (
-    <nav className={styles.tabbar}>
+    <nav className={styles.tabbar} data-tabbar>
       <div className={styles.inner}>
         <button type="button" className={`${styles.tab} ${styles.exit}`} onClick={exitToStore}>
           <span className={styles.iconWrap}>
