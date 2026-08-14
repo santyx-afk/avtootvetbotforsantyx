@@ -857,6 +857,7 @@ module.exports = {
   getInventoryItemById,
   updateOrderItem,
   expireOrder,
+  getPromoCode,
   validatePromoCode,
   getUserBalance,
   addWalletTransaction,

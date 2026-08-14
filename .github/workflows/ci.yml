@@ -1,0 +1,31 @@
+# Har push/PR da sintaksis tekshiruvi, testlar va build avtomatik yuriladi.
+# Bu buzilgan kodning main ga qo'shilib ketishining oldini oladi.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Bog'liqliklarni o'rnatish
+        run: npm ci
+
+      - name: Sintaksis tekshiruvi
+        run: npm run check
+
+      - name: Testlar
+        run: npm test
+
+      - name: Build
+        run: npm run build

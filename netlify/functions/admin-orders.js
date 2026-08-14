@@ -14,9 +14,19 @@ const {
 } = require('../../shared/db');
 const { processApprovedDelivery } = require('../../shared/delivery-service');
 const { processReferralPayout } = require('../../shared/referral-service');
+const { sendMessage } = require('../../shared/telegram');
 
 function json(statusCode, body) {
   return { statusCode, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
+}
+
+// Mijozga bot orqali xabar — xabar ketmasa ham admin amali muvaffaqiyatli qoladi
+// (matnlar bot-service'dagi inline approve/reject oqimi bilan bir xil).
+// Serverless'da javob qaytgach kutilmagan promise uzilib qolishi mumkin, shuning
+// uchun bu funksiya doim await bilan chaqiriladi.
+async function notifyCustomer(telegramId, text) {
+  if (!telegramId) return;
+  await sendMessage(String(telegramId), text, null).catch((e) => console.warn('customer notify warn:', e?.message));
 }
 
 exports.handler = async (event) => {
@@ -54,6 +64,7 @@ exports.handler = async (event) => {
         // Referal bonusi + promo cashback (ikkalasi ham idempotent)
         await processReferralPayout(supabase, approved.order).catch((e) => console.warn('referral payout warn:', e?.message));
         await creditOrderCashback(supabase, approved.order).catch((e) => console.warn('cashback warn:', e?.message));
+        await notifyCustomer(approved.order.user_telegram_id, `🎉 Buyurtmangiz #${approved.order.order_number} tasdiqlandi!`);
         return json(200, { ...approved, delivery });
       }
       if (action === 'reject') {
@@ -65,6 +76,7 @@ exports.handler = async (event) => {
           };
           return json(400, { ...rejected, error: messages[rejected.reason] || 'Reject bajarilmadi' });
         }
+        await notifyCustomer(rejected.order.user_telegram_id, `❌ Buyurtmangiz #${rejected.order.order_number} rad etildi. Savollar bo'lsa adminga murojaat qiling.`);
         return json(200, rejected);
       }
       if (action === 'retry_delivery') {

@@ -101,6 +101,11 @@ function copyMessage(chatId, fromChatId, messageId, caption) {
   });
 }
 
+// Telegramning "/" menyusida ko'rinadigan buyruqlar ro'yxatini o'rnatadi.
+function setMyCommands(commands) {
+  return telegramRequest('setMyCommands', { commands });
+}
+
 function setWebhook(url, secretToken) {
   return telegramRequest('setWebhook', {
     url,
@@ -129,6 +134,7 @@ module.exports = {
   forwardMessage,
   copyMessage,
   setWebhook,
+  setMyCommands,
   normalizeReplyMarkup,
   cleanPayload,
   parseTelegramInitData,

@@ -50,6 +50,7 @@ const {
   autoPaymentInstructionsText,
   balanceText,
   referralText,
+  helpText,
 } = require('./messages');
 const { processApprovedDelivery } = require('./delivery-service');
 
@@ -370,6 +371,11 @@ async function handleTextCommand({ supabase, message }) {
   if (text === '/referral' || text === '/ref') {
     const botUsername = process.env.BOT_USERNAME || 'santyxnarxbot';
     await sendMessage(message.chat.id, referralText({ telegramId: message.from.id, botUsername }), null);
+    return true;
+  }
+  if (text === '/help') {
+    const settings = await fetchSettings(supabase);
+    await sendMessage(message.chat.id, helpText(settings), null);
     return true;
   }
   if (text === '/admin' && isAdminTelegramId(message.from.id)) {
