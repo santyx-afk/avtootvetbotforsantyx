@@ -1,11 +1,42 @@
 const { schedule } = require('@netlify/functions');
-const { getAdminClient, request } = require('../../shared/db');
+const { getAdminClient, request, getPromoCode } = require('../../shared/db');
 const { sendMessage, inlineKeyboard } = require('../../shared/telegram');
+
+// Eslatmadagi taklif faqat haqiqatda mavjud promokodga tayanadi. Oldin matnda
+// "10% keshbek beriladi" deb qat'iy va'da bor edi, lekin uni beradigan mexanizm
+// yo'q edi — endi va'da RENEWAL_PROMO_CODE env'dagi aktiv promokoddan olinadi
+// (keshbek/chegirma mavjud promo tizimi orqali checkout'da beriladi).
+async function buildRenewalOfferLine(supabase) {
+  const fallback = "Xizmat uzilib qolmasligi uchun hoziroq uzaytirib qo'ying 👇";
+  const code = (process.env.RENEWAL_PROMO_CODE || '').trim();
+  if (!code) return fallback;
+  try {
+    const promo = await getPromoCode(supabase, code);
+    if (!promo) return fallback;
+    if (promo.expires_at && new Date(promo.expires_at).getTime() < Date.now()) return fallback;
+    if (promo.max_uses && Number(promo.used_count || 0) >= Number(promo.max_uses)) return fallback;
+    const value = Number(promo.discount_value || 0);
+    if (promo.discount_type === 'cashback_percent' && value > 0) {
+      return `🎁 <b>${promo.code}</b> promokodi bilan uzaytirsangiz ${value}% keshbek balansingizga qaytadi!`;
+    }
+    if (promo.discount_type === 'percent' && value > 0) {
+      return `🎁 <b>${promo.code}</b> promokodi bilan uzaytirishga ${value}% chegirma!`;
+    }
+    if (promo.discount_type === 'fixed' && value > 0) {
+      return `🎁 <b>${promo.code}</b> promokodi bilan ${value.toLocaleString('uz-UZ')} so'm chegirma!`;
+    }
+    return fallback;
+  } catch (e) {
+    console.warn('renewal promo lookup warn:', e?.message);
+    return fallback;
+  }
+}
 
 module.exports.handler = schedule('0 9 * * *', async (event) => {
   console.log('Running scheduled daily reminder task...');
   try {
     const supabase = getAdminClient();
+    const renewalOfferLine = await buildRenewalOfferLine(supabase);
     // 1. Get subscriptions ending in 3 days
     const threeDaysFromNow = new Date();
     threeDaysFromNow.setDate(threeDaysFromNow.getDate() + 3);
@@ -21,7 +52,7 @@ module.exports.handler = schedule('0 9 * * *', async (event) => {
           const text3d = `⚡️ Obunangiz 3 kunda tugaydi!\n\n` +
             `📦 ${sub.plan_name || 'Obuna'}\n` +
             `📅 Tugash sanasi: ${sub.end_date}\n\n` +
-            `Hozir uzaytirsangiz hisobingizga 10% keshbek beriladi! 🎁`;
+            renewalOfferLine;
 
           const keyboard = inlineKeyboard([
             [{ text: '🚀 Obunani uzaytirish', callback_data: 'start' }]
@@ -57,7 +88,7 @@ module.exports.handler = schedule('0 9 * * *', async (event) => {
           const text1d = `⏰ Diqqat! Obunangiz ERTAGA tugaydi!\n\n` +
             `📦 ${sub.plan_name || 'Obuna'}\n` +
             `📅 Tugash sanasi: ${sub.end_date}\n\n` +
-            `Hozir uzaytirsangiz hisobingizga 10% keshbek beriladi! 🎁`;
+            renewalOfferLine;
 
           const keyboard = inlineKeyboard([
             [{ text: '🚀 Obunani uzaytirish', callback_data: 'start' }]

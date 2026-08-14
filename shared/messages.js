@@ -174,6 +174,22 @@ function genericOrderErrorText() {
   return 'Buyurtma jarayonida xatolik yuz berdi. Iltimos, keyinroq qayta urinib ko‘ring.';
 }
 
+function helpText(settings) {
+  const envSupport = process.env.SUPPORT_USERNAME;
+  const support = settings?.support_link || envSupport || '@support';
+  return [
+    'ℹ️ <b>Yordam</b>',
+    '',
+    'Mavjud buyruqlar:',
+    '/start — bosh menyu va katalog',
+    '/balance — balansingiz va keshbek',
+    '/ref — referal havolangiz (do‘st taklif qilib bonus oling)',
+    '/help — shu yordam xabari',
+    '',
+    `Savol yoki muammo bo‘lsa: ${escapeHtml(support)}`,
+  ].join('\n');
+}
+
 module.exports = {
   escapeHtml,
   formatPrice,
@@ -193,4 +209,5 @@ module.exports = {
   receiptAcceptedText,
   noActiveOrderForReceiptText,
   genericOrderErrorText,
+  helpText,
 };
