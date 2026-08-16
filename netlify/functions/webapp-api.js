@@ -109,12 +109,23 @@ function extractPhoneFromRaw(raw) {
 const AUTO_DELIVERY = ['auto_account', 'license_key'];
 
 // Bitta plan qatorini frontend uchun mahsulot obyektiga aylantiradi.
+// Teglar bazada jsonb massiv yoki vergul bilan ajratilgan matn bo'lishi mumkin —
+// ikkalasini ham massivga keltiramiz (qidiruv teglar bo'yicha ham ishlaydi).
+function normalizeTags(value) {
+  if (Array.isArray(value)) return value.map((t) => String(t).trim()).filter(Boolean);
+  return String(value || '')
+    .split(',')
+    .map((t) => t.trim())
+    .filter(Boolean);
+}
+
 function productShape(row, { stock, inStock, rating }) {
   return {
     id: row.id,
     category_id: row.category_id,
     name: row.name,
     description: row.description || '',
+    tags: normalizeTags(row.tags),
     price: Number(row.price || 0),
     old_price: row.old_price != null ? Number(row.old_price) : null,
     currency: row.currency || 'UZS',

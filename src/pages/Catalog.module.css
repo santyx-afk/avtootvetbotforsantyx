@@ -88,3 +88,20 @@
 .sortOption :global(svg) {
   color: var(--app-accent);
 }
+
+.loadMore {
+  display: block;
+  width: 100%;
+  margin-top: 14px;
+  padding: 13px 16px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--app-accent);
+  background: var(--app-surface);
+  border: 0.5px solid var(--app-separator);
+  border-radius: 12px;
+}
+
+.loadMore:active {
+  opacity: 0.7;
+}

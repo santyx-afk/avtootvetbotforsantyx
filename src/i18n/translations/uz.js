@@ -151,6 +151,7 @@ export default {
     all: 'Hammasi',
     noResults: 'Hech narsa topilmadi',
     off: 'chegirma',
+    showMore: 'Yana ko\'rsatish',
   },
   cart: {
     remove: 'O\'chirish',
@@ -280,5 +281,8 @@ export default {
     text: 'Sayt ishlashi uchun zarur ma\'lumotlarni brauzeringizda saqlaydi: tizimga kirish, til va savat. Reklama yoki uchinchi tomon kuzatuv kodlari ishlatilmaydi.',
     accept: 'Tushunarli',
     more: 'Maxfiylik siyosati',
+  },
+  terms: {
+    link: 'Foydalanish shartlari',
   },
 };

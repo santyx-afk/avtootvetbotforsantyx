@@ -374,6 +374,7 @@ export default function Landing() {
             Instagram
           </a>
           <Link to="/maxfiylik">Maxfiylik siyosati</Link>
+          <Link to="/shartlar">Foydalanish shartlari</Link>
         </div>
         <div className={styles.copyright}>© 2026 Santyx Pro</div>
       </footer>
