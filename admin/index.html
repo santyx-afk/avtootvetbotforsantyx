@@ -26,6 +26,7 @@
           <button data-view="users" class="nav-link"><span class="nav-ico">👥</span> Foydalanuvchilar</button>
           <button data-view="orders" class="nav-link"><span class="nav-ico">🛒</span> Buyurtmalar</button>
           <button data-view="vacancy" class="nav-link"><span class="nav-ico">💼</span> Vakansiyalar <span id="vacPendingBadge" class="nav-badge" hidden></span></button>
+          <button data-view="leads" class="nav-link"><span class="nav-ico">📥</span> Leadlar <span id="leadsNewBadge" class="nav-badge" hidden></span></button>
           <button data-view="messages" class="nav-link"><span class="nav-ico">✉️</span> Xabar yuborish</button>
           <button data-view="settings" class="nav-link"><span class="nav-ico">⚙️</span> Sozlamalar</button>
           <button data-view="help" class="nav-link"><span class="nav-ico">🆘</span> Yordam</button>
@@ -205,6 +206,15 @@
                   </div>
                 </form>
               </div>
+            </section>
+
+            <section id="leadsView" class="view" hidden>
+              <div class="toolbar">
+                <h2>Leadlar</h2>
+                <button id="leadsRefresh" class="ghost">Yangilash</button>
+              </div>
+              <p class="hint">Saytdagi &laquo;Izlagan obunangiz yo&apos;qmi?&raquo; formasi orqali kelgan so&apos;rovlar. Yangi lead kelganda botga ham xabar boradi.</p>
+              <div id="leadsList" class="table-card"></div>
             </section>
 
             <section id="faqView" class="view" hidden>

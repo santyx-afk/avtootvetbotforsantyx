@@ -232,6 +232,15 @@ export default function Profile() {
               <Icon name="chevronRight" size={18} className={styles.chevron} />
             </button>
           </li>
+          <li>
+            <button type="button" className={styles.row} onClick={() => navigate('/shartlar')}>
+              <span className={styles.rowIcon}>
+                <Icon name="clipboard" size={20} />
+              </span>
+              <span className={styles.rowLabel}>{t('terms.link')}</span>
+              <Icon name="chevronRight" size={18} className={styles.chevron} />
+            </button>
+          </li>
         </ul>
       </div>
     </>

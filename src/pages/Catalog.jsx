@@ -18,6 +18,17 @@ import styles from './Catalog.module.css';
 
 const SORTS = ['default', 'price_asc', 'price_desc', 'popular'];
 
+// Bir sahifada ko'rsatiladigan mahsulotlar soni — qolgani "Yana ko'rsatish" bilan ochiladi.
+const PAGE_SIZE = 24;
+
+// Qidiruv nom, tavsif va teglar bo'yicha ishlaydi (oldin faqat nom edi).
+function matchesQuery(product, q) {
+  if (product.name.toLowerCase().includes(q)) return true;
+  if ((product.description || '').toLowerCase().includes(q)) return true;
+  const tags = Array.isArray(product.tags) ? product.tags : [];
+  return tags.some((tag) => String(tag).toLowerCase().includes(q));
+}
+
 function sortProducts(list, sort) {
   const arr = [...list];
   if (sort === 'price_asc') arr.sort((a, b) => a.price - b.price);
@@ -42,6 +53,12 @@ export default function Catalog() {
   const [sort, setSort] = useState('default');
   const [selectedCat, setSelectedCat] = useState('all');
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+
+  // Filtr konteksti o'zgarganda sahifalash boshidan boshlanadi
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [query, selectedCat, sort]);
 
   const load = useCallback(async () => {
     // Cache bo'lsa — darhol ko'rsatamiz (spinnersiz), keyin fonda yangilaymiz.
@@ -122,7 +139,7 @@ export default function Catalog() {
   }
 
   const q = query.trim().toLowerCase();
-  const filtered = q ? products.filter((p) => p.name.toLowerCase().includes(q)) : products;
+  const filtered = q ? products.filter((p) => matchesQuery(p, q)) : products;
 
   const recentIds = getRecentlyViewed();
   const recentProducts = recentIds.map((id) => productsById[id]).filter(Boolean);
@@ -210,7 +227,17 @@ export default function Catalog() {
           )}
 
           {/* Yagona tekis grid — saralash butun ro'yxatga qo'llanadi */}
-          <div className={styles.grid}>{sortedProducts.map(renderCard)}</div>
+          <div className={styles.grid}>{sortedProducts.slice(0, visibleCount).map(renderCard)}</div>
+
+          {sortedProducts.length > visibleCount && (
+            <button
+              type="button"
+              className={styles.loadMore}
+              onClick={() => setVisibleCount((c) => c + PAGE_SIZE)}
+            >
+              {t('catalog.showMore')} ({sortedProducts.length - visibleCount})
+            </button>
+          )}
         </div>
       )}
 

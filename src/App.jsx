@@ -30,6 +30,7 @@ const WebLogin = lazy(() => import('./pages/WebLogin.jsx'));
 // Maxfiylik siyosati — kirmagan tashrifchiga ham ochiq bo'lishi shart
 // (cookie bildirishnomasidagi havola shu yerga olib keladi).
 const Privacy = lazy(() => import('./pages/Privacy.jsx'));
+const Terms = lazy(() => import('./pages/Terms.jsx'));
 import { useI18n } from './i18n/I18nProvider.jsx';
 import { apiCall, getToken, clearToken } from './lib/api.js';
 import {
@@ -108,6 +109,14 @@ export default function App() {
               </Suspense>
             }
           />
+          <Route
+            path="/shartlar"
+            element={
+              <Suspense fallback={<FullScreenLoader />}>
+                <Terms />
+              </Suspense>
+            }
+          />
           <Route path="*" element={<Landing />} />
         </Routes>
         <CookieBanner />
@@ -158,6 +167,7 @@ export default function App() {
       <Routes>
         {/* To'liq ekran (tab barsiz) sahifalar */}
         <Route path="/maxfiylik" element={<Privacy />} />
+        <Route path="/shartlar" element={<Terms />} />
         <Route path="/catalog/:id" element={<ProductDetail />} />
         <Route path="/checkout" element={<Checkout />} />
         <Route path="/profile/topup" element={<TopUp />} />

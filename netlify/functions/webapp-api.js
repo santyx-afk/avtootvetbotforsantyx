@@ -19,6 +19,7 @@ const {
   createOrder,
   generateUniquePrice,
   expireOrder,
+  createLead,
 } = require('../../shared/db');
 const {
   processApprovedOrderDelivery,
@@ -28,6 +29,7 @@ const {
 const { authenticate, signJwt } = require('../../shared/webapp-auth');
 const { verifyWebLoginCode } = require('../../shared/web-auth-service');
 const { sendMessage } = require('../../shared/telegram');
+const { escapeHtml } = require('../../shared/messages');
 
 const PAYMENT_WARN_SUPPORT = (process.env.SUPPORT_USERNAME || '@santyx').replace(/^@?/, '@');
 
@@ -109,12 +111,23 @@ function extractPhoneFromRaw(raw) {
 const AUTO_DELIVERY = ['auto_account', 'license_key'];
 
 // Bitta plan qatorini frontend uchun mahsulot obyektiga aylantiradi.
+// Teglar bazada jsonb massiv yoki vergul bilan ajratilgan matn bo'lishi mumkin —
+// ikkalasini ham massivga keltiramiz (qidiruv teglar bo'yicha ham ishlaydi).
+function normalizeTags(value) {
+  if (Array.isArray(value)) return value.map((t) => String(t).trim()).filter(Boolean);
+  return String(value || '')
+    .split(',')
+    .map((t) => t.trim())
+    .filter(Boolean);
+}
+
 function productShape(row, { stock, inStock, rating }) {
   return {
     id: row.id,
     category_id: row.category_id,
     name: row.name,
     description: row.description || '',
+    tags: normalizeTags(row.tags),
     price: Number(row.price || 0),
     old_price: row.old_price != null ? Number(row.old_price) : null,
     currency: row.currency || 'UZS',
@@ -251,6 +264,59 @@ exports.handler = async (event) => {
       return json(200, { ok: true, token, telegram_id: result.telegram_id });
     } catch (error) {
       console.error('verify-web-code error', error);
+      return json(500, { ok: false, error: 'server_error' });
+    }
+  }
+  // Landing lead formasi — auth talab qilinmaydi (tashrifchi login qilmagan).
+  // Lead avval bazaga yoziladi, keyin adminlarga bot orqali xabar boradi;
+  // baza yozuvi muvaffaqiyatsiz bo'lsa ham xabar ketadi (lead yo'qolmasin).
+  if (body.action === 'submit-lead') {
+    try {
+      // Honeypot: oddiy foydalanuvchi bu maydonni ko'rmaydi va to'ldirmaydi.
+      if (body.website) return json(200, { ok: true });
+      const wanted = String(body.wanted || '').trim().slice(0, 300);
+      const contact = String(body.contact || '').trim().slice(0, 120);
+      const name = String(body.name || '').trim().slice(0, 120);
+      if (!wanted || !contact) return json(400, { ok: false, error: 'required' });
+
+      let saved = null;
+      try {
+        saved = await createLead(supabase, { wanted, contact, name });
+      } catch (error) {
+        console.error('lead save error', error?.message);
+      }
+
+      let notified = false;
+      try {
+        const settings = await fetchSettings(supabase).catch(() => null);
+        const ids = new Set();
+        if (settings?.admin_telegram_id) ids.add(String(settings.admin_telegram_id));
+        if (process.env.ADMIN_CHAT_ID) ids.add(String(process.env.ADMIN_CHAT_ID));
+        if (process.env.ADMIN_TELEGRAM_ID) ids.add(String(process.env.ADMIN_TELEGRAM_ID));
+        (process.env.ADMIN_TELEGRAM_IDS || '')
+          .split(',')
+          .map((item) => item.trim())
+          .filter(Boolean)
+          .forEach((id) => ids.add(id));
+        const text = [
+          '📥 <b>Yangi lead!</b> (saytdagi forma)',
+          '',
+          `🔎 Izlayapti: ${escapeHtml(wanted)}`,
+          `📞 Kontakt: ${escapeHtml(contact)}`,
+          name ? `👤 Ism: ${escapeHtml(name)}` : null,
+          '',
+          saved ? 'Admin panel → Leadlar bo\'limida turibdi.' : '⚠️ Bazaga yozilmadi (leads jadvali yo\'q?) — bu xabarni yo\'qotmang!',
+        ].filter((line) => line !== null).join('\n');
+        const results = await Promise.allSettled([...ids].map((id) => sendMessage(id, text, null)));
+        notified = results.some((r) => r.status === 'fulfilled');
+      } catch (error) {
+        console.warn('lead notify warn', error?.message);
+      }
+
+      if (!saved && !notified) return json(500, { ok: false, error: 'server_error' });
+      return json(200, { ok: true });
+    } catch (error) {
+      console.error('submit-lead error', error);
       return json(500, { ok: false, error: 'server_error' });
     }
   }

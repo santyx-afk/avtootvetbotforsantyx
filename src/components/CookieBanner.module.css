@@ -50,8 +50,9 @@
   padding: 10px 20px;
   border-radius: var(--app-radius-sm);
   border: none;
-  background: #3b82f6;
-  color: #fff;
+  /* Sayt brendi qat'iy oq-qora — banner faqat brauzerda ko'rinadi (Telegramda emas) */
+  background: var(--app-text);
+  color: var(--app-bg);
   font-size: 14px;
   font-weight: 600;
   font-family: inherit;
@@ -59,7 +60,7 @@
   cursor: pointer;
 }
 .accept:hover {
-  filter: brightness(1.05);
+  opacity: 0.85;
 }
 
 @media (max-width: 560px) {

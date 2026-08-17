@@ -243,7 +243,8 @@ export default function Privacy() {
             <a href={`https://t.me/${SUPPORT}`} target="_blank" rel="noopener noreferrer">
               @{SUPPORT}
             </a>{' '}
-            (Telegram) dan bog&apos;lansangiz bo&apos;ladi.
+            (Telegram) dan bog&apos;lansangiz bo&apos;ladi. Xizmatdan foydalanish tartibi —{' '}
+            <Link to="/shartlar">Foydalanish shartlari</Link> sahifasida.
           </p>
         </section>
       </main>

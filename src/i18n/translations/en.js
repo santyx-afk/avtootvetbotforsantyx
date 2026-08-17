@@ -151,6 +151,7 @@ export default {
     all: 'All',
     noResults: 'Nothing found',
     off: 'off',
+    showMore: 'Show more',
   },
   cart: {
     remove: 'Remove',
@@ -280,5 +281,8 @@ export default {
     text: 'This site stores only what it needs to work in your browser: sign-in, language and cart. No advertising or third-party trackers are used.',
     accept: 'Got it',
     more: 'Privacy policy',
+  },
+  terms: {
+    link: 'Terms of use',
   },
 };
