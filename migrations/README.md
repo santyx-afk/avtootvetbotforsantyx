@@ -23,6 +23,7 @@ frontend murojaat qilib krash bo'lgani). Endi tartib quyidagicha.
 | Fayl | Qo'llangan sana | Izoh |
 |---|---|---|
 | [BASELINE.md](BASELINE.md) | 2026-08-16 | Boshlang'ich snapshot — joriy 42 jadval holati |
+| [2026-08-17_leads.sql](2026-08-17_leads.sql) | ⏳ kutilmoqda | Landing lead formasi uchun `leads` jadvali |
 
 ## BASELINE.md haqida
 

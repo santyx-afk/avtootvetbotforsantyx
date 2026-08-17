@@ -522,3 +522,11 @@ input[type="checkbox"] { width: 20px; height: 20px; min-height: auto; flex: 0 0 
   font-weight: 600;
 }
 .vac-pane h3 { margin: 20px 0 10px; font-size: 0.95rem; }
+
+/* Leadlar bo'limi */
+.hint {
+  margin: 0 0 14px;
+  color: var(--muted, #6b7280);
+  font-size: 13.5px;
+  line-height: 1.5;
+}

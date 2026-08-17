@@ -23,13 +23,14 @@
   align-items: center;
   gap: 10px;
 }
-.brandName {
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  font-size: 15px;
-}
-.brandName b {
-  color: #3b82f6;
+/* Brend yozuvi — logotipga mos: Orbitron, qat'iy bir rang (oq/qora) */
+.wordmark {
+  font-family: 'Orbitron', 'Arial Black', Arial, sans-serif;
+  font-weight: 900;
+  font-size: 17px;
+  letter-spacing: 0.08em;
+  color: var(--app-text);
+  user-select: none;
 }
 .headerActions {
   display: flex;
@@ -49,14 +50,14 @@
   padding: 9px 18px;
   border-radius: 10px;
   border: none;
-  background: #3b82f6;
-  color: #fff;
+  background: var(--app-text);
+  color: var(--app-bg);
   font-weight: 600;
   font-size: 15px;
   cursor: pointer;
 }
 .loginBtn:hover {
-  filter: brightness(1.05);
+  opacity: 0.85;
 }
 
 /* ---------- Hero ---------- */
@@ -74,7 +75,11 @@
   width: 640px;
   max-width: 120vw;
   height: 420px;
-  background: radial-gradient(closest-side, rgba(59, 130, 246, 0.28), transparent);
+  background: radial-gradient(
+    closest-side,
+    color-mix(in srgb, var(--app-text) 10%, transparent),
+    transparent
+  );
   pointer-events: none;
 }
 .heroInner {
@@ -90,10 +95,10 @@
   margin: 0 0 18px;
 }
 .accent {
-  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-thickness: 4px;
+  text-underline-offset: 8px;
 }
 .heroText {
   font-size: clamp(16px, 2.4vw, 19px);
@@ -173,8 +178,8 @@
   position: absolute;
   top: 10px;
   left: 10px;
-  background: #ef4444;
-  color: #fff;
+  background: var(--app-text);
+  color: var(--app-bg);
   font-size: 12px;
   font-weight: 700;
   padding: 3px 9px;
@@ -198,8 +203,8 @@
 }
 .price {
   font-size: 16px;
-  font-weight: 700;
-  color: #3b82f6;
+  font-weight: 800;
+  color: var(--app-text);
 }
 .oldPrice {
   font-size: 13px;
@@ -257,7 +262,7 @@
   font-weight: 500;
 }
 .footerLinks a:hover {
-  color: #3b82f6;
+  opacity: 0.65;
 }
 .copyright {
   color: var(--app-hint);
@@ -353,8 +358,8 @@
   border-radius: 50%;
   display: grid;
   place-items: center;
-  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
-  color: #fff;
+  background: var(--app-text);
+  color: var(--app-bg);
   font-size: 14px;
   font-weight: 700;
 }
@@ -491,4 +496,137 @@
   font-size: 14.5px;
   line-height: 1.6;
   color: var(--app-hint);
+}
+
+/* ---------- Footer brend lockup (logotipdagi kabi) ---------- */
+.footerBrand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 22px;
+}
+.footerBrand .wordmark {
+  font-size: 26px;
+}
+.tagline {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.4em;
+  text-indent: 0.4em;
+  color: var(--app-text);
+}
+.tagline::before,
+.tagline::after {
+  content: '';
+  width: 26px;
+  height: 2px;
+  background: var(--app-text);
+}
+
+/* ---------- Lead CTA ---------- */
+.leadCta {
+  max-width: 640px;
+  margin: 20px auto 0;
+  padding: 36px 20px 56px;
+  text-align: center;
+}
+
+/* ---------- Lead modal ---------- */
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.modal {
+  width: 100%;
+  max-width: 430px;
+  background: var(--app-bg);
+  color: var(--app-text);
+  border: 1px solid var(--app-separator);
+  border-radius: 18px;
+  padding: 24px 22px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.3);
+}
+.modalTitle {
+  margin: 0 0 8px;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+.modalText {
+  margin: 0 0 18px;
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--app-hint);
+}
+.field {
+  display: block;
+  margin-bottom: 14px;
+  text-align: left;
+}
+.field span {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.field input {
+  width: 100%;
+  padding: 12px 14px;
+  font-size: 15px;
+  border: 1px solid var(--app-separator);
+  border-radius: 12px;
+  background: var(--app-surface);
+  color: var(--app-text);
+}
+.field input:focus {
+  outline: none;
+  border-color: var(--app-text);
+}
+/* Honeypot — ekrandan tashqarida, faqat botlar to'ldiradi */
+.hp {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+.formError {
+  margin: 0 0 12px;
+  font-size: 13.5px;
+  padding: 10px 12px;
+  border: 1px solid var(--app-separator);
+  border-radius: 10px;
+  background: var(--app-surface);
+  color: var(--app-text);
+}
+.formError a {
+  color: inherit;
+  font-weight: 700;
+}
+.modalActions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 6px;
+}
+.modalActions .cta,
+.modalActions .ctaGhost {
+  padding: 12px 20px;
+  font-size: 15px;
+}
+.cta:disabled,
+.ctaGhost:disabled {
+  opacity: 0.6;
+  cursor: default;
 }

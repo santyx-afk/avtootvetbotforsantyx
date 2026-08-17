@@ -208,6 +208,23 @@ async function deleteRow(client, table, id) {
   return request(client, table, { method: 'DELETE', query: `id=eq.${id}` });
 }
 
+// --- Leadlar (landing "izlagan obunangiz yo'qmi?" formasi) ---
+async function createLead(client, { wanted, contact, name }) {
+  const { data } = await request(client, 'leads', {
+    method: 'POST',
+    headers: { Prefer: 'return=representation' },
+    body: { wanted, contact, name: name || null, status: 'new' },
+  });
+  return data?.[0] || null;
+}
+
+async function listLeads(client, limit = 200) {
+  const { data } = await request(client, 'leads', {
+    query: toQuery({ select: '*', order: 'created_at.desc', limit }),
+  });
+  return data || [];
+}
+
 async function countRows(client, table, filter = '') {
   const { count } = await request(client, table, {
     method: 'GET',
@@ -845,6 +862,8 @@ module.exports = {
   insertRow,
   updateRow,
   deleteRow,
+  createLead,
+  listLeads,
   countRows,
   listRecentEvents,
   listEventsByType,

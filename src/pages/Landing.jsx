@@ -3,7 +3,25 @@ import { Link, useNavigate } from 'react-router-dom';
 import { apiCall } from '../lib/api.js';
 import { getTheme, toggleTheme } from '../lib/theme.js';
 import { formatPrice } from '../utils/format.js';
+import useModalDismiss from '../hooks/useModalDismiss.js';
 import styles from './Landing.module.css';
+
+// Brend shrifti (Orbitron — logotipdagi harflarga mos) faqat landing uchun
+// yuklanadi; Mini App bundan foydalanmaydi va og'irlashmaydi.
+const BRAND_FONT_ID = 'santyx-brand-font';
+function useBrandFont() {
+  useEffect(() => {
+    if (document.getElementById(BRAND_FONT_ID)) return undefined;
+    const link = document.createElement('link');
+    link.id = BRAND_FONT_ID;
+    link.rel = 'stylesheet';
+    link.href = 'https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&display=swap';
+    document.head.appendChild(link);
+    return () => {
+      link.remove();
+    };
+  }, []);
+}
 
 const BOT = (import.meta.env.VITE_BOT_USERNAME || 'santyxnarxbot').replace(/^@/, '');
 const SUPPORT = (import.meta.env.VITE_SUPPORT_USERNAME || 'santyx').replace(/^@/, '');
@@ -144,16 +162,125 @@ function ProductCard({ p }) {
   );
 }
 
+// Lead formasi — tashrifchi izlagan obunasini topolmasa, so'rov qoldiradi.
+// Muvaffaqiyatli yuborilgach admin panel "Leadlar" bo'limiga tushadi va
+// adminga bot orqali xabar boradi.
+function LeadModal({ onClose }) {
+  const [wanted, setWanted] = useState('');
+  const [contact, setContact] = useState('');
+  const [website, setWebsite] = useState(''); // honeypot — odam ko'rmaydi
+  const [status, setStatus] = useState('idle'); // idle | sending | done | error
+  useModalDismiss(status === 'sending' ? null : onClose);
+
+  const submit = async (event) => {
+    event.preventDefault();
+    if (!wanted.trim() || !contact.trim()) return;
+    setStatus('sending');
+    try {
+      await apiCall('submit-lead', { wanted: wanted.trim(), contact: contact.trim(), website });
+      setStatus('done');
+    } catch {
+      setStatus('error');
+    }
+  };
+
+  return (
+    <div className={styles.modalOverlay} onClick={status === 'sending' ? undefined : onClose} role="presentation">
+      <div
+        className={styles.modal}
+        role="dialog"
+        aria-modal="true"
+        aria-label="So'rov qoldirish"
+        onClick={(event) => event.stopPropagation()}
+      >
+        {status === 'done' ? (
+          <>
+            <h3 className={styles.modalTitle}>Qabul qilindi ✓</h3>
+            <p className={styles.modalText}>
+              So&apos;rovingiz yetib bordi — tez orada siz bilan bog&apos;lanamiz.
+            </p>
+            <button type="button" className={styles.cta} onClick={onClose}>
+              Yopish
+            </button>
+          </>
+        ) : (
+          <form onSubmit={submit}>
+            <h3 className={styles.modalTitle}>Izlagan obunangiz yo&apos;qmi?</h3>
+            <p className={styles.modalText}>
+              Yozib qoldiring — topib beramiz va narxini aytamiz.
+            </p>
+            <label className={styles.field}>
+              <span>Qaysi obuna kerak?</span>
+              <input
+                value={wanted}
+                onChange={(event) => setWanted(event.target.value)}
+                required
+                maxLength={300}
+                placeholder="Masalan: Spotify Premium, 6 oy"
+              />
+            </label>
+            <label className={styles.field}>
+              <span>Telegram username yoki telefon</span>
+              <input
+                value={contact}
+                onChange={(event) => setContact(event.target.value)}
+                required
+                maxLength={120}
+                placeholder={`@username yoki +998 90 123 45 67`}
+              />
+            </label>
+            <input
+              className={styles.hp}
+              type="text"
+              value={website}
+              onChange={(event) => setWebsite(event.target.value)}
+              tabIndex={-1}
+              autoComplete="off"
+              aria-hidden="true"
+              placeholder="website"
+            />
+            {status === 'error' && (
+              <p className={styles.formError}>
+                Yuborib bo&apos;lmadi — qayta urinib ko&apos;ring yoki{' '}
+                <a href={`https://t.me/${SUPPORT}`} target="_blank" rel="noopener noreferrer">
+                  @{SUPPORT}
+                </a>{' '}
+                ga yozing.
+              </p>
+            )}
+            <div className={styles.modalActions}>
+              <button
+                type="button"
+                className={styles.ctaGhost}
+                onClick={onClose}
+                disabled={status === 'sending'}
+              >
+                Bekor qilish
+              </button>
+              <button type="submit" className={styles.cta} disabled={status === 'sending'}>
+                {status === 'sending' ? 'Yuborilmoqda…' : 'Yuborish'}
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function Landing() {
   const navigate = useNavigate();
   const [theme, setTheme] = useState(getTheme);
   // Keshdan boshlaymiz — birinchi chizishda bo'sh joy ko'rinmaydi.
   const [data, setData] = useState(() => readCache() || { products: [], categories: [] });
   const [loaded, setLoaded] = useState(() => Boolean(readCache()));
+  const [leadOpen, setLeadOpen] = useState(false);
   const productsRef = useRef(null);
 
   const { products, categories } = data;
+  useBrandFont();
   useReveal([products.length]);
+  const closeLead = useCallback(() => setLeadOpen(false), []);
 
   useEffect(() => {
     let active = true;
@@ -203,9 +330,7 @@ export default function Landing() {
     <div className={styles.page}>
       <header className={styles.header}>
         <div className={styles.brand}>
-          <span className={styles.brandName}>
-            SANTYX <b>PRO</b>
-          </span>
+          <span className={styles.wordmark}>SANTYX</span>
         </div>
         <div className={styles.headerActions}>
           <button
@@ -362,7 +487,25 @@ export default function Landing() {
         </button>
       </section>
 
+      {/* Lead yig'ish — katalogda topilmagan obunalar uchun so'rov */}
+      <section className={`${styles.leadCta} ${styles.reveal}`}>
+        <h2 className={styles.finalTitle}>Izlagan obunangiz yo&apos;qmi?</h2>
+        <p className={styles.finalText}>
+          Katalogda topolmadingizmi? Qaysi xizmat kerakligini yozib qoldiring — topib beramiz va
+          narxini aytamiz.
+        </p>
+        <button type="button" className={styles.cta} onClick={() => setLeadOpen(true)}>
+          So&apos;rov qoldirish
+        </button>
+      </section>
+
+      {leadOpen && <LeadModal onClose={closeLead} />}
+
       <footer className={styles.footer}>
+        <div className={styles.footerBrand}>
+          <span className={styles.wordmark}>SANTYX</span>
+          <span className={styles.tagline}>PRO OBUNALAR</span>
+        </div>
         <div className={styles.footerLinks}>
           <a href={CHANNEL_URL} target="_blank" rel="noopener noreferrer">
             Telegram kanal

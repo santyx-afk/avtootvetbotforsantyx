@@ -1,4 +1,4 @@
-const state = { categories: [], plans: [], settings: null, orders: [], inventory: [], banners: [], promos: [], reviews: [], faq: [], users: [] };
+const state = { categories: [], plans: [], settings: null, orders: [], inventory: [], banners: [], promos: [], reviews: [], faq: [], users: [], leads: [] };
 
 const views = {
   dashboard: document.getElementById('dashboardView'),
@@ -12,6 +12,7 @@ const views = {
   faq: document.getElementById('faqView'),
   users: document.getElementById('usersView'),
   vacancy: document.getElementById('vacancyView'),
+  leads: document.getElementById('leadsView'),
   messages: document.getElementById('messagesView'),
   settings: document.getElementById('settingsView'),
   help: document.getElementById('helpView'),
@@ -405,6 +406,52 @@ async function loadFaq() {
   } catch { state.faq = []; }
 }
 
+// --- Leadlar (saytdagi forma) ---
+// Lead matnlari tashrifchi tomonidan kiritiladi — XSS oldini olish uchun
+// jadvalga qo'yishdan avval albatta escape qilinadi.
+function escLead(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+
+function renderLeads() {
+  const root = document.getElementById('leadsList');
+  if (!root) return;
+  const badge = document.getElementById('leadsNewBadge');
+  const newCount = state.leads.filter((l) => l.status === 'new').length;
+  if (badge) {
+    badge.textContent = String(newCount);
+    badge.hidden = newCount === 0;
+  }
+  if (!state.leads.length) {
+    root.innerHTML = '<p class="hint">Hozircha lead yo\'q.</p>';
+    return;
+  }
+  root.innerHTML = `<table><thead><tr><th>Izlayapti</th><th>Kontakt</th><th>Ism</th><th>Sana</th><th>Holat</th><th></th></tr></thead><tbody>${state.leads.map((l) => `
+    <tr>
+      <td>${escLead(l.wanted)}</td>
+      <td>${escLead(l.contact)}</td>
+      <td>${escLead(l.name || '—')}</td>
+      <td>${new Date(l.created_at).toLocaleString('uz-UZ')}</td>
+      <td><span class="badge">${l.status === 'done' ? 'Bajarildi' : 'Yangi'}</span></td>
+      <td>
+        ${l.status === 'done'
+          ? `<button class="ghost lead-reopen" data-id="${l.id}">Qayta ochish</button>`
+          : `<button class="ghost lead-done" data-id="${l.id}">Bajarildi</button>`}
+        <button class="ghost danger lead-delete" data-id="${l.id}">Del</button>
+      </td>
+    </tr>`).join('')}</tbody></table>`;
+}
+
+async function loadLeads() {
+  try {
+    const data = await api('admin-leads');
+    state.leads = data.leads || [];
+  } catch {
+    state.leads = [];
+  }
+  renderLeads();
+}
+
 async function loadUsers() {
   try {
     const data = await api('admin-users');
@@ -448,7 +495,7 @@ async function initApp() {
   document.body.classList.add('authed');
   document.getElementById('loginView').hidden = true;
   document.getElementById('appView').hidden = false;
-  await Promise.all([loadDashboard(), loadData(), loadSettings(), loadBanners(), loadPromos(), loadReviews(), loadFaq(), loadUsers()]);
+  await Promise.all([loadDashboard(), loadData(), loadSettings(), loadBanners(), loadPromos(), loadReviews(), loadFaq(), loadUsers(), loadLeads()]);
 }
 
 // --- Image upload helper ---
@@ -539,6 +586,31 @@ document.getElementById('categoriesList').addEventListener('click', (event) => {
   const deleteButton = event.target.closest('.delete-item');
   if (deleteButton) {
     deleteItem(deleteButton.dataset.type, deleteButton.dataset.id).catch((error) => alert(error.message));
+  }
+});
+
+// Leadlar
+document.getElementById('leadsRefresh')?.addEventListener('click', () => {
+  loadLeads().catch(() => {});
+});
+document.getElementById('leadsList')?.addEventListener('click', async (event) => {
+  const doneBtn = event.target.closest('.lead-done');
+  const reopenBtn = event.target.closest('.lead-reopen');
+  const deleteBtn = event.target.closest('.lead-delete');
+  try {
+    if (doneBtn) {
+      await api('admin-leads', { method: 'POST', body: JSON.stringify({ action: 'done', id: doneBtn.dataset.id }) });
+    } else if (reopenBtn) {
+      await api('admin-leads', { method: 'POST', body: JSON.stringify({ action: 'reopen', id: reopenBtn.dataset.id }) });
+    } else if (deleteBtn) {
+      if (!confirm('Leadni o\'chirasizmi?')) return;
+      await api('admin-leads', { method: 'POST', body: JSON.stringify({ action: 'delete', id: deleteBtn.dataset.id }) });
+    } else {
+      return;
+    }
+    await loadLeads();
+  } catch (error) {
+    alert(error.message);
   }
 });
 
