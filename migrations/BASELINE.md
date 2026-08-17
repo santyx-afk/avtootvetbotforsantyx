@@ -43,7 +43,7 @@ _RLS: yoqilgan · PK: id_
 | metadata | jsonb | yo'q | '{}'::jsonb |
 | created_at | timestamp with time zone | yo'q | now() |
 
-FK: undefined → undefined; undefined → undefined
+FK: plan_id → plans(id); category_id → categories(id)
 
 ## audit_logs
 
@@ -59,7 +59,7 @@ _RLS: o'chirilgan · PK: id_
 | metadata | jsonb | yo'q | '{}'::jsonb |
 | created_at | timestamp with time zone | yo'q | now() |
 
-FK: undefined → undefined
+FK: order_id → orders(id)
 
 ## banners
 
@@ -92,7 +92,7 @@ _RLS: o'chirilgan · PK: id_
 | created_at | timestamp with time zone | yo'q | now() |
 | updated_at | timestamp with time zone | yo'q | now() |
 
-FK: undefined → undefined
+FK: plan_id → plans(id)
 
 ## categories
 
@@ -109,7 +109,7 @@ _RLS: yoqilgan · PK: id_
 | is_active | boolean | yo'q | true |
 | created_at | timestamp with time zone | yo'q | now() |
 
-FK: undefined → undefined; undefined → undefined; undefined → undefined
+FK: category_id → categories(id); category_id → categories(id); category_id → categories(id)
 
 ## chat_messages
 
@@ -129,7 +129,7 @@ _RLS: o'chirilgan · PK: id_
 | report_reason | text | ha |  |
 | created_at | timestamp with time zone | ha | now() |
 
-FK: undefined → undefined; undefined → undefined; undefined → undefined
+FK: reply_to_id → chat_messages(id); message_id → chat_messages(id); chat_id → chats(id)
 
 ## chats
 
@@ -144,7 +144,7 @@ _RLS: o'chirilgan · PK: id_
 | last_message_at | timestamp with time zone | ha | now() |
 | created_at | timestamp with time zone | ha | now() |
 
-FK: undefined → undefined; undefined → undefined; undefined → undefined; undefined → undefined
+FK: listing_id → listings(id); chat_id → chats(id); chat_id → chats(id); chat_id → chats(id)
 
 ## checks
 
@@ -180,7 +180,7 @@ _RLS: o'chirilgan · PK: id_
 | error_message | text | ha |  |
 | created_at | timestamp with time zone | yo'q | now() |
 
-FK: undefined → undefined; undefined → undefined; undefined → undefined
+FK: order_id → orders(id); inventory_item_id → inventory_items(id); plan_id → plans(id)
 
 ## delivery_retry_queue
 
@@ -199,7 +199,7 @@ _RLS: o'chirilgan · PK: id_
 | updated_at | timestamp with time zone | yo'q | now() |
 | completed_at | timestamp with time zone | ha |  |
 
-FK: undefined → undefined
+FK: order_id → orders(id)
 
 ## exception_queue
 
@@ -215,7 +215,7 @@ _RLS: o'chirilgan · PK: id_
 | created_at | timestamp with time zone | yo'q | now() |
 | resolved_at | timestamp with time zone | ha |  |
 
-FK: undefined → undefined
+FK: order_id → orders(id)
 
 ## faq
 
@@ -279,7 +279,7 @@ _RLS: o'chirilgan · PK: id_
 | cancel_reason | text | ha |  |
 | final_file_sent | boolean | ha | false |
 
-FK: undefined → undefined; undefined → undefined; undefined → undefined; undefined → undefined; undefined → undefined; undefined → undefined
+FK: parent_order_id → freelance_orders(id); order_id → freelance_orders(id); order_id → freelance_orders(id); chat_id → chats(id); listing_id → listings(id); order_id → freelance_orders(id)
 
 ## freelance_reports
 
@@ -301,7 +301,7 @@ _RLS: o'chirilgan · PK: id_
 | resolved_by | text | ha |  |
 | resolved_at | timestamp with time zone | ha |  |
 
-FK: undefined → undefined; undefined → undefined; undefined → undefined
+FK: message_id → chat_messages(id); order_id → freelance_orders(id); chat_id → chats(id)
 
 ## freelance_reviews
 
@@ -319,7 +319,7 @@ _RLS: o'chirilgan · PK: id_
 | is_visible | boolean | ha | true |
 | created_at | timestamp with time zone | ha | now() |
 
-FK: undefined → undefined
+FK: order_id → freelance_orders(id)
 
 ## inventory_items
 
@@ -344,7 +344,7 @@ _RLS: o'chirilgan · PK: id_
 | sold_at | timestamp with time zone | ha |  |
 | notes | text | ha |  |
 
-FK: undefined → undefined; undefined → undefined; undefined → undefined; undefined → undefined; undefined → undefined
+FK: inventory_item_id → inventory_items(id); plan_id → plans(id); assigned_order_id → orders(id); inventory_item_id → inventory_items(id); inventory_item_id → inventory_items(id)
 
 ## listings
 
@@ -365,7 +365,7 @@ _RLS: o'chirilgan · PK: id_
 | is_archived | boolean | ha | false |
 | archived_at | timestamp with time zone | ha |  |
 
-FK: undefined → undefined; undefined → undefined; undefined → undefined
+FK: listing_id → listings(id); worker_id → workers(id); listing_id → listings(id)
 
 ## monitoring_snapshots
 
@@ -400,7 +400,7 @@ _RLS: o'chirilgan · PK: id_
 | delivered_at | timestamp with time zone | ha |  |
 | updated_at | timestamp with time zone | yo'q | now() |
 
-FK: undefined → undefined; undefined → undefined; undefined → undefined
+FK: order_id → orders(id); inventory_item_id → inventory_items(id); plan_id → plans(id)
 
 ## orders
 
@@ -446,7 +446,7 @@ _RLS: o'chirilgan · PK: id_
 | topup_credit | numeric | ha |  |
 | cashback_amount | numeric | yo'q | 0 |
 
-FK: undefined → undefined; undefined → undefined; undefined → undefined; undefined → undefined; undefined → undefined; undefined → undefined; undefined → undefined; undefined → undefined; undefined → undefined; undefined → undefined; undefined → undefined; undefined → undefined; undefined → undefined; undefined → undefined; undefined → undefined
+FK: order_id → orders(id); first_order_id → orders(id); plan_id → plans(id); order_id → orders(id); receipt_submission_id → receipt_submissions(id); order_id → orders(id); order_id → orders(id); user_id → users(id); order_id → orders(id); assigned_order_id → orders(id); order_id → orders(id); inventory_item_id → inventory_items(id); order_id → orders(id); order_id → orders(id); order_id → orders(id)
 
 ## payment_logs
 
@@ -468,7 +468,7 @@ _RLS: o'chirilgan · PK: id_
 | delivery_status | text | ha |  |
 | products | jsonb | yo'q | '[]'::jsonb |
 
-FK: undefined → undefined
+FK: order_id → orders(id)
 
 ## plans
 
@@ -500,7 +500,7 @@ _RLS: yoqilgan · PK: id_
 | image_url | text | ha |  |
 | official_price | numeric | ha |  |
 
-FK: undefined → undefined; undefined → undefined; undefined → undefined; undefined → undefined; undefined → undefined; undefined → undefined; undefined → undefined; undefined → undefined; undefined → undefined; undefined → undefined; undefined → undefined; undefined → undefined; undefined → undefined
+FK: plan_id → plans(id); category_id → categories(id); parent_plan_id → plans(id); plan_id → plans(id); plan_id → plans(id); plan_id → plans(id); plan_id → plans(id); plan_id → plans(id); plan_id → plans(id); plan_id → plans(id); plan_id → plans(id); plan_id → plans(id); plan_id → plans(id)
 
 ## processed_payment_messages
 
@@ -548,7 +548,7 @@ _RLS: yoqilgan · PK: id_
 | created_at | timestamp with time zone | yo'q | now() |
 | order_id | uuid | ha |  |
 
-FK: undefined → undefined; undefined → undefined; undefined → undefined; undefined → undefined
+FK: category_id → categories(id); plan_id → plans(id); receipt_submission_id → receipt_submissions(id); order_id → orders(id)
 
 ## referrals
 
@@ -569,7 +569,7 @@ _RLS: o'chirilgan · PK: id_
 | purchase_count | integer | ha | 0 |
 | updated_at | timestamp with time zone | ha | now() |
 
-FK: undefined → undefined
+FK: first_order_id → orders(id)
 
 ## reviews
 
@@ -590,7 +590,7 @@ _RLS: o'chirilgan · PK: id_
 | status | text | ha | 'approved'::text |
 | order_id | uuid | ha |  |
 
-FK: undefined → undefined
+FK: plan_id → plans(id)
 
 ## settings
 
@@ -627,7 +627,7 @@ _RLS: o'chirilgan · PK: id_
 | notified | boolean | yo'q | false |
 | created_at | timestamp with time zone | yo'q | now() |
 
-FK: undefined → undefined
+FK: plan_id → plans(id)
 
 ## subscriptions
 
@@ -655,7 +655,7 @@ _RLS: o'chirilgan · PK: id_
 | reminder_1d_sent | boolean | yo'q | false |
 | expired_notified | boolean | yo'q | false |
 
-FK: undefined → undefined
+FK: order_id → orders(id)
 
 ## user_states
 
@@ -688,7 +688,7 @@ _RLS: o'chirilgan · PK: id_
 | plan_id | uuid | yo'q |  |
 | created_at | timestamp with time zone | yo'q | now() |
 
-FK: undefined → undefined
+FK: plan_id → plans(id)
 
 ## users
 
@@ -709,7 +709,7 @@ _RLS: yoqilgan · PK: id_
 | webapp_lang | text | ha |  |
 | is_blocked | boolean | ha | false |
 
-FK: undefined → undefined
+FK: user_id → users(id)
 
 ## vacancy_pending_files
 
@@ -726,7 +726,7 @@ _RLS: yoqilgan · PK: id_
 | forwarded | boolean | ha | false |
 | created_at | timestamp with time zone | ha | now() |
 
-FK: undefined → undefined
+FK: order_id → freelance_orders(id)
 
 ## wallet_transactions
 
@@ -743,7 +743,7 @@ _RLS: o'chirilgan · PK: id_
 | created_at | timestamp with time zone | yo'q | now() |
 | admin_id | text | ha |  |
 
-FK: undefined → undefined
+FK: order_id → orders(id)
 
 ## web_auth_codes
 
@@ -770,7 +770,7 @@ _RLS: o'chirilgan · PK: id_
 | created_at | timestamp with time zone | yo'q | now() |
 | price_at_add | numeric | ha |  |
 
-FK: undefined → undefined
+FK: plan_id → plans(id)
 
 ## worker_verification
 
@@ -818,4 +818,4 @@ _RLS: o'chirilgan · PK: id_
 | updated_at | timestamp with time zone | ha | now() |
 | rating_penalty | numeric | ha | 0 |
 
-FK: undefined → undefined
+FK: worker_id → workers(id)
