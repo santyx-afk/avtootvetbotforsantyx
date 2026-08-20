@@ -16,11 +16,7 @@
   content: '';
   position: absolute;
   inset: 0;
-  /* Rasm ustidan tema rangidagi parda — kontent o'qilishi saqlanadi.
-     Yorug' temada kuchliroq (rasm qoraligi bosilsin), tungida yengilroq. */
-  background: color-mix(in srgb, var(--app-bg) 91%, transparent);
-}
-:global([data-theme='dark']) .pageBg::after {
+  /* Rasm ustidan qora parda — sayt doim tungi rejimda, kontent o'qilishi saqlanadi */
   background: color-mix(in srgb, var(--app-bg) 78%, transparent);
 }
 
@@ -54,15 +50,6 @@
   display: flex;
   align-items: center;
   gap: 10px;
-}
-.themeBtn {
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  border: 1px solid var(--app-separator);
-  background: var(--app-surface);
-  font-size: 17px;
-  cursor: pointer;
 }
 .loginBtn {
   padding: 9px 18px;
