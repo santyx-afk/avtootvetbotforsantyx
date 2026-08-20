@@ -5,20 +5,22 @@
    ============================================================ */
 
 :root {
-  /* Telegram tema o'zgaruvchilari uchun fallbacklar (Telegram tashqarisida) */
-  --tg-theme-bg-color: #ffffff;
-  --tg-theme-text-color: #0f0f0f;
-  --tg-theme-hint-color: #8e8e93;
-  --tg-theme-link-color: #2481cc;
-  --tg-theme-button-color: #2481cc;
+  /* Telegram tema o'zgaruvchilari uchun fallbacklar (Telegram tashqarisida).
+     Sayt faqat tungi rejimda — shuning uchun fallback qiymatlar DARK.
+     Telegram ichida SDK bu o'zgaruvchilarni inline yozadi va ustun keladi. */
+  --tg-theme-bg-color: #1c1c1e;
+  --tg-theme-text-color: #ffffff;
+  --tg-theme-hint-color: #98989e;
+  --tg-theme-link-color: #6ab3f3;
+  --tg-theme-button-color: #2ea6ff;
   --tg-theme-button-text-color: #ffffff;
-  --tg-theme-secondary-bg-color: #f1f2f5;
-  --tg-theme-header-bg-color: #ffffff;
-  --tg-theme-section-bg-color: #ffffff;
-  --tg-theme-section-separator-color: #e6e7ea;
-  --tg-theme-subtitle-text-color: #8e8e93;
-  --tg-theme-destructive-text-color: #e53935;
-  --tg-theme-accent-text-color: #2481cc;
+  --tg-theme-secondary-bg-color: #000000;
+  --tg-theme-header-bg-color: #1c1c1e;
+  --tg-theme-section-bg-color: #1c1c1e;
+  --tg-theme-section-separator-color: #2c2c2e;
+  --tg-theme-subtitle-text-color: #98989e;
+  --tg-theme-destructive-text-color: #e57373;
+  --tg-theme-accent-text-color: #6ab3f3;
 
   /* Ilova semantik ranglari (komponentlar shularni ishlatadi) */
   --app-bg: var(--tg-theme-secondary-bg-color, #f1f2f5);
@@ -61,21 +63,9 @@ body:has([data-tabbar]) {
   --tabbar-offset: calc(var(--tabbar-height) + var(--safe-bottom));
 }
 
-/* Sayt (brauzer) faqat tungi rejimda — data-theme="dark" index.html'da statik.
-   Telegram ichida bu blok ishlamaydi (data-tg-theme bor) — u yerda ranglar
-   Telegramning o'z temasidan keladi. */
-:root[data-theme='dark']:not([data-tg-theme]) {
-  --tg-theme-bg-color: #1c1c1e;
-  --tg-theme-text-color: #ffffff;
-  --tg-theme-hint-color: #98989e;
-  --tg-theme-link-color: #6ab3f3;
-  --tg-theme-button-color: #2ea6ff;
-  --tg-theme-button-text-color: #ffffff;
-  --tg-theme-secondary-bg-color: #000000;
-  --tg-theme-section-bg-color: #1c1c1e;
-  --tg-theme-section-separator-color: #2c2c2e;
-  --tg-theme-subtitle-text-color: #98989e;
-}
+/* Sayt (brauzer) faqat tungi rejimda: dark qiymatlar yuqorida :root'ning
+   o'zida turibdi, alohida [data-theme] bloki kerak emas. Telegram ichida
+   ranglar Telegramning o'z temasidan (inline --tg-theme-*) keladi. */
 
 * {
   box-sizing: border-box;
