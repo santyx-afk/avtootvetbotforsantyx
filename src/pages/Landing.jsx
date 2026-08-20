@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { apiCall } from '../lib/api.js';
-import { getTheme, toggleTheme } from '../lib/theme.js';
 import { formatPrice } from '../utils/format.js';
 import useModalDismiss from '../hooks/useModalDismiss.js';
 import BrandLogo from '../components/BrandLogo.jsx';
@@ -254,7 +253,6 @@ function LeadModal({ onClose }) {
 
 export default function Landing() {
   const navigate = useNavigate();
-  const [theme, setTheme] = useState(getTheme);
   // Keshdan boshlaymiz — birinchi chizishda bo'sh joy ko'rinmaydi.
   const [data, setData] = useState(() => readCache() || { products: [], categories: [] });
   const [loaded, setLoaded] = useState(() => Boolean(readCache()));
@@ -302,7 +300,6 @@ export default function Landing() {
   );
   const avgRating = reviewStats.count ? (reviewStats.sum / reviewStats.count).toFixed(1) : null;
 
-  const onToggleTheme = useCallback(() => setTheme(toggleTheme()), []);
   const goToApp = useCallback(() => navigate('/login'), [navigate]);
   const scrollToProducts = useCallback(
     () => productsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
@@ -318,14 +315,6 @@ export default function Landing() {
           <BrandLogo className={styles.brandLogo} title="SANTYX" />
         </div>
         <div className={styles.headerActions}>
-          <button
-            type="button"
-            className={styles.themeBtn}
-            onClick={onToggleTheme}
-            aria-label="Mavzuni almashtirish"
-          >
-            {theme === 'dark' ? 'Yorug‘' : 'Tungi'}
-          </button>
           <button type="button" className={styles.loginBtn} onClick={goToApp}>
             Kirish
           </button>
