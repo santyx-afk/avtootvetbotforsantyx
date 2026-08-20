@@ -528,6 +528,13 @@ async function handleWorkerPublic(supabase, body) {
   // bog'lanadi (chat tizimi yo'q).
   if (!shaped.show_phone) shaped.phone = null;
 
+  // "Bog'lanish" tugmasi uchun e'lon egasining Telegram username'i (bo'lsa) —
+  // username'siz mijoz tg://user?id= orqali ID bilan profilni ochadi.
+  const { data: users } = await request(supabase, 'users', {
+    query: `select=username&telegram_id=eq.${encodeURIComponent(worker.user_id)}&limit=1`,
+  }).catch(() => ({ data: null }));
+  shaped.telegram_username = users?.[0]?.username || null;
+
   return json(200, {
     ok: true,
     worker: shaped,

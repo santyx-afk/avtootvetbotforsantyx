@@ -4,24 +4,8 @@ import { apiCall } from '../lib/api.js';
 import { getTheme, toggleTheme } from '../lib/theme.js';
 import { formatPrice } from '../utils/format.js';
 import useModalDismiss from '../hooks/useModalDismiss.js';
+import BrandLogo from '../components/BrandLogo.jsx';
 import styles from './Landing.module.css';
-
-// Brend shrifti (Orbitron — logotipdagi harflarga mos) faqat landing uchun
-// yuklanadi; Mini App bundan foydalanmaydi va og'irlashmaydi.
-const BRAND_FONT_ID = 'santyx-brand-font';
-function useBrandFont() {
-  useEffect(() => {
-    if (document.getElementById(BRAND_FONT_ID)) return undefined;
-    const link = document.createElement('link');
-    link.id = BRAND_FONT_ID;
-    link.rel = 'stylesheet';
-    link.href = 'https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&display=swap';
-    document.head.appendChild(link);
-    return () => {
-      link.remove();
-    };
-  }, []);
-}
 
 const BOT = (import.meta.env.VITE_BOT_USERNAME || 'santyxnarxbot').replace(/^@/, '');
 const SUPPORT = (import.meta.env.VITE_SUPPORT_USERNAME || 'santyx').replace(/^@/, '');
@@ -278,7 +262,6 @@ export default function Landing() {
   const productsRef = useRef(null);
 
   const { products, categories } = data;
-  useBrandFont();
   useReveal([products.length]);
   const closeLead = useCallback(() => setLeadOpen(false), []);
 
@@ -328,9 +311,11 @@ export default function Landing() {
 
   return (
     <div className={styles.page}>
+      {/* Sahifa orqa foni — neyron tarmoq rasmi, tema rangidagi parda bilan */}
+      <div className={styles.pageBg} aria-hidden="true" />
       <header className={styles.header}>
         <div className={styles.brand}>
-          <span className={styles.wordmark}>SANTYX</span>
+          <BrandLogo className={styles.brandLogo} title="SANTYX" />
         </div>
         <div className={styles.headerActions}>
           <button
@@ -503,8 +488,7 @@ export default function Landing() {
 
       <footer className={styles.footer}>
         <div className={styles.footerBrand}>
-          <span className={styles.wordmark}>SANTYX</span>
-          <span className={styles.tagline}>PRO OBUNALAR</span>
+          <BrandLogo variant="full" className={styles.footerLogo} title="SANTYX — pro obunalar" />
         </div>
         <div className={styles.footerLinks}>
           <a href={CHANNEL_URL} target="_blank" rel="noopener noreferrer">
