@@ -45,9 +45,11 @@ export function applyThemeVars(wa) {
       if (value) root.style.setProperty(`--tg-theme-${key.replace(/_/g, '-')}`, value);
     });
   }
-  // Telegram ichida bo'lsagina data-theme'ni Telegram sxemasidan o'rnatamiz.
-  // Brauzerda data-theme'ni theme.js boshqaradi — bu yerda tegmaymiz.
-  if (wa?.colorScheme) root.setAttribute('data-theme', wa.colorScheme);
+  // data-theme faqat HAQIQIY Telegram ichida (initData bor) Telegram
+  // sxemasidan o'rnatiladi. SDK skripti oddiy brauzerda ham yuklanadi va
+  // colorScheme'ni doim 'light' deb beradi — usiz saytdagi doimiy dark
+  // rejim (index.html'dagi data-theme="dark") ustidan yozilib ketardi.
+  if (wa?.colorScheme && wa?.initData) root.setAttribute('data-theme', wa.colorScheme);
 
   // Header/background rangini sahifa foniga moslash
   try {
