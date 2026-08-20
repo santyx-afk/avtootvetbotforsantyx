@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import useModalDismiss from '../../hooks/useModalDismiss.js';
 import { vacancyCall } from '../../lib/vacancyApi.js';
-import { openLink, haptic } from '../../telegram/webapp.js';
+import { openLink, openTelegramLink, haptic } from '../../telegram/webapp.js';
 import styles from './vacancy.module.css';
 
 const EXPERIENCE_LABEL = { 0: '1 yildan kam', 1: '1-2 yil', 2: '2-5 yil', 5: '5+ yil' };
@@ -41,8 +41,10 @@ async function copyText(text) {
   }
 }
 
-// Ishchining ochiq profili — e'lonlari, ish vaqti va bog'lanish ma'lumotlari.
-// Mijoz ishchi bilan to'g'ridan-to'g'ri (telefon yoki havola orqali) bog'lanadi.
+// Ishchining ochiq profili — e'lonlari, ish vaqti, bog'lanish va portfolio.
+// Mijoz e'lon egasi bilan to'g'ridan-to'g'ri bog'lanadi: "Bog'lanish" tugmasi
+// uning Telegram profilini (username yoki ID orqali) ochadi, telefon esa
+// ishchi ruxsat berganda ko'rinadi. Portfolio havolalari alohida bo'limda.
 // `highlightListingId` — katalogda bosilgan e'lon, ro'yxatda ajratib ko'rsatiladi.
 export default function WorkerProfileSheet({ workerId, highlightListingId, onClose }) {
   const [data, setData] = useState(null);
@@ -74,9 +76,19 @@ export default function WorkerProfileSheet({ workerId, highlightListingId, onClo
   const worker = data?.worker;
   const schedule = worker?.work_schedule || {};
   const hasSchedule = DAYS.some(([key]) => schedule[key]?.from);
-  // Bog'lanish: telefon (agar ishchi ko'rsatishga ruxsat bergan bo'lsa) yoki havolalar.
-  const hasContact = Boolean(worker?.phone) || Boolean(worker?.portfolio_urls?.length);
   const categories = worker?.categories || [];
+
+  // "Bog'lanish" — e'lon egasining (ishchining) Telegram profilini ochadi:
+  // username bo'lsa t.me havolasi orqali, bo'lmasa ID orqali (tg://user?id=...).
+  const openWorkerTelegram = useCallback(() => {
+    if (!worker) return;
+    haptic.impact('light');
+    if (worker.telegram_username) {
+      openTelegramLink(`https://t.me/${String(worker.telegram_username).replace(/^@/, '')}`);
+    } else if (worker.user_id) {
+      window.location.href = `tg://user?id=${worker.user_id}`;
+    }
+  }, [worker]);
 
   return (
     <div className={styles.modalOverlay} onClick={onClose}>
@@ -120,9 +132,12 @@ export default function WorkerProfileSheet({ workerId, highlightListingId, onClo
               Tajriba: {EXPERIENCE_LABEL[worker.experience_years] || '—'}
             </div>
 
-            {/* Xizmat bepul: mijoz ishchi bilan to'g'ridan-to'g'ri bog'lanadi */}
+            {/* Xizmat bepul: mijoz e'lon egasi bilan to'g'ridan-to'g'ri bog'lanadi */}
             <div className={styles.sheetBlock}>
               <div className={styles.sheetBlockTitle}>Bog&apos;lanish</div>
+              <button type="button" className={styles.btnPrimary} onClick={openWorkerTelegram}>
+                Telegram orqali bog&apos;lanish
+              </button>
               {worker.phone ? (
                 <div className={styles.contactRow}>
                   <a className={styles.contactLink} href={`tel:${worker.phone.replace(/\s/g, '')}`}>
@@ -137,22 +152,24 @@ export default function WorkerProfileSheet({ workerId, highlightListingId, onClo
                   </button>
                 </div>
               ) : null}
-              {worker.portfolio_urls?.map((url) => (
-                <button
-                  key={url}
-                  type="button"
-                  className={styles.contactLink}
-                  onClick={() => openLink(url)}
-                >
-                  {url}
-                </button>
-              ))}
-              {!hasContact && (
-                <p className={styles.miniListingDesc}>
-                  Ishchi bog&apos;lanish ma&apos;lumotini ko&apos;rsatmagan.
-                </p>
-              )}
             </div>
+
+            {/* Portfolio havolalari — bog'lanishdan alohida bo'lim */}
+            {Boolean(worker.portfolio_urls?.length) && (
+              <div className={styles.sheetBlock}>
+                <div className={styles.sheetBlockTitle}>Portfolio</div>
+                {worker.portfolio_urls.map((url) => (
+                  <button
+                    key={url}
+                    type="button"
+                    className={styles.contactLink}
+                    onClick={() => openLink(url)}
+                  >
+                    {url}
+                  </button>
+                ))}
+              </div>
+            )}
 
             {hasSchedule && (
               <div className={styles.sheetBlock}>

@@ -1,7 +1,27 @@
 .page {
   min-height: 100%;
-  background: var(--app-bg);
+  /* Fon .pageBg qatlamida — sahifa o'zi shaffof qoladi */
+  background: transparent;
   color: var(--app-text);
+}
+
+/* ---------- Sahifa orqa foni (neyron tarmoq rasmi) ---------- */
+.pageBg {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: #0b0f16 url('/bg-neural.jpg') center / cover no-repeat;
+}
+.pageBg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  /* Rasm ustidan tema rangidagi parda — kontent o'qilishi saqlanadi.
+     Yorug' temada kuchliroq (rasm qoraligi bosilsin), tungida yengilroq. */
+  background: color-mix(in srgb, var(--app-bg) 91%, transparent);
+}
+:global([data-theme='dark']) .pageBg::after {
+  background: color-mix(in srgb, var(--app-bg) 78%, transparent);
 }
 
 /* ---------- Header ---------- */
@@ -23,14 +43,12 @@
   align-items: center;
   gap: 10px;
 }
-/* Brend yozuvi — logotipga mos: Orbitron, qat'iy bir rang (oq/qora) */
-.wordmark {
-  font-family: 'Orbitron', 'Arial Black', Arial, sans-serif;
-  font-weight: 900;
-  font-size: 17px;
-  letter-spacing: 0.08em;
+/* Brend logotipi — haqiqiy vektor (.ai dan), rang temaga qarab oq/qora */
+.brandLogo {
+  display: block;
+  height: 20px;
+  width: auto;
   color: var(--app-text);
-  user-select: none;
 }
 .headerActions {
   display: flex;
@@ -498,7 +516,7 @@
   color: var(--app-hint);
 }
 
-/* ---------- Footer brend lockup (logotipdagi kabi) ---------- */
+/* ---------- Footer brend lockup (to'liq logotip) ---------- */
 .footerBrand {
   display: flex;
   flex-direction: column;
@@ -506,25 +524,12 @@
   gap: 7px;
   margin-bottom: 22px;
 }
-.footerBrand .wordmark {
-  font-size: 26px;
-}
-.tagline {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.4em;
-  text-indent: 0.4em;
+.footerLogo {
+  display: block;
+  height: 72px;
+  width: auto;
+  max-width: 88vw;
   color: var(--app-text);
-}
-.tagline::before,
-.tagline::after {
-  content: '';
-  width: 26px;
-  height: 2px;
-  background: var(--app-text);
 }
 
 /* ---------- Lead CTA ---------- */

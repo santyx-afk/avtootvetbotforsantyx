@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiCall, setToken } from '../lib/api.js';
+import BrandLogo from '../components/BrandLogo.jsx';
 import styles from './WebLogin.module.css';
 
 const BOT = (import.meta.env.VITE_BOT_USERNAME || 'santyxnarxbot').replace(/^@/, '');
@@ -81,7 +82,7 @@ export default function WebLogin({ onSuccess }) {
           ← Ortga
         </button>
 
-        <div className={styles.logo}>santyx<span>PRO</span></div>
+        <BrandLogo variant="full" className={styles.logo} title="SANTYX — pro obunalar" />
         <h1 className={styles.title}>Saytga kirish</h1>
         <p className={styles.subtitle}>
           Telegram orqali xavfsiz kiring. Bot sizga 6 xonali kod yuboradi.

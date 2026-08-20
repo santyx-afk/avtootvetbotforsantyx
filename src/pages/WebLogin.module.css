@@ -27,14 +27,10 @@
 }
 
 .logo {
-  font-size: 22px;
-  font-weight: 800;
-  letter-spacing: -0.02em;
+  display: block;
+  height: 52px;
+  width: auto;
   color: var(--app-text);
-}
-.logo span {
-  color: #3b82f6;
-  margin-left: 4px;
 }
 
 .title {
