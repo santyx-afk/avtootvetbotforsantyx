@@ -4,6 +4,8 @@ import { apiCall } from '../lib/api.js';
 import { formatPrice } from '../utils/format.js';
 import useModalDismiss from '../hooks/useModalDismiss.js';
 import BrandLogo from '../components/BrandLogo.jsx';
+import StructuredData from '../components/StructuredData.jsx';
+import usePageMeta from '../hooks/usePageMeta.js';
 import styles from './Landing.module.css';
 
 const BOT = (import.meta.env.VITE_BOT_USERNAME || 'santyxnarxbot').replace(/^@/, '');
@@ -67,6 +69,37 @@ const FAQ = [
     a: 'Botni oching, “Vakansiya qidirish/joylash” tugmasini bosing, ro‘yxatdan o‘ting va e‘loningizni yarating — butunlay tekin.',
   },
 ];
+
+// schema.org razmetkasi. FAQ ro'yxatidan avtomatik quriladi — savollar
+// o'zgarsa razmetka ham o'z-o'zidan yangilanadi, ikki joyda saqlash shart emas.
+const SITE_URL = 'https://santyx.uz';
+
+const ORG_SCHEMA = {
+  '@context': 'https://schema.org',
+  '@type': 'Organization',
+  name: 'SANTYX',
+  alternateName: 'Santyx Pro',
+  url: SITE_URL,
+  logo: `${SITE_URL}/icon-512.png`,
+  description: 'Premium obunalar hamyonbop narxlarda — CapCut, Canva, Adobe, Gemini AI va boshqalar.',
+  sameAs: [CHANNEL_URL, INSTAGRAM_URL, BOT_URL],
+  contactPoint: {
+    '@type': 'ContactPoint',
+    contactType: 'customer support',
+    url: `https://t.me/${SUPPORT}`,
+    availableLanguage: ['uz', 'ru', 'en'],
+  },
+};
+
+const FAQ_SCHEMA = {
+  '@context': 'https://schema.org',
+  '@type': 'FAQPage',
+  mainEntity: FAQ.map((item) => ({
+    '@type': 'Question',
+    name: item.q,
+    acceptedAnswer: { '@type': 'Answer', text: item.a },
+  })),
+};
 
 // Kategoriya nomlaridagi bezak emojilarni ko'rsatishda olib tashlaymiz.
 function cleanName(name) {
@@ -261,6 +294,13 @@ export default function Landing() {
 
   const { products, categories } = data;
   useReveal([products.length]);
+
+  usePageMeta({
+    title: 'santyx — hamyonbop premium obunalar',
+    description:
+      'CapCut, Canva, Adobe, Gemini AI va boshqa premium obunalar hamyonbop narxlarda. To‘liq kafolat, 10–15 daqiqada yetkazib berish.',
+    path: '/',
+  });
   const closeLead = useCallback(() => setLeadOpen(false), []);
 
   useEffect(() => {
@@ -308,6 +348,8 @@ export default function Landing() {
 
   return (
     <div className={styles.page}>
+      <StructuredData id="ld-org" data={ORG_SCHEMA} />
+      <StructuredData id="ld-faq" data={FAQ_SCHEMA} />
       {/* Sahifa orqa foni — neyron tarmoq rasmi, tema rangidagi parda bilan */}
       <div className={styles.pageBg} aria-hidden="true" />
       <header className={styles.header}>

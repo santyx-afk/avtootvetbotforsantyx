@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiCall, setToken } from '../lib/api.js';
 import BrandLogo from '../components/BrandLogo.jsx';
+import usePageMeta from '../hooks/usePageMeta.js';
 import styles from './WebLogin.module.css';
 
 const BOT = (import.meta.env.VITE_BOT_USERNAME || 'santyxnarxbot').replace(/^@/, '');
@@ -15,6 +16,11 @@ const EMPTY_DIGITS = Array(CODE_LENGTH).fill('');
 // Brauzer orqali Telegram login: kod olish -> kodni kiritish -> JWT.
 export default function WebLogin({ onSuccess }) {
   const navigate = useNavigate();
+  usePageMeta({
+    title: 'Saytga kirish — santyx',
+    description: 'Telegram orqali xavfsiz kiring.',
+    path: '/login',
+  });
   const [digits, setDigits] = useState(EMPTY_DIGITS);
   const [status, setStatus] = useState('idle'); // idle | verifying | error
   const [error, setError] = useState('');

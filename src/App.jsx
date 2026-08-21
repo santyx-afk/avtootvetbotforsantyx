@@ -11,6 +11,7 @@ import { useTelegram } from './telegram/TelegramProvider.jsx';
 // asosiy paketda (darhol chiziladi). Qolgan hamma narsa faqat kerak bo'lganda
 // yuklanadi: ilgari tashrifchi butun ilovani (savat, checkout, vakansiya)
 // yuklab olardi va birinchi chizish shuncha kutardi.
+const NotFound = lazy(() => import('./pages/NotFound.jsx'));
 const Layout = lazy(() => import('./components/Layout.jsx'));
 const Onboarding = lazy(() => import('./components/Onboarding.jsx'));
 const ContactGate = lazy(() => import('./components/ContactGate.jsx'));
@@ -117,7 +118,18 @@ export default function App() {
               </Suspense>
             }
           />
-          <Route path="*" element={<Landing />} />
+          <Route path="/" element={<Landing />} />
+          {/* Noma'lum manzil — Landing emas, alohida 404 (noindex bilan).
+              Ilgari bu yerda "*" -> Landing turardi va har qanday xato manzil
+              200 OK bilan bosh sahifani ko'rsatardi (qidiruv uchun "soft 404"). */}
+          <Route
+            path="*"
+            element={
+              <Suspense fallback={<FullScreenLoader />}>
+                <NotFound />
+              </Suspense>
+            }
+          />
         </Routes>
         <CookieBanner />
       </>
@@ -188,7 +200,7 @@ export default function App() {
           <Route path="/vacancy/*" element={<Navigate to="/vacancy" replace />} />
         </Route>
         <Route path="/" element={<Navigate to="/catalog" replace />} />
-        <Route path="*" element={<Navigate to="/catalog" replace />} />
+        <Route path="*" element={<NotFound />} />
       </Routes>
     </Suspense>
   );
