@@ -6,6 +6,8 @@ import useModalDismiss from '../hooks/useModalDismiss.js';
 import BrandLogo from '../components/BrandLogo.jsx';
 import StructuredData from '../components/StructuredData.jsx';
 import usePageMeta from '../hooks/usePageMeta.js';
+import LangPicker from '../components/LangPicker.jsx';
+import { useI18n } from '../i18n/I18nProvider.jsx';
 import styles from './Landing.module.css';
 
 const BOT = (import.meta.env.VITE_BOT_USERNAME || 'santyxnarxbot').replace(/^@/, '');
@@ -18,57 +20,9 @@ const INSTAGRAM_URL = 'https://instagram.com/santyx.uz';
 // so'rov kutmasdan darhol chiziladi.
 const CACHE_KEY = 'santyx:landing:catalog';
 
-const ADVANTAGES = [
-  { title: 'To‘liq kafolat', text: 'Har bir obuna kafolatlanadi — muammo bo‘lsa almashtiramiz.' },
-  { title: 'Tezkor yetkazish', text: 'To‘lovdan so‘ng 10–15 daqiqada obunangiz tayyor.' },
-  { title: 'Hamyonbop narxlar', text: 'Rasmiy narxdan sezilarli past — sifatdan yon bermaymiz.' },
-  { title: '12/7 qo‘llab-quvvatlash', text: 'Har kuni, kun davomida savollaringizga javob beramiz.' },
-];
 
-const STEPS = [
-  { n: '1', title: 'Obunani tanlang', text: 'Katalogdan kerakli xizmatni toping.' },
-  { n: '2', title: 'To‘lovni amalga oshiring', text: 'Karta orqali — to‘lov avtomatik aniqlanadi.' },
-  { n: '3', title: 'Foydalanishni boshlang', text: 'Kirish ma’lumotlari bir necha daqiqada keladi.' },
-];
 
-// Ilovada mavjud bo'lgan haqiqiy imkoniyatlar.
-const PERKS = [
-  { title: 'Balans', text: 'Hisobingizni oldindan to‘ldiring va xaridni bir bosishda yakunlang.' },
-  { title: 'Referal dasturi', text: 'Do‘stlaringizni taklif qiling — har bir xaridlari uchun bonus.' },
-  { title: 'Promokodlar', text: 'Chegirma va keshbek olib, keyingi xaridda ishlating.' },
-  { title: 'Obuna nazorati', text: 'Faol obunalaringiz va tugash muddati profilda ko‘rinadi.' },
-];
 
-const FAQ = [
-  {
-    q: 'Obuna qanchada yetkaziladi?',
-    a: 'To‘lov tizim tomonidan aniqlangach, odatda 10–15 daqiqa ichida. Kirish ma’lumotlari Telegram orqali yuboriladi.',
-  },
-  {
-    q: 'To‘lovni qanday amalga oshiraman?',
-    a: 'Buyurtma rasmiylashtirilgach sizga karta raqami va aniq summa ko‘rsatiladi. Shu summani o‘tkazasiz — to‘lov avtomatik aniqlanadi, chek yuborish shart emas.',
-  },
-  {
-    q: 'Nega summa butun son emas?',
-    a: 'Har bir buyurtmaga noyob summa beriladi — tizim to‘lovni aynan shu orqali taniydi. Shuning uchun ko‘rsatilgan summani o‘zgartirmasdan o‘tkazish muhim.',
-  },
-  {
-    q: 'Muammo chiqsa nima bo‘ladi?',
-    a: 'Har bir obuna kafolatlanadi. Ishlamasa yoki kafolat muddatidan oldin to‘xtasa — almashtiramiz yoki mablag‘ni qaytaramiz.',
-  },
-  {
-    q: 'Obunani uzaytirsam bo‘ladimi?',
-    a: 'Ha. Muddat tugashiga yaqin sizga eslatma keladi, profilda esa faol obunalaringiz ro‘yxati turadi.',
-  },
-  {
-    q: 'Bu rasmiy obunami?',
-    a: 'Ha, xizmatlar rasmiy obunalar asosida beriladi. Farqi — narx: biz uni sezilarli hamyonbop qilamiz.',
-  },
-  {
-    q: 'Vakansiya e‘lonini qanday joylayman?',
-    a: 'Botni oching, “Vakansiya qidirish/joylash” tugmasini bosing, ro‘yxatdan o‘ting va e‘loningizni yarating — butunlay tekin.',
-  },
-];
 
 // schema.org razmetkasi. FAQ ro'yxatidan avtomatik quriladi — savollar
 // o'zgarsa razmetka ham o'z-o'zidan yangilanadi, ikki joyda saqlash shart emas.
@@ -91,15 +45,18 @@ const ORG_SCHEMA = {
   },
 };
 
-const FAQ_SCHEMA = {
-  '@context': 'https://schema.org',
-  '@type': 'FAQPage',
-  mainEntity: FAQ.map((item) => ({
-    '@type': 'Question',
-    name: item.q,
-    acceptedAnswer: { '@type': 'Answer', text: item.a },
-  })),
-};
+// FAQ razmetkasi joriy tildagi savollardan quriladi.
+function buildFaqSchema(items) {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: items.map((item) => ({
+      '@type': 'Question',
+      name: item.q,
+      acceptedAnswer: { '@type': 'Answer', text: item.a },
+    })),
+  };
+}
 
 // Kategoriya nomlaridagi bezak emojilarni ko'rsatishda olib tashlaymiz.
 function cleanName(name) {
@@ -182,20 +139,25 @@ function ProductCard({ p }) {
 // Muvaffaqiyatli yuborilgach admin panel "Leadlar" bo'limiga tushadi va
 // adminga bot orqali xabar boradi.
 function LeadModal({ onClose }) {
+  const { t } = useI18n();
   const [wanted, setWanted] = useState('');
   const [contact, setContact] = useState('');
   const [website, setWebsite] = useState(''); // honeypot — odam ko'rmaydi
   const [status, setStatus] = useState('idle'); // idle | sending | done | error
+  // Server chastota chegarasiga urilganda alohida xabar ko'rsatamiz.
+  const [rateLimited, setRateLimited] = useState(false);
   useModalDismiss(status === 'sending' ? null : onClose);
 
   const submit = async (event) => {
     event.preventDefault();
     if (!wanted.trim() || !contact.trim()) return;
     setStatus('sending');
+    setRateLimited(false);
     try {
       await apiCall('submit-lead', { wanted: wanted.trim(), contact: contact.trim(), website });
       setStatus('done');
-    } catch {
+    } catch (err) {
+      setRateLimited(err?.message === 'too_many_requests');
       setStatus('error');
     }
   };
@@ -206,43 +168,39 @@ function LeadModal({ onClose }) {
         className={styles.modal}
         role="dialog"
         aria-modal="true"
-        aria-label="So'rov qoldirish"
+        aria-label={t('landing.lead.cta')}
         onClick={(event) => event.stopPropagation()}
       >
         {status === 'done' ? (
           <>
-            <h3 className={styles.modalTitle}>Qabul qilindi ✓</h3>
-            <p className={styles.modalText}>
-              So&apos;rovingiz yetib bordi — tez orada siz bilan bog&apos;lanamiz.
-            </p>
+            <h3 className={styles.modalTitle}>{t('landing.lead.doneTitle')}</h3>
+            <p className={styles.modalText}>{t('landing.lead.doneText')}</p>
             <button type="button" className={styles.cta} onClick={onClose}>
-              Yopish
+              {t('common.close')}
             </button>
           </>
         ) : (
           <form onSubmit={submit}>
-            <h3 className={styles.modalTitle}>Izlagan obunangiz yo&apos;qmi?</h3>
-            <p className={styles.modalText}>
-              Yozib qoldiring — topib beramiz va narxini aytamiz.
-            </p>
+            <h3 className={styles.modalTitle}>{t('landing.lead.modalTitle')}</h3>
+            <p className={styles.modalText}>{t('landing.lead.modalText')}</p>
             <label className={styles.field}>
-              <span>Qaysi obuna kerak?</span>
+              <span>{t('landing.lead.fieldWanted')}</span>
               <input
                 value={wanted}
                 onChange={(event) => setWanted(event.target.value)}
                 required
                 maxLength={300}
-                placeholder="Masalan: Spotify Premium, 6 oy"
+                placeholder={t('landing.lead.placeholderWanted')}
               />
             </label>
             <label className={styles.field}>
-              <span>Telegram username yoki telefon</span>
+              <span>{t('landing.lead.fieldContact')}</span>
               <input
                 value={contact}
                 onChange={(event) => setContact(event.target.value)}
                 required
                 maxLength={120}
-                placeholder={`@username yoki +998 90 123 45 67`}
+                placeholder={t('landing.lead.placeholderContact')}
               />
             </label>
             <input
@@ -257,11 +215,17 @@ function LeadModal({ onClose }) {
             />
             {status === 'error' && (
               <p className={styles.formError}>
-                Yuborib bo&apos;lmadi — qayta urinib ko&apos;ring yoki{' '}
-                <a href={`https://t.me/${SUPPORT}`} target="_blank" rel="noopener noreferrer">
-                  @{SUPPORT}
-                </a>{' '}
-                ga yozing.
+                {rateLimited ? (
+                  t('landing.lead.tooMany')
+                ) : (
+                  <>
+                    {t('landing.lead.errorBefore')}
+                    <a href={`https://t.me/${SUPPORT}`} target="_blank" rel="noopener noreferrer">
+                      @{SUPPORT}
+                    </a>
+                    {t('landing.lead.errorAfter')}
+                  </>
+                )}
               </p>
             )}
             <div className={styles.modalActions}>
@@ -271,10 +235,10 @@ function LeadModal({ onClose }) {
                 onClick={onClose}
                 disabled={status === 'sending'}
               >
-                Bekor qilish
+                {t('common.cancel')}
               </button>
               <button type="submit" className={styles.cta} disabled={status === 'sending'}>
-                {status === 'sending' ? 'Yuborilmoqda…' : 'Yuborish'}
+                {status === 'sending' ? t('landing.lead.sending') : t('landing.lead.submit')}
               </button>
             </div>
           </form>
@@ -286,6 +250,7 @@ function LeadModal({ onClose }) {
 
 export default function Landing() {
   const navigate = useNavigate();
+  const { t } = useI18n();
   // Keshdan boshlaymiz — birinchi chizishda bo'sh joy ko'rinmaydi.
   const [data, setData] = useState(() => readCache() || { products: [], categories: [] });
   const [loaded, setLoaded] = useState(() => Boolean(readCache()));
@@ -296,12 +261,17 @@ export default function Landing() {
   useReveal([products.length]);
 
   usePageMeta({
-    title: 'santyx — hamyonbop premium obunalar',
-    description:
-      'CapCut, Canva, Adobe, Gemini AI va boshqa premium obunalar hamyonbop narxlarda. To‘liq kafolat, 10–15 daqiqada yetkazib berish.',
+    title: t('landing.meta.title'),
+    description: t('landing.meta.description'),
     path: '/',
   });
   const closeLead = useCallback(() => setLeadOpen(false), []);
+
+  // Ro'yxatlar joriy tildan olinadi (t() massiv qaytaradi).
+  const steps = t('landing.how.steps');
+  const advantages = t('landing.why.items');
+  const perks = t('landing.perks.items');
+  const faq = t('landing.faq.items');
 
   useEffect(() => {
     let active = true;
@@ -349,7 +319,7 @@ export default function Landing() {
   return (
     <div className={styles.page}>
       <StructuredData id="ld-org" data={ORG_SCHEMA} />
-      <StructuredData id="ld-faq" data={FAQ_SCHEMA} />
+      <StructuredData id="ld-faq" data={buildFaqSchema(faq)} />
       {/* Sahifa orqa foni — neyron tarmoq rasmi, tema rangidagi parda bilan */}
       <div className={styles.pageBg} aria-hidden="true" />
       <header className={styles.header}>
@@ -357,8 +327,9 @@ export default function Landing() {
           <BrandLogo className={styles.brandLogo} title="SANTYX" />
         </div>
         <div className={styles.headerActions}>
+          <LangPicker />
           <button type="button" className={styles.loginBtn} onClick={goToApp}>
-            Kirish
+            {t('landing.nav.login')}
           </button>
         </div>
       </header>
@@ -367,29 +338,25 @@ export default function Landing() {
         <div className={styles.heroGlow} aria-hidden="true" />
         <div className={styles.heroInner}>
           <h1 className={styles.heroTitle}>
-            Premium obunalar —<br />
-            <span className={styles.accent}>hamyonbop narxlarda</span>
+            {t('landing.hero.titleLine')}
+            <br />
+            <span className={styles.accent}>{t('landing.hero.titleAccent')}</span>
           </h1>
-          <p className={styles.heroText}>
-            CapCut, Canva, Adobe, Gemini AI va boshqa professional xizmatlar. Rasmiy obuna, to‘liq
-            kafolat, 10–15 daqiqada yetkazib beriladi.
-          </p>
+          <p className={styles.heroText}>{t('landing.hero.text')}</p>
           <div className={styles.heroActions}>
             <button type="button" className={styles.cta} onClick={goToApp}>
-              Obunalarni ko‘rish
+              {t('landing.hero.ctaPrimary')}
             </button>
             <button type="button" className={styles.ctaGhost} onClick={scrollToProducts}>
-              Narxlar
+              {t('landing.hero.ctaSecondary')}
             </button>
           </div>
           <ul className={styles.trust}>
-            <li>Kafolatlangan</li>
-            <li>10–15 daqiqa</li>
-            <li>12/7 yordam</li>
+            <li>{t('landing.hero.trustGuaranteed')}</li>
+            <li>{t('landing.hero.trustFast')}</li>
+            <li>{t('landing.hero.trustSupport')}</li>
             {avgRating && (
-              <li>
-                {avgRating} / 5 — {reviewStats.count} ta sharh
-              </li>
+              <li>{t('landing.hero.trustRating', { avg: avgRating, count: reviewStats.count })}</li>
             )}
           </ul>
         </div>
@@ -398,7 +365,7 @@ export default function Landing() {
       {/* Qaysi xizmatlar borligi darhol ko'rinsin — tashrifchi qidirib yurmasin */}
       {categories.length > 0 && (
         <section className={styles.section}>
-          <h2 className={`${styles.sectionTitle} ${styles.reveal}`}>Qanday obunalar bor</h2>
+          <h2 className={`${styles.sectionTitle} ${styles.reveal}`}>{t('landing.categories.title')}</h2>
           <div className={`${styles.chipRow} ${styles.reveal}`}>
             {categories.map((c) => (
               <span className={styles.chip} key={c.id}>
@@ -410,7 +377,7 @@ export default function Landing() {
       )}
 
       <section className={styles.section} ref={productsRef}>
-        <h2 className={`${styles.sectionTitle} ${styles.reveal}`}>Mashhur obunalar</h2>
+        <h2 className={`${styles.sectionTitle} ${styles.reveal}`}>{t('landing.popular.title')}</h2>
         <div className={styles.grid}>
           {products.length
             ? products.map((p) => <ProductCard key={p.id} p={p} />)
@@ -420,20 +387,22 @@ export default function Landing() {
         </div>
         {loaded && !products.length && (
           <p className={styles.muted}>
-            Obunalar ro‘yxatini <a href={BOT_URL}>botda</a> ko‘rishingiz mumkin.
+            {t('landing.popular.emptyBefore')}
+            <a href={BOT_URL}>{t('landing.popular.emptyLink')}</a>
+            {t('landing.popular.emptyAfter')}
           </p>
         )}
       </section>
 
       <section className={styles.section}>
-        <h2 className={`${styles.sectionTitle} ${styles.reveal}`}>Qanday ishlaydi</h2>
+        <h2 className={`${styles.sectionTitle} ${styles.reveal}`}>{t('landing.how.title')}</h2>
         <div className={`${styles.steps} ${styles.reveal}`}>
-          {STEPS.map((s) => (
-            <div className={styles.step} key={s.n}>
-              <div className={styles.stepNum}>{s.n}</div>
+          {steps.map((step, i) => (
+            <div className={styles.step} key={step.title}>
+              <div className={styles.stepNum}>{i + 1}</div>
               <div>
-                <div className={styles.featureTitle}>{s.title}</div>
-                <div className={styles.featureText}>{s.text}</div>
+                <div className={styles.featureTitle}>{step.title}</div>
+                <div className={styles.featureText}>{step.text}</div>
               </div>
             </div>
           ))}
@@ -441,52 +410,48 @@ export default function Landing() {
       </section>
 
       <section className={styles.section}>
-        <h2 className={`${styles.sectionTitle} ${styles.reveal}`}>Nega biz?</h2>
+        <h2 className={`${styles.sectionTitle} ${styles.reveal}`}>{t('landing.why.title')}</h2>
         <div className={`${styles.features} ${styles.reveal}`}>
-          {ADVANTAGES.map((a) => (
-            <div className={styles.feature} key={a.title}>
-              <div className={styles.featureTitle}>{a.title}</div>
-              <div className={styles.featureText}>{a.text}</div>
+          {advantages.map((item) => (
+            <div className={styles.feature} key={item.title}>
+              <div className={styles.featureTitle}>{item.title}</div>
+              <div className={styles.featureText}>{item.text}</div>
             </div>
           ))}
         </div>
       </section>
 
       <section className={styles.section}>
-        <h2 className={`${styles.sectionTitle} ${styles.reveal}`}>Yana nimalar bor</h2>
+        <h2 className={`${styles.sectionTitle} ${styles.reveal}`}>{t('landing.perks.title')}</h2>
         <div className={`${styles.features} ${styles.reveal}`}>
-          {PERKS.map((p) => (
-            <div className={styles.feature} key={p.title}>
-              <div className={styles.featureTitle}>{p.title}</div>
-              <div className={styles.featureText}>{p.text}</div>
+          {perks.map((item) => (
+            <div className={styles.feature} key={item.title}>
+              <div className={styles.featureTitle}>{item.title}</div>
+              <div className={styles.featureText}>{item.text}</div>
             </div>
           ))}
         </div>
       </section>
 
       <section className={`${styles.section} ${styles.reveal}`}>
-        <h2 className={styles.sectionTitle}>Vakansiya e&apos;lonlari</h2>
-        <p className={styles.heroText}>
-          Endi bot ichida ishchi qidirish yoki o&apos;z xizmatingizni taklif qilish uchun e&apos;lon
-          joylash mumkin — butunlay tekin. Ro&apos;yxatdan o&apos;ting va e&apos;loningizni bir necha
-          daqiqada chop eting.
-        </p>
+        <h2 className={styles.sectionTitle}>{t('landing.vacancy.title')}</h2>
+        <p className={styles.heroText}>{t('landing.vacancy.text')}</p>
         <div className={styles.heroActions}>
           <button
             type="button"
             className={styles.cta}
             onClick={() => window.open(BOT_URL, '_blank', 'noopener')}
           >
-            Vakansiyalarni ko&apos;rish
+            {t('landing.vacancy.cta')}
           </button>
         </div>
       </section>
 
       {/* FAQ — native <details>, JS talab qilmaydi */}
       <section className={styles.section}>
-        <h2 className={`${styles.sectionTitle} ${styles.reveal}`}>Ko&apos;p so&apos;raladigan savollar</h2>
+        <h2 className={`${styles.sectionTitle} ${styles.reveal}`}>{t('landing.faq.title')}</h2>
         <div className={`${styles.faq} ${styles.reveal}`}>
-          {FAQ.map((item) => (
+          {faq.map((item) => (
             <details className={styles.faqItem} key={item.q}>
               <summary className={styles.faqQ}>{item.q}</summary>
               <p className={styles.faqA}>{item.a}</p>
@@ -496,22 +461,19 @@ export default function Landing() {
       </section>
 
       <section className={`${styles.finalCta} ${styles.reveal}`}>
-        <h2 className={styles.finalTitle}>Bugun boshlang</h2>
-        <p className={styles.finalText}>Obunani tanlang — bir necha daqiqada tayyor bo‘ladi.</p>
+        <h2 className={styles.finalTitle}>{t('landing.finalCta.title')}</h2>
+        <p className={styles.finalText}>{t('landing.finalCta.text')}</p>
         <button type="button" className={styles.cta} onClick={goToApp}>
-          Katalogga o‘tish
+          {t('landing.finalCta.cta')}
         </button>
       </section>
 
       {/* Lead yig'ish — katalogda topilmagan obunalar uchun so'rov */}
       <section className={`${styles.leadCta} ${styles.reveal}`}>
-        <h2 className={styles.finalTitle}>Izlagan obunangiz yo&apos;qmi?</h2>
-        <p className={styles.finalText}>
-          Katalogda topolmadingizmi? Qaysi xizmat kerakligini yozib qoldiring — topib beramiz va
-          narxini aytamiz.
-        </p>
+        <h2 className={styles.finalTitle}>{t('landing.lead.title')}</h2>
+        <p className={styles.finalText}>{t('landing.lead.text')}</p>
         <button type="button" className={styles.cta} onClick={() => setLeadOpen(true)}>
-          So&apos;rov qoldirish
+          {t('landing.lead.cta')}
         </button>
       </section>
 
@@ -523,18 +485,18 @@ export default function Landing() {
         </div>
         <div className={styles.footerLinks}>
           <a href={CHANNEL_URL} target="_blank" rel="noopener noreferrer">
-            Telegram kanal
+            {t('landing.footer.channel')}
           </a>
           <a href={`https://t.me/${SUPPORT}`} target="_blank" rel="noopener noreferrer">
             @{SUPPORT}
           </a>
           <a href={INSTAGRAM_URL} target="_blank" rel="noopener noreferrer">
-            Instagram
+            {t('landing.footer.instagram')}
           </a>
-          <Link to="/maxfiylik">Maxfiylik siyosati</Link>
-          <Link to="/shartlar">Foydalanish shartlari</Link>
+          <Link to="/maxfiylik">{t('landing.footer.privacy')}</Link>
+          <Link to="/shartlar">{t('landing.footer.terms')}</Link>
         </div>
-        <div className={styles.copyright}>© 2026 Santyx Pro</div>
+        <div className={styles.copyright}>{t('landing.footer.copyright')}</div>
       </footer>
     </div>
   );

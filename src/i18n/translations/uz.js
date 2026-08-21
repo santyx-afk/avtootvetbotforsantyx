@@ -285,4 +285,128 @@ export default {
   terms: {
     link: 'Foydalanish shartlari',
   },
+  // ---- Landing (santyx.uz bosh sahifasi) ----
+  landing: {
+    meta: {
+      title: 'santyx — hamyonbop premium obunalar',
+      description:
+        'CapCut, Canva, Adobe, Gemini AI va boshqa premium obunalar hamyonbop narxlarda. To‘liq kafolat, 10–15 daqiqada yetkazib berish.',
+    },
+    nav: { login: 'Kirish' },
+    hero: {
+      titleLine: 'Premium obunalar —',
+      titleAccent: 'hamyonbop narxlarda',
+      text:
+        'CapCut, Canva, Adobe, Gemini AI va boshqa professional xizmatlar. Rasmiy obuna, to‘liq kafolat, 10–15 daqiqada yetkazib beriladi.',
+      ctaPrimary: 'Obunalarni ko‘rish',
+      ctaSecondary: 'Narxlar',
+      trustGuaranteed: 'Kafolatlangan',
+      trustFast: '10–15 daqiqa',
+      trustSupport: '12/7 yordam',
+      trustRating: '{avg} / 5 — {count} ta sharh',
+    },
+    categories: { title: 'Qanday obunalar bor' },
+    popular: {
+      title: 'Mashhur obunalar',
+      emptyBefore: 'Obunalar ro‘yxatini ',
+      emptyLink: 'botda',
+      emptyAfter: ' ko‘rishingiz mumkin.',
+    },
+    how: {
+      title: 'Qanday ishlaydi',
+      steps: [
+        { title: 'Obunani tanlang', text: 'Katalogdan kerakli xizmatni toping.' },
+        { title: 'To‘lovni amalga oshiring', text: 'Karta orqali — to‘lov avtomatik aniqlanadi.' },
+        { title: 'Foydalanishni boshlang', text: 'Kirish ma’lumotlari bir necha daqiqada keladi.' },
+      ],
+    },
+    why: {
+      title: 'Nega biz?',
+      items: [
+        { title: 'To‘liq kafolat', text: 'Har bir obuna kafolatlanadi — muammo bo‘lsa almashtiramiz.' },
+        { title: 'Tezkor yetkazish', text: 'To‘lovdan so‘ng 10–15 daqiqada obunangiz tayyor.' },
+        { title: 'Hamyonbop narxlar', text: 'Rasmiy narxdan sezilarli past — sifatdan yon bermaymiz.' },
+        { title: '12/7 qo‘llab-quvvatlash', text: 'Har kuni, kun davomida savollaringizga javob beramiz.' },
+      ],
+    },
+    perks: {
+      title: 'Yana nimalar bor',
+      items: [
+        { title: 'Balans', text: 'Hisobingizni oldindan to‘ldiring va xaridni bir bosishda yakunlang.' },
+        { title: 'Referal dasturi', text: 'Do‘stlaringizni taklif qiling — har bir xaridlari uchun bonus.' },
+        { title: 'Promokodlar', text: 'Chegirma va keshbek olib, keyingi xaridda ishlating.' },
+        { title: 'Obuna nazorati', text: 'Faol obunalaringiz va tugash muddati profilda ko‘rinadi.' },
+      ],
+    },
+    vacancy: {
+      title: 'Vakansiya e’lonlari',
+      text:
+        'Endi bot ichida ishchi qidirish yoki o‘z xizmatingizni taklif qilish uchun e’lon joylash mumkin — butunlay tekin. Ro‘yxatdan o‘ting va e’loningizni bir necha daqiqada chop eting.',
+      cta: 'Vakansiyalarni ko‘rish',
+    },
+    faq: {
+      title: 'Ko‘p so‘raladigan savollar',
+      items: [
+        {
+          q: 'Obuna qanchada yetkaziladi?',
+          a: 'To‘lov tizim tomonidan aniqlangach, odatda 10–15 daqiqa ichida. Kirish ma’lumotlari Telegram orqali yuboriladi.',
+        },
+        {
+          q: 'To‘lovni qanday amalga oshiraman?',
+          a: 'Buyurtma rasmiylashtirilgach sizga karta raqami va aniq summa ko‘rsatiladi. Shu summani o‘tkazasiz — to‘lov avtomatik aniqlanadi, chek yuborish shart emas.',
+        },
+        {
+          q: 'Nega summa butun son emas?',
+          a: 'Har bir buyurtmaga noyob summa beriladi — tizim to‘lovni aynan shu orqali taniydi. Shuning uchun ko‘rsatilgan summani o‘zgartirmasdan o‘tkazish muhim.',
+        },
+        {
+          q: 'Muammo chiqsa nima bo‘ladi?',
+          a: 'Har bir obuna kafolatlanadi. Ishlamasa yoki kafolat muddatidan oldin to‘xtasa — almashtiramiz yoki mablag‘ni qaytaramiz.',
+        },
+        {
+          q: 'Obunani uzaytirsam bo‘ladimi?',
+          a: 'Ha. Muddat tugashiga yaqin sizga eslatma keladi, profilda esa faol obunalaringiz ro‘yxati turadi.',
+        },
+        {
+          q: 'Bu rasmiy obunami?',
+          a: 'Ha, xizmatlar rasmiy obunalar asosida beriladi. Farqi — narx: biz uni sezilarli hamyonbop qilamiz.',
+        },
+        {
+          q: 'Vakansiya e’lonini qanday joylayman?',
+          a: 'Botni oching, “Vakansiya qidirish/joylash” tugmasini bosing, ro‘yxatdan o‘ting va e’loningizni yarating — butunlay tekin.',
+        },
+      ],
+    },
+    finalCta: {
+      title: 'Bugun boshlang',
+      text: 'Obunani tanlang — bir necha daqiqada tayyor bo‘ladi.',
+      cta: 'Katalogga o‘tish',
+    },
+    lead: {
+      title: 'Izlagan obunangiz yo‘qmi?',
+      text:
+        'Katalogda topolmadingizmi? Qaysi xizmat kerakligini yozib qoldiring — topib beramiz va narxini aytamiz.',
+      cta: 'So‘rov qoldirish',
+      modalTitle: 'Izlagan obunangiz yo‘qmi?',
+      modalText: 'Yozib qoldiring — topib beramiz va narxini aytamiz.',
+      fieldWanted: 'Qaysi obuna kerak?',
+      placeholderWanted: 'Masalan: Spotify Premium, 6 oy',
+      fieldContact: 'Telegram username yoki telefon',
+      placeholderContact: '@username yoki +998 90 123 45 67',
+      submit: 'Yuborish',
+      sending: 'Yuborilmoqda…',
+      errorBefore: 'Yuborib bo‘lmadi — qayta urinib ko‘ring yoki ',
+      errorAfter: ' ga yozing.',
+      tooMany: 'Juda ko‘p so‘rov yuborildi. Bir oz kutib, qayta urinib ko‘ring.',
+      doneTitle: 'Qabul qilindi ✓',
+      doneText: 'So‘rovingiz yetib bordi — tez orada siz bilan bog‘lanamiz.',
+    },
+    footer: {
+      channel: 'Telegram kanal',
+      instagram: 'Instagram',
+      privacy: 'Maxfiylik siyosati',
+      terms: 'Foydalanish shartlari',
+      copyright: '© 2026 Santyx Pro',
+    },
+  },
 };
