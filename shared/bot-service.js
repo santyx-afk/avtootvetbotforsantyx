@@ -1,17 +1,8 @@
 const {
   fetchSettings,
-  fetchCategories,
-  fetchPlansByCategory,
   fetchPlan,
-  fetchCategory,
-  createOrder,
-  createCartItem,
   listCartItems,
-  updateCartItemQuantity,
-  removeCartItem,
-  clearCart,
   createCheckoutOrder,
-  expirePendingOrders,
   createAuditLog,
   validatePromoCode,
   getUserBalance,
@@ -36,39 +27,16 @@ const {
 } = require('./telegram');
 const {
   welcomeText,
-  categoriesText,
-  planListText,
-  planDetailText,
-  howItWorksText,
-  paymentText,
   receiptForwardCaption,
   receiptAcceptedText,
   noActiveOrderForReceiptText,
   genericOrderErrorText,
-  paymentInstructionsWithOrderText,
-  cartText,
   autoPaymentInstructionsText,
   balanceText,
   referralText,
   helpText,
 } = require('./messages');
 const { processApprovedDelivery } = require('./delivery-service');
-
-function navButtons(includeMain = true) {
-  const row = [];
-  if (includeMain) row.push({ text: '🏠 Bosh menyu', callback_data: 'nav:home' });
-  row.push({ text: '⬅️ Orqaga', callback_data: 'nav:back' });
-  return [row];
-}
-
-function resolveAdminChatId(settings) {
-  const fromSettings = settings?.admin_telegram_id;
-  const fromIds = (process.env.ADMIN_TELEGRAM_IDS || '')
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean)[0];
-  return fromSettings || process.env.ADMIN_CHAT_ID || process.env.ADMIN_TELEGRAM_ID || fromIds || null;
-}
 
 function resolveAdminChatIds(settings) {
   const ids = [];
@@ -82,10 +50,6 @@ function resolveAdminChatIds(settings) {
 
 function formatAmount(amount, currency = 'UZS') {
   return `${new Intl.NumberFormat('uz-UZ').format(Number(amount || 0))} ${currency}`;
-}
-
-function isSafeOrderId(orderId) {
-  return /^[a-f0-9-]{16,64}$/i.test(String(orderId || ''));
 }
 
 function addPromoUsageText() {
@@ -138,7 +102,7 @@ function parsePromoOptions(tokens = []) {
 // Bosh menyu: inline katalog o'rniga bitta "Mini ilovani ochish" (WebApp) tugmasi.
 const MINI_APP_URL = (process.env.APP_BASE_URL || 'https://santyx.uz').replace(/\/+$/, '');
 
-async function showCategories({ supabase, chatId, messageId, telegramId, asEdit = false }) {
+async function showCategories({ supabase, chatId, messageId, asEdit = false }) {
   const settings = await fetchSettings(supabase);
   const text = `${welcomeText(settings)}\n\n🚀 Barcha obunalarni ko'rish va xarid qilish uchun Mini ilovani oching:`;
   const keyboardRows = [
@@ -149,38 +113,6 @@ async function showCategories({ supabase, chatId, messageId, telegramId, asEdit 
     return editMessage(chatId, messageId, text, inlineKeyboard(keyboardRows));
   }
   return sendMessage(chatId, text, inlineKeyboard(keyboardRows));
-}
-
-async function showPlanOrVariants({ supabase, chatId, messageId, telegramId, planId, asEdit = true }) {
-  const plan = await fetchPlan(supabase, planId);
-  if (!plan) return false;
-
-  const children = await fetchPlansByCategory(supabase, plan.categoryId, plan.id);
-  if (children.length > 0) {
-    const text = `<b>${plan.name}</b>\n\nVariantni tanlang:`;
-    const rows = [
-      ...children.map((child) => [{ text: child.name, callback_data: `plan:${child.id}` }]),
-      [{ text: '⬅️ Orqaga', callback_data: `category:${plan.categoryId}` }],
-    ];
-    if (asEdit && messageId) {
-      await editMessage(chatId, messageId, text, inlineKeyboard(rows));
-    } else {
-      await sendMessage(chatId, text, inlineKeyboard(rows));
-    }
-    return true;
-  }
-
-  const text = planDetailText(plan);
-  const rows = [
-    [{ text: '🛒 Sotib olish', callback_data: `buy:${plan.id}` }],
-    [{ text: '⬅️ Orqaga', callback_data: `category:${plan.categoryId}` }],
-  ];
-  if (asEdit && messageId) {
-    await editMessage(chatId, messageId, text, inlineKeyboard(rows));
-  } else {
-    await sendMessage(chatId, text, inlineKeyboard(rows));
-  }
-  return true;
 }
 
 async function showPayment({ supabase, chatId, telegramId, planId }) {
@@ -257,7 +189,7 @@ async function handleReceipt({ supabase, message }) {
 
   for (const adminId of adminChatIds) {
     try {
-      const forwarded = await copyMessage(adminId, message.chat.id, message.message_id, caption);
+      await copyMessage(adminId, message.chat.id, message.message_id, caption);
       const adminKeyboard = inlineKeyboard([
         [
           { text: '✅ Tasdiqlash', callback_data: `admin:approve:${orderId}` },
@@ -340,7 +272,7 @@ async function handleCallback({ supabase, callbackQuery }) {
 
     // Eski inline katalog oqimi olib tashlandi: har qanday navigatsiya callback'i
     // (nav/category/plan/buy — jumladan eski xabarlardagilar) endi Mini ilova tugmasini ko'rsatadi.
-    await showCategories({ supabase, chatId, messageId, telegramId, asEdit: true });
+    await showCategories({ supabase, chatId, messageId, asEdit: true });
     // Navigatsiya javobini boshida berdik — takroriy 'Bajarildi' shart emas.
   } catch (error) {
     console.error('Callback error', error);
@@ -485,7 +417,8 @@ async function handleStart({ supabase, message }) {
 
   const startPayload = String(message.text || '').split(/\s+/)[1] || '';
 
-  // Brauzer orqali login: foydalanuvchiga 6 xonali tasdiqlash kodini yuboramiz.
+  // Brauzer orqali login: foydalanuvchiga bir martalik tasdiqlash kodini yuboramiz
+  // (uzunligi web-auth-service.js dagi CODE_LENGTH bilan belgilanadi).
   if (startPayload === 'web_login') {
     const { generateWebLoginCode } = require('./web-auth-service');
     tasks.push(
@@ -544,7 +477,7 @@ async function handleStart({ supabase, message }) {
     );
   }
 
-  tasks.push(showCategories({ supabase, chatId: message.chat.id, telegramId: message.from.id, asEdit: false }));
+  tasks.push(showCategories({ supabase, chatId: message.chat.id, asEdit: false }));
   await Promise.all(tasks);
 }
 

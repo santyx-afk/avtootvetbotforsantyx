@@ -99,7 +99,8 @@
 
 .codeBoxes {
   display: flex;
-  gap: 8px;
+  /* 8 ta katak tor telefon ekraniga ham sig'sin */
+  gap: clamp(4px, 1.6vw, 8px);
   justify-content: space-between;
   margin-bottom: 4px;
 }
@@ -112,7 +113,7 @@
   border: 1.5px solid var(--app-separator);
   background: var(--app-surface-2);
   color: var(--app-text);
-  font-size: 24px;
+  font-size: clamp(17px, 5.2vw, 24px);
   text-align: center;
   font-weight: 700;
 }

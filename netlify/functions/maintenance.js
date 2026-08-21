@@ -1,7 +1,10 @@
 const { getAdminClient } = require('../../shared/db');
 const { runMaintenance } = require('../../shared/maintenance-service');
 
-exports.config = { schedule: '* * * * *' };
+// Har 5 daqiqada. Ilgari har daqiqada ishlardi — oyiga ~43 200 chaqiruv,
+// ya'ni Netlify bepul rejasidagi limitning uchdan biri, ustiga har safar
+// bir necha Supabase so'rovi. Yetkazib berishdagi kechikish sezilmaydi.
+exports.config = { schedule: '*/5 * * * *' };
 
 exports.handler = async () => {
   const supabase = getAdminClient();

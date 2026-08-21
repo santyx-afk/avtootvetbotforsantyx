@@ -32,7 +32,7 @@ async function buildRenewalOfferLine(supabase) {
   }
 }
 
-module.exports.handler = schedule('0 9 * * *', async (event) => {
+module.exports.handler = schedule('0 9 * * *', async () => {
   console.log('Running scheduled daily reminder task...');
   try {
     const supabase = getAdminClient();
@@ -144,6 +144,7 @@ module.exports.handler = schedule('0 9 * * *', async (event) => {
     return { statusCode: 200, body: JSON.stringify({ message: 'Daily reminder processed' }) };
   } catch (error) {
     console.error('Scheduled task error:', error);
-    return { statusCode: 500, body: JSON.stringify({ error: error.message }) };
+    console.error('subscription-reminder error', error);
+    return { statusCode: 500, body: JSON.stringify({ error: 'server_error' }) };
   }
 });

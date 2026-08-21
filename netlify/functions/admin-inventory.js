@@ -70,6 +70,7 @@ exports.handler = async (event) => {
     }
     return json(405, { ok: false, error: 'Method not allowed' });
   } catch (error) {
+    console.error('admin-inventory error', error);
     return json(500, { ok: false, error: 'Server xatosi yoki encryption key sozlanmagan' });
   }
 };

@@ -70,8 +70,14 @@ function b64urlDecode(str) {
   return Buffer.from(String(str).replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString();
 }
 
+// JWT imzo kaliti. 'dev-secret' zaxira qiymati olib tashlandi: repozitoriy ochiq,
+// ya'ni uni bilgan har kim istalgan foydalanuvchi nomidan token yasay olardi.
+// WEB_JWT_SECRET bo'lmasa bot tokeni ishlatiladi (u ham maxfiy), ikkalasi ham
+// yo'q bo'lsa token yaratish/tekshirish umuman ishlamaydi.
 function jwtSecret() {
-  return getEnv('WEB_JWT_SECRET') || getEnv('TELEGRAM_BOT_TOKEN') || 'dev-secret';
+  const secret = getEnv('WEB_JWT_SECRET') || getEnv('TELEGRAM_BOT_TOKEN');
+  if (!secret) throw new Error('WEB_JWT_SECRET yoki TELEGRAM_BOT_TOKEN o‘rnatilmagan');
+  return secret;
 }
 
 // 30 kunlik JWT imzolaydi.
@@ -89,7 +95,13 @@ function verifyJwt(token) {
   const parts = token.split('.');
   if (parts.length !== 3) return { ok: false, reason: 'malformed' };
   const [h, p, s] = parts;
-  const expected = b64url(crypto.createHmac('sha256', jwtSecret()).update(`${h}.${p}`).digest());
+  let expected;
+  try {
+    expected = b64url(crypto.createHmac('sha256', jwtSecret()).update(`${h}.${p}`).digest());
+  } catch (error) {
+    console.error('JWT tekshirilmadi:', error.message);
+    return { ok: false, reason: 'no_secret' };
+  }
   const a = Buffer.from(s);
   const b = Buffer.from(expected);
   if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return { ok: false, reason: 'bad_signature' };

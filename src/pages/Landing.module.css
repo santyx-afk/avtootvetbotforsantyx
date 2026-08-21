@@ -10,7 +10,25 @@
   position: fixed;
   inset: 0;
   z-index: -1;
-  background: #0b0f16 url('/bg-neural.jpg') center / cover no-repeat;
+  /* image-set: brauzer o'zi qo'llab-quvvatlaydigan eng yengil formatni oladi.
+     AVIF ~69 KB, WebP ~154 KB, JPEG ~282 KB — rasm 78% qorong'i parda ostida
+     turgani uchun kuchli siqish ko'zga tashlanmaydi. */
+  background-color: #0b0f16;
+  background-image: image-set(
+    url('/bg-neural.avif') type('image/avif'),
+    url('/bg-neural.webp') type('image/webp'),
+    url('/bg-neural.jpg') type('image/jpeg')
+  );
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+}
+/* image-set'ni tanimaydigan eski brauzerlar uchun (qoida undan OLDIN emas,
+   KEYIN kelsa yangi brauzerda ustun bo'lib qolardi — shuning uchun @supports). */
+@supports not (background-image: image-set(url('/bg-neural.avif') type('image/avif'))) {
+  .pageBg {
+    background-image: url('/bg-neural.jpg');
+  }
 }
 .pageBg::after {
   content: '';

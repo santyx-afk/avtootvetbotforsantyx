@@ -39,7 +39,7 @@ export default class ErrorBoundary extends Component {
         <div style={{ fontSize: '40px' }}>⚠️</div>
         <h3 style={{ fontSize: '18px', fontWeight: 600 }}>Xatolik yuz berdi</h3>
         <p style={{ fontSize: '14px', color: 'var(--app-hint)', maxWidth: 300 }}>
-          Ilovani qayta yuklang. Muammo davom etsa, birozdan so'ng urinib ko'ring.
+          Ilovani qayta yuklang. Muammo davom etsa, birozdan so&apos;ng urinib ko&apos;ring.
         </p>
         <button
           type="button"

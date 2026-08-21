@@ -24,6 +24,9 @@ jobs:
       - name: Sintaksis tekshiruvi
         run: npm run check
 
+      - name: Lint
+        run: npm run lint
+
       - name: Testlar
         run: npm test
 

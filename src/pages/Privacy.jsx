@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import usePageMeta from '../hooks/usePageMeta.js';
 import styles from './Privacy.module.css';
 
 const SUPPORT = (import.meta.env.VITE_SUPPORT_USERNAME || 'santyx').replace(/^@/, '');
@@ -12,13 +13,14 @@ const UPDATED = '13.08.2026';
 // Mazmun kodda haqiqatda yig'iladigan ma'lumotlarga asoslangan; yangi maydon
 // yoki yangi uchinchi tomon xizmati qo'shilsa, shu sahifa ham yangilanishi shart.
 export default function Privacy() {
+  usePageMeta({
+    title: 'Maxfiylik siyosati — santyx',
+    description: 'Santyx qanday ma’lumotlarni yig‘adi, nima uchun ishlatadi va ularni qanday saqlaydi.',
+    path: '/maxfiylik',
+  });
+
   useEffect(() => {
-    const prevTitle = document.title;
-    document.title = 'Maxfiylik siyosati — santyx';
     window.scrollTo(0, 0);
-    return () => {
-      document.title = prevTitle;
-    };
   }, []);
 
   return (

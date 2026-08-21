@@ -325,3 +325,6 @@ Mini App (React + Vite)
 | 5 | Tarix va Wishlist | Beshinchi |
 | 6 | Admin Panel | Oltinchi |
 | 7 | Polish va Deploy | Oxirgi |
+
+> **Arxiv.** Bu reja 2026-yil iyulda yozilgan va bajarilib bo'lgan.
+> Joriy holat uchun README.md ga qarang.

@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import usePageMeta from '../hooks/usePageMeta.js';
 import styles from './Privacy.module.css';
 
 const SUPPORT = (import.meta.env.VITE_SUPPORT_USERNAME || 'santyx').replace(/^@/, '');
@@ -13,13 +14,14 @@ const UPDATED = '16.08.2026';
 // mavjud haqiqiy xatti-harakatiga asoslangan; jarayon o'zgarsa sahifa ham
 // yangilanishi shart.
 export default function Terms() {
+  usePageMeta({
+    title: 'Foydalanish shartlari — santyx',
+    description: 'Santyx xizmatidan foydalanish shartlari: buyurtma, to‘lov, kafolat va qaytarish qoidalari.',
+    path: '/shartlar',
+  });
+
   useEffect(() => {
-    const prevTitle = document.title;
-    document.title = 'Foydalanish shartlari — santyx';
     window.scrollTo(0, 0);
-    return () => {
-      document.title = prevTitle;
-    };
   }, []);
 
   return (

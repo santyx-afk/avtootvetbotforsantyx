@@ -55,7 +55,7 @@ export default function TopUp() {
       const res = await apiCall('topup', { amount: base });
       setOrder(res);
       setPhase('payment');
-    } catch (e) {
+    } catch {
       haptic.notification('error');
       setPlacing(false);
     }

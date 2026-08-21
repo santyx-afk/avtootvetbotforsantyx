@@ -35,6 +35,7 @@ exports.handler = async (event) => {
 
     return json(405, { ok: false, error: 'Method not allowed' });
   } catch (error) {
+    console.error('admin-leads error', error);
     // Eng ehtimoliy sabab: leads jadvali hali yaratilmagan (migratsiya qo'llanmagan)
     return json(500, { ok: false, error: 'Server xatosi — leads jadvali yaratilganini tekshiring (migrations/2026-08-17_leads.sql)' });
   }

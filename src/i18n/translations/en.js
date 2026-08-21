@@ -285,4 +285,128 @@ export default {
   terms: {
     link: 'Terms of use',
   },
+  // ---- Landing page (santyx.uz home) ----
+  landing: {
+    meta: {
+      title: 'santyx — premium subscriptions at affordable prices',
+      description:
+        'CapCut, Canva, Adobe, Gemini AI and other premium subscriptions at affordable prices. Full warranty, delivered in 10–15 minutes.',
+    },
+    nav: { login: 'Sign in' },
+    hero: {
+      titleLine: 'Premium subscriptions —',
+      titleAccent: 'at affordable prices',
+      text:
+        'CapCut, Canva, Adobe, Gemini AI and other professional services. Official subscriptions, full warranty, delivered in 10–15 minutes.',
+      ctaPrimary: 'Browse subscriptions',
+      ctaSecondary: 'Prices',
+      trustGuaranteed: 'Guaranteed',
+      trustFast: '10–15 minutes',
+      trustSupport: '12/7 support',
+      trustRating: '{avg} / 5 — {count} reviews',
+    },
+    categories: { title: 'What we offer' },
+    popular: {
+      title: 'Popular subscriptions',
+      emptyBefore: 'You can see the full list ',
+      emptyLink: 'in the bot',
+      emptyAfter: '.',
+    },
+    how: {
+      title: 'How it works',
+      steps: [
+        { title: 'Pick a subscription', text: 'Find the service you need in the catalog.' },
+        { title: 'Make the payment', text: 'By card — the payment is detected automatically.' },
+        { title: 'Start using it', text: 'Login details arrive within a few minutes.' },
+      ],
+    },
+    why: {
+      title: 'Why us?',
+      items: [
+        { title: 'Full warranty', text: 'Every subscription is covered — if anything breaks, we replace it.' },
+        { title: 'Fast delivery', text: 'Your subscription is ready 10–15 minutes after payment.' },
+        { title: 'Affordable prices', text: 'Well below the official price — without cutting quality.' },
+        { title: '12/7 support', text: 'We answer your questions every day, throughout the day.' },
+      ],
+    },
+    perks: {
+      title: 'What else you get',
+      items: [
+        { title: 'Balance', text: 'Top up in advance and finish a purchase in one tap.' },
+        { title: 'Referral program', text: 'Invite friends — earn a bonus on every purchase they make.' },
+        { title: 'Promo codes', text: 'Get discounts and cashback to spend on your next order.' },
+        { title: 'Subscription tracking', text: 'Active subscriptions and expiry dates are shown in your profile.' },
+      ],
+    },
+    vacancy: {
+      title: 'Job listings',
+      text:
+        'You can now find a freelancer or post your own services inside the bot — completely free. Sign up and publish your listing in a couple of minutes.',
+      cta: 'Browse listings',
+    },
+    faq: {
+      title: 'Frequently asked questions',
+      items: [
+        {
+          q: 'How fast is the subscription delivered?',
+          a: 'Usually within 10–15 minutes after the system detects your payment. Login details are sent via Telegram.',
+        },
+        {
+          q: 'How do I pay?',
+          a: 'Once your order is placed you get a card number and an exact amount. Transfer that amount — the payment is detected automatically, no receipt needed.',
+        },
+        {
+          q: 'Why is the amount not a round number?',
+          a: 'Each order gets a unique amount — that is how the system recognizes your payment. So transfer the shown amount exactly, without changing it.',
+        },
+        {
+          q: 'What if something goes wrong?',
+          a: 'Every subscription is covered. If it stops working or ends before the warranty expires, we replace it or refund you.',
+        },
+        {
+          q: 'Can I extend a subscription?',
+          a: 'Yes. You get a reminder as the expiry date approaches, and your active subscriptions are always listed in your profile.',
+        },
+        {
+          q: 'Are these official subscriptions?',
+          a: 'Yes, the services are based on official subscriptions. The only difference is the price — we make it considerably more affordable.',
+        },
+        {
+          q: 'How do I post a job listing?',
+          a: 'Open the bot, tap the vacancies button, sign up and create your listing — completely free.',
+        },
+      ],
+    },
+    finalCta: {
+      title: 'Get started today',
+      text: 'Pick a subscription — it will be ready in a few minutes.',
+      cta: 'Go to the catalog',
+    },
+    lead: {
+      title: 'Cannot find the subscription you need?',
+      text:
+        'Not in the catalog? Tell us which service you need — we will find it and quote you a price.',
+      cta: 'Send a request',
+      modalTitle: 'Cannot find the subscription you need?',
+      modalText: 'Tell us — we will find it and quote you a price.',
+      fieldWanted: 'Which subscription do you need?',
+      placeholderWanted: 'For example: Spotify Premium, 6 months',
+      fieldContact: 'Telegram username or phone',
+      placeholderContact: '@username or +998 90 123 45 67',
+      submit: 'Send',
+      sending: 'Sending…',
+      errorBefore: 'Could not send — try again or message ',
+      errorAfter: '.',
+      tooMany: 'Too many requests. Please wait a moment and try again.',
+      doneTitle: 'Received ✓',
+      doneText: 'We got your request — we will get in touch shortly.',
+    },
+    footer: {
+      channel: 'Telegram channel',
+      instagram: 'Instagram',
+      privacy: 'Privacy policy',
+      terms: 'Terms of use',
+      copyright: '© 2026 Santyx Pro',
+    },
+  },
 };

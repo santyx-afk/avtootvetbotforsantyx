@@ -1,5 +1,5 @@
 const { requireAdmin } = require('../../shared/auth');
-const { getAdminClient, request, toQuery, insertRow, updateRow, deleteRow } = require('../../shared/db');
+const { getAdminClient, request, insertRow, updateRow, deleteRow } = require('../../shared/db');
 
 function json(sc, body) { return { statusCode: sc, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }; }
 
@@ -45,6 +45,7 @@ exports.handler = async (event) => {
     }
     return json(405, { ok: false });
   } catch (err) {
-    return json(500, { ok: false, error: err.message });
+    console.error('admin-faq error', err);
+    return json(500, { ok: false, error: 'server_error' });
   }
 };

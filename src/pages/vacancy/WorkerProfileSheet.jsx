@@ -43,7 +43,7 @@ async function copyText(text) {
 
 // Ishchining ochiq profili — e'lonlari, ish vaqti, bog'lanish va portfolio.
 // Mijoz e'lon egasi bilan to'g'ridan-to'g'ri bog'lanadi: "Bog'lanish" tugmasi
-// uning Telegram profilini (username yoki ID orqali) ochadi, telefon esa
+// uning Telegram profilini (username orqali) ochadi, telefon esa
 // ishchi ruxsat berganda ko'rinadi. Portfolio havolalari alohida bo'limda.
 // `highlightListingId` — katalogda bosilgan e'lon, ro'yxatda ajratib ko'rsatiladi.
 export default function WorkerProfileSheet({ workerId, highlightListingId, onClose }) {
@@ -78,17 +78,21 @@ export default function WorkerProfileSheet({ workerId, highlightListingId, onClo
   const hasSchedule = DAYS.some(([key]) => schedule[key]?.from);
   const categories = worker?.categories || [];
 
-  // "Bog'lanish" — e'lon egasining (ishchining) Telegram profilini ochadi:
-  // username bo'lsa t.me havolasi orqali, bo'lmasa ID orqali (tg://user?id=...).
+  // "Bog'lanish" — e'lon egasining Telegram profilini t.me havolasi orqali ochadi.
+  //
+  // Ilgari username bo'lmaganda `tg://user?id=` zaxira yo'li ishlatilardi, lekin
+  // Telegram uni faqat ayrim holatlarda ochadi: ko'p qurilmada tugma bosilganda
+  // hech nima bo'lmasdi. Endi username yo'q bo'lsa tugma umuman ko'rsatilmaydi
+  // — uning o'rniga telefon yoki tushuntirish matni chiqadi.
+  const telegramUsername = worker?.telegram_username
+    ? String(worker.telegram_username).replace(/^@/, '')
+    : null;
+
   const openWorkerTelegram = useCallback(() => {
-    if (!worker) return;
+    if (!telegramUsername) return;
     haptic.impact('light');
-    if (worker.telegram_username) {
-      openTelegramLink(`https://t.me/${String(worker.telegram_username).replace(/^@/, '')}`);
-    } else if (worker.user_id) {
-      window.location.href = `tg://user?id=${worker.user_id}`;
-    }
-  }, [worker]);
+    openTelegramLink(`https://t.me/${telegramUsername}`);
+  }, [telegramUsername]);
 
   return (
     <div className={styles.modalOverlay} onClick={onClose}>
@@ -135,9 +139,11 @@ export default function WorkerProfileSheet({ workerId, highlightListingId, onClo
             {/* Xizmat bepul: mijoz e'lon egasi bilan to'g'ridan-to'g'ri bog'lanadi */}
             <div className={styles.sheetBlock}>
               <div className={styles.sheetBlockTitle}>Bog&apos;lanish</div>
-              <button type="button" className={styles.btnPrimary} onClick={openWorkerTelegram}>
-                Telegram orqali bog&apos;lanish
-              </button>
+              {telegramUsername && (
+                <button type="button" className={styles.btnPrimary} onClick={openWorkerTelegram}>
+                  Telegram orqali bog&apos;lanish
+                </button>
+              )}
               {worker.phone ? (
                 <div className={styles.contactRow}>
                   <a className={styles.contactLink} href={`tel:${worker.phone.replace(/\s/g, '')}`}>
@@ -152,6 +158,12 @@ export default function WorkerProfileSheet({ workerId, highlightListingId, onClo
                   </button>
                 </div>
               ) : null}
+              {!telegramUsername && !worker.phone && (
+                <p className={styles.miniListingDesc}>
+                  Ishchi bog&apos;lanish ma&apos;lumotini ko&apos;rsatmagan. Uning e&apos;loni ostidagi
+                  portfolio havolalari orqali urinib ko&apos;ring.
+                </p>
+              )}
             </div>
 
             {/* Portfolio havolalari — bog'lanishdan alohida bo'lim */}

@@ -28,6 +28,7 @@ const {
 } = require('../../shared/delivery-service');
 const { authenticate, signJwt } = require('../../shared/webapp-auth');
 const { verifyWebLoginCode } = require('../../shared/web-auth-service');
+const rateLimit = require('../../shared/rate-limit');
 const { sendMessage } = require('../../shared/telegram');
 const { escapeHtml } = require('../../shared/messages');
 
@@ -82,10 +83,10 @@ async function collectDeliveries(supabase, orderId) {
 // Mini App (React) uchun asosiy API.
 // Har bir so'rov Telegram initData (X-Telegram-Init-Data header) bilan tasdiqlanadi.
 
-function json(statusCode, body) {
+function json(statusCode, body, extraHeaders = {}) {
   return {
     statusCode,
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...extraHeaders },
     body: JSON.stringify(body),
   };
 }
@@ -257,9 +258,28 @@ exports.handler = async (event) => {
     }
   }
   if (body.action === 'verify-web-code') {
+    // Kod taxmin qilishga qarshi chegara: bir IP dan 10 daqiqada 10 ta urinish,
+    // oshib ketsa 30 daqiqaga blok. Kodning o'zi ham 8 xonali (90 mln variant).
+    const ip = rateLimit.clientIp(event.headers);
+    const gate = await rateLimit.hit(supabase, {
+      scope: 'web_code',
+      key: ip,
+      limit: 10,
+      windowSeconds: 600,
+      blockSeconds: 1800,
+    });
+    if (!gate.allowed) {
+      return json(
+        429,
+        { ok: false, error: 'too_many_attempts', retry_after: gate.retryAfter },
+        { 'Retry-After': String(gate.retryAfter) },
+      );
+    }
     try {
       const result = await verifyWebLoginCode(supabase, body.code);
       if (!result.ok) return json(400, { ok: false, error: result.reason });
+      // To'g'ri kod — hisoblagichni tozalaymiz, halol foydalanuvchi jazolanmasin.
+      await rateLimit.reset(supabase, 'web_code', ip);
       const token = signJwt({ telegram_id: result.telegram_id });
       return json(200, { ok: true, token, telegram_id: result.telegram_id });
     } catch (error) {
@@ -274,6 +294,23 @@ exports.handler = async (event) => {
     try {
       // Honeypot: oddiy foydalanuvchi bu maydonni ko'rmaydi va to'ldirmaydi.
       if (body.website) return json(200, { ok: true });
+
+      // Spamga qarshi: bir IP dan soatiga 5 ta so'rov. Har bir lead adminga
+      // Telegram xabari yuboradi, shuning uchun chegara kerak.
+      const leadGate = await rateLimit.hit(supabase, {
+        scope: 'lead',
+        key: rateLimit.clientIp(event.headers),
+        limit: 5,
+        windowSeconds: 3600,
+        blockSeconds: 3600,
+      });
+      if (!leadGate.allowed) {
+        return json(
+          429,
+          { ok: false, error: 'too_many_requests', retry_after: leadGate.retryAfter },
+          { 'Retry-After': String(leadGate.retryAfter) },
+        );
+      }
       const wanted = String(body.wanted || '').trim().slice(0, 300);
       const contact = String(body.contact || '').trim().slice(0, 120);
       const name = String(body.name || '').trim().slice(0, 120);
@@ -580,7 +617,7 @@ exports.handler = async (event) => {
           headers: { Prefer: 'return=representation,resolution=merge-duplicates' },
           body: reviewBody,
         }));
-      } catch (e) {
+      } catch {
         // order_id ustuni hali qo'shilmagan bo'lishi mumkin — usiz qayta urinamiz
         delete reviewBody.order_id;
         ({ data } = await request(supabase, 'reviews', {

@@ -19,6 +19,7 @@ exports.handler = async (event) => {
     }
     return { statusCode: 405, body: 'Method not allowed' };
   } catch (error) {
-    return { statusCode: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ok: false, error: error.message }) };
+    console.error('admin-settings error', error);
+    return { statusCode: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ok: false, error: 'server_error' }) };
   }
 };

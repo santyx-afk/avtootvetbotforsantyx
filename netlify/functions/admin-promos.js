@@ -55,6 +55,7 @@ exports.handler = async (event) => {
     }
     return json(405, { ok: false });
   } catch (err) {
-    return json(500, { ok: false, error: err.message });
+    console.error('admin-promos error', err);
+    return json(500, { ok: false, error: 'server_error' });
   }
 };
