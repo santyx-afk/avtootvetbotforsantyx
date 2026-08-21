@@ -200,6 +200,22 @@ Three migrations are **not optional** if you care about the security posture:
 | `sql/27_rate_limits.sql` | Creates the `rate_limits` table used to throttle login-code guessing and lead spam. | Without it the limiter fails open (logs a warning) and only the 8-digit code length protects the login flow. |
 | `sql/28_enable_rls.sql` | Enables Row Level Security on **every** public table. | Does not break anything: all access goes through the service role, which bypasses RLS. It closes the anon key as an attack path. |
 | `sql/29_drop_orphan_tables.sql` | Drops leftover tables from the removed chat / freelance-order / rating features. | **Take a backup first** — these may still hold old user data. |
+| `sql/30_revoke_public_rpc.sql` | Revokes `anon`/`authenticated` EXECUTE on seven RPC functions and on the `payment_history` view. | The most serious hole found: PostgREST publishes every `public` function at `/rest/v1/rpc/<name>`, and `credit_user_wallet` was `SECURITY DEFINER` — so anyone holding the anon key could credit any wallet, and RLS would not have stopped it. |
+
+Migrations 27, 28 and 30 were applied to the production database on 2026-08-21.
+Migration 29 (the destructive one) is still pending — run it after taking a backup.
+
+To verify the database is locked down, this query must return **no rows**:
+
+```sql
+SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE n.nspname = 'public' AND c.relkind IN ('r','v')
+  AND has_table_privilege('anon', c.oid, 'SELECT')
+  AND NOT (c.relkind = 'r' AND c.relrowsecurity)
+UNION ALL
+SELECT p.proname FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+WHERE n.nspname = 'public' AND has_function_privilege('anon', p.oid, 'EXECUTE');
+```
 
 > **Netlify env vars are required at runtime.** The functions call
 > `getAdminClient()` on the very first line, so if `SUPABASE_URL` or
