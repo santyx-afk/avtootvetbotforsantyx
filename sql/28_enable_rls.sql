@@ -28,9 +28,10 @@ BEGIN
     WHERE schemaname = 'public'
   LOOP
     EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t);
-    -- FORCE: jadval egasi (masalan migratsiya yurituvchi rol) ham siyosatlarga
-    -- bo'ysunsin. service_role baribir chetlab o'tadi — u BYPASSRLS huquqiga ega.
-    EXECUTE format('ALTER TABLE public.%I FORCE ROW LEVEL SECURITY', t);
+    -- FORCE ataylab QO'YILMAGAN: u jadval egasini ham siyosatlarga bo'ysundiradi
+    -- va SECURITY DEFINER funksiyalarni (masalan hamyonni to'ldirish) buzishi
+    -- mumkin. Oddiy ENABLE anon kalitni to'sish uchun yetarli — service_role
+    -- BYPASSRLS huquqiga ega, shuning uchun ilova o'zgarishsiz ishlaydi.
   END LOOP;
 END $$;
 
