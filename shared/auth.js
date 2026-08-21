@@ -1,8 +1,19 @@
 const crypto = require('crypto');
-const { getEnv } = require('./config');
+
+// Admin sessiyasi imzo kaliti. Ilgari bu yerda 'dev-secret' zaxira qiymati bor
+// edi — repozitoriy ochiq bo'lgani uchun uni bilgan har kim soxta admin cookie
+// yasay olardi. Endi kalit majburiy: yo'q bo'lsa sessiya umuman yaratilmaydi
+// va tekshiruvdan o'tmaydi (ochiq qolgandan ko'ra ishlamagani xavfsizroq).
+function sessionSecret() {
+  const secret = process.env.SESSION_SECRET;
+  if (!secret || secret.length < 16) {
+    throw new Error('SESSION_SECRET o‘rnatilmagan (kamida 16 belgi bo‘lishi kerak)');
+  }
+  return secret;
+}
 
 function sign(value) {
-  return crypto.createHmac('sha256', getEnv('SESSION_SECRET', 'dev-secret')).update(value).digest('hex');
+  return crypto.createHmac('sha256', sessionSecret()).update(value).digest('hex');
 }
 
 function createSession() {
@@ -16,7 +27,17 @@ function isValidSession(token) {
   const ttlMs = Number(process.env.ADMIN_SESSION_TTL_MS || 1000 * 60 * 60 * 12);
   const ts = Number(payload);
   if (!Number.isFinite(ts) || Date.now() - ts > ttlMs) return false;
-  return sign(payload) === signature;
+  let expected;
+  try {
+    expected = sign(payload);
+  } catch (error) {
+    // Kalit sozlanmagan — hech kimni admin deb tan olmaymiz.
+    console.error('admin sessiya tekshirilmadi:', error.message);
+    return false;
+  }
+  const a = Buffer.from(expected);
+  const b = Buffer.from(signature || '');
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
 function parseCookies(headers = {}) {

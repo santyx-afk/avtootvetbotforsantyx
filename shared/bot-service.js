@@ -485,7 +485,8 @@ async function handleStart({ supabase, message }) {
 
   const startPayload = String(message.text || '').split(/\s+/)[1] || '';
 
-  // Brauzer orqali login: foydalanuvchiga 6 xonali tasdiqlash kodini yuboramiz.
+  // Brauzer orqali login: foydalanuvchiga bir martalik tasdiqlash kodini yuboramiz
+  // (uzunligi web-auth-service.js dagi CODE_LENGTH bilan belgilanadi).
   if (startPayload === 'web_login') {
     const { generateWebLoginCode } = require('./web-auth-service');
     tasks.push(

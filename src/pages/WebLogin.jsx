@@ -7,10 +7,15 @@ import styles from './WebLogin.module.css';
 const BOT = (import.meta.env.VITE_BOT_USERNAME || 'santyxnarxbot').replace(/^@/, '');
 const BOT_LOGIN_URL = `https://t.me/${BOT}?start=web_login`;
 
-// Brauzer orqali Telegram login: kod olish -> 6 xonali kodni kiritish -> JWT.
+// Kod uzunligi serverdagi CODE_LENGTH bilan bir xil bo'lishi kerak
+// (shared/web-auth-service.js). 8 xonali — taxmin qilishga qarshi.
+const CODE_LENGTH = 8;
+const EMPTY_DIGITS = Array(CODE_LENGTH).fill('');
+
+// Brauzer orqali Telegram login: kod olish -> kodni kiritish -> JWT.
 export default function WebLogin({ onSuccess }) {
   const navigate = useNavigate();
-  const [digits, setDigits] = useState(['', '', '', '', '', '']);
+  const [digits, setDigits] = useState(EMPTY_DIGITS);
   const [status, setStatus] = useState('idle'); // idle | verifying | error
   const [error, setError] = useState('');
   const inputs = useRef([]);
@@ -20,7 +25,7 @@ export default function WebLogin({ onSuccess }) {
   };
 
   const verify = async (code) => {
-    if (code.length !== 6) return;
+    if (code.length !== CODE_LENGTH) return;
     setStatus('verifying');
     setError('');
     try {
@@ -37,10 +42,11 @@ export default function WebLogin({ onSuccess }) {
         bad_code: 'Kod formati noto‘g‘ri',
         not_found: 'Bunday kod topilmadi',
         expired: 'Kod muddati tugagan — yangi kod oling',
+        too_many_attempts: 'Juda ko’p urinish. Bir oz kutib, qayta urinib ko’ring.',
       };
       setError(map[err?.message] || 'Kod noto‘g‘ri yoki muddati tugagan');
       setStatus('error');
-      setDigits(['', '', '', '', '', '']);
+      setDigits(EMPTY_DIGITS);
       inputs.current[0]?.focus();
     }
   };
@@ -56,13 +62,13 @@ export default function WebLogin({ onSuccess }) {
     }
     let idx = i;
     for (const ch of clean.split('')) {
-      if (idx > 5) break;
+      if (idx > CODE_LENGTH - 1) break;
       next[idx] = ch;
       idx += 1;
     }
     setDigits(next);
     if (status === 'error') setStatus('idle');
-    const focusIdx = Math.min(idx, 5);
+    const focusIdx = Math.min(idx, CODE_LENGTH - 1);
     inputs.current[focusIdx]?.focus();
     if (next.every((d) => d)) verify(next.join(''));
   };
@@ -85,7 +91,7 @@ export default function WebLogin({ onSuccess }) {
         <BrandLogo variant="full" className={styles.logo} title="SANTYX — pro obunalar" />
         <h1 className={styles.title}>Saytga kirish</h1>
         <p className={styles.subtitle}>
-          Telegram orqali xavfsiz kiring. Bot sizga 6 xonali kod yuboradi.
+          Telegram orqali xavfsiz kiring. Bot sizga {CODE_LENGTH} xonali kod yuboradi.
         </p>
 
         <ol className={styles.steps}>
@@ -100,7 +106,7 @@ export default function WebLogin({ onSuccess }) {
           </li>
           <li>
             <span className={styles.stepNo}>2</span>
-            <div>Kelgan 6 xonali kodni kiriting</div>
+            <div>Kelgan {CODE_LENGTH} xonali kodni kiriting</div>
           </li>
         </ol>
 
@@ -113,7 +119,7 @@ export default function WebLogin({ onSuccess }) {
               type="text"
               inputMode="numeric"
               autoComplete={i === 0 ? 'one-time-code' : 'off'}
-              maxLength={6}
+              maxLength={CODE_LENGTH}
               value={d}
               disabled={status === 'verifying'}
               onChange={(e) => handleChange(i, e.target.value)}
@@ -129,7 +135,7 @@ export default function WebLogin({ onSuccess }) {
           type="button"
           className={styles.submit}
           onClick={() => verify(code)}
-          disabled={code.length !== 6 || status === 'verifying'}
+          disabled={code.length !== CODE_LENGTH || status === 'verifying'}
         >
           {status === 'verifying' ? 'Tekshirilmoqda…' : 'Kirish'}
         </button>

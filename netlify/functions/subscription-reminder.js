@@ -144,6 +144,7 @@ module.exports.handler = schedule('0 9 * * *', async (event) => {
     return { statusCode: 200, body: JSON.stringify({ message: 'Daily reminder processed' }) };
   } catch (error) {
     console.error('Scheduled task error:', error);
-    return { statusCode: 500, body: JSON.stringify({ error: error.message }) };
+    console.error('subscription-reminder error', error);
+    return { statusCode: 500, body: JSON.stringify({ error: 'server_error' }) };
   }
 });

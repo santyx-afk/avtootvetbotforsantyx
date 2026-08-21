@@ -24,6 +24,32 @@
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
 
+# ---------------- Xavfsizlik headerlari ----------------
+# Diqqat: frame-ancestors'da Telegram domenlari ATAYLAB ruxsat etilgan —
+# Telegram Web (web.telegram.org) Mini App'ni iframe ichida ochadi, ularni
+# taqiqlasak ilova o'sha yerda ishlamay qoladi. Shu sababli X-Frame-Options
+# qo'yilmagan: u bir nechta domenni qo'llab-quvvatlamaydi va Telegram Web'ni
+# buzardi. Zamonaviy brauzerlarda frame-ancestors uning o'rnini bosadi.
+#
+# script-src'dagi 'unsafe-inline' — index.html va admin paneldagi inline
+# skriptlar uchun. Uni olib tashlash uchun avval o'sha skriptlarni alohida
+# faylga chiqarish kerak (README'da qayd etilgan).
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' https://telegram.org https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://*.supabase.co https://api.telegram.org; frame-ancestors 'self' https://telegram.org https://*.telegram.org; base-uri 'self'; form-action 'self'; object-src 'none'"
+    Strict-Transport-Security = "max-age=31536000; includeSubDomains; preload"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()"
+    Cross-Origin-Opener-Policy = "same-origin-allow-popups"
+
+# Admin panel qidiruv tizimlariga tushmasin (robots.txt dan tashqari qo'shimcha kafolat)
+[[headers]]
+  for = "/admin/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+
 # API chaqiruvlari Netlify funksiyalariga
 [[redirects]]
   from = "/api/*"

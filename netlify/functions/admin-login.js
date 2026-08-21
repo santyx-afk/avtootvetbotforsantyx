@@ -76,6 +76,14 @@ exports.handler = async (event) => {
   // 3. Muvaffaqiyat — hisoblagichni reset qilamiz
   await saveAttempt(supabase, ip, { attempts: 0, blocked_until: null });
 
-  const session = createSession();
+  // SESSION_SECRET o'rnatilmagan bo'lsa createSession xato tashlaydi —
+  // login muvaffaqiyatsiz bo'ladi (ilgari ochiq 'dev-secret' bilan ishlab ketardi).
+  let session;
+  try {
+    session = createSession();
+  } catch (error) {
+    console.error('admin sessiya yaratilmadi:', error.message);
+    return json(500, { ok: false, error: 'Server sozlanmagan — administratorga murojaat qiling.' });
+  }
   return json(200, { ok: true }, { 'Set-Cookie': `admin_session=${session}; Path=/; HttpOnly; SameSite=Strict; Secure` });
 };

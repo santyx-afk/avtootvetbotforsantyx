@@ -44,6 +44,7 @@ exports.handler = async (event) => {
 
     return json(400, { ok: false, error: 'Noma\'lum tur' });
   } catch (err) {
-    return json(500, { ok: false, error: err.message });
+    console.error('admin-messages error', err);
+    return json(500, { ok: false, error: 'server_error' });
   }
 };
