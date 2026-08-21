@@ -121,7 +121,7 @@ function parseTelegramInitData(initData) {
     const userStr = urlParams.get('user');
     if (!userStr) return null;
     return JSON.parse(userStr);
-  } catch (err) {
+  } catch {
     return null;
   }
 }

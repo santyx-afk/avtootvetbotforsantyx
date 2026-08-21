@@ -32,7 +32,7 @@ async function buildRenewalOfferLine(supabase) {
   }
 }
 
-module.exports.handler = schedule('0 9 * * *', async (event) => {
+module.exports.handler = schedule('0 9 * * *', async () => {
   console.log('Running scheduled daily reminder task...');
   try {
     const supabase = getAdminClient();

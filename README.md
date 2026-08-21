@@ -71,7 +71,8 @@ panel into `dist/admin/`. Netlify serves the Mini App at `/`, the admin panel at
 
 Build-time (exposed to the browser — public values only):
 
-- `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` — direct Supabase reads / Storage
+- ~~`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`~~ — no longer used. The browser
+  Supabase client was removed; all data goes through Netlify Functions.
 - `VITE_API_BASE` — API base path (default `/api`)
 - `VITE_SUPPORT_USERNAME`, `VITE_BOT_USERNAME`
 
@@ -157,27 +158,48 @@ Create these variables in `.env` locally and in Netlify Site settings for produc
 - `SUPABASE_URL` — Supabase project URL.
 - `SUPABASE_SERVICE_ROLE_KEY` — service role key for Netlify Functions.
 - `APP_BASE_URL` — public site URL, e.g. `https://your-site.netlify.app`.
-- `SESSION_SECRET` — long random string for admin session signing.
+- `SESSION_SECRET` — long random string (min 16 chars) for admin session signing.
 - `ADMIN_PASSWORD` — admin panel login password.
+
+> **`SESSION_SECRET` has no fallback.** It used to default to a hard-coded
+> `'dev-secret'`, which — in a public repository — let anyone forge an admin
+> session cookie. The fallback is gone: if the variable is missing, admin login
+> returns a 500 and no session is ever accepted. Same for `WEB_JWT_SECRET`
+> below, which falls back only to `TELEGRAM_BOT_TOKEN` (also secret).
 
 ### Recommended
 - `TELEGRAM_WEBHOOK_SECRET` — secret token validated on Telegram webhook requests.
+- `WEB_JWT_SECRET` — signing key for browser login tokens. Falls back to
+  `TELEGRAM_BOT_TOKEN` if unset; set it explicitly so rotating the bot token
+  does not log every web user out.
 - `ADMIN_TELEGRAM_ID` — fallback admin Telegram chat/user ID.
-- `SUPABASE_ANON_KEY` — optional documentation completeness; the current admin panel uses Netlify functions, so direct browser DB access is not required.
+- `PAYMENT_NOTIFIER_ID` — Telegram ID of the business account that forwards
+  payment notifications (defaults to the historical hard-coded value).
+
+`SUPABASE_ANON_KEY` is no longer used anywhere — the browser never talks to
+Supabase directly, everything goes through Netlify Functions with the service
+role key.
 
 ## Database setup
 
 Use Supabase SQL editor and run the files in `sql/` in order:
 
 ```sql
--- 1. sql/schema.sql             base schema
--- 2. sql/02_humo_payment.sql    HUMO auto-confirmation columns
--- 3. sql/03_checks_table.sql    payment checks table
--- 4. sql/04_topup_order_type.sql  orders.order_type + wallet credit function
--- 5. sql/05_subscriptions.sql   subscriptions + reminder columns (reconciles legacy schema)
+-- sql/schema.sql            base schema
+-- sql/02_*.sql … sql/26_*.sql   run in filename order
 ```
 
 Every file is idempotent, so re-running them on an existing database is safe.
+
+### Security migrations — run these
+
+Three migrations are **not optional** if you care about the security posture:
+
+| File | What it does | Notes |
+|---|---|---|
+| `sql/27_rate_limits.sql` | Creates the `rate_limits` table used to throttle login-code guessing and lead spam. | Without it the limiter fails open (logs a warning) and only the 8-digit code length protects the login flow. |
+| `sql/28_enable_rls.sql` | Enables Row Level Security on **every** public table. | Does not break anything: all access goes through the service role, which bypasses RLS. It closes the anon key as an attack path. |
+| `sql/29_drop_orphan_tables.sql` | Drops leftover tables from the removed chat / freelance-order / rating features. | **Take a backup first** — these may still hold old user data. |
 
 > **Netlify env vars are required at runtime.** The functions call
 > `getAdminClient()` on the very first line, so if `SUPABASE_URL` or

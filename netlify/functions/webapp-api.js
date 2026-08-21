@@ -617,7 +617,7 @@ exports.handler = async (event) => {
           headers: { Prefer: 'return=representation,resolution=merge-duplicates' },
           body: reviewBody,
         }));
-      } catch (e) {
+      } catch {
         // order_id ustuni hali qo'shilmagan bo'lishi mumkin — usiz qayta urinamiz
         delete reviewBody.order_id;
         ({ data } = await request(supabase, 'reviews', {

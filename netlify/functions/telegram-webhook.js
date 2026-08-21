@@ -66,7 +66,7 @@ exports.handler = async (event) => {
       // shuning uchun eski oqim ham bu yerdan chiqarildi. Endi to'lov to'g'ridan-
       // to'g'ri Mini App buyurtmalariga solishtiriladi.
       if (String(msg.from?.id) === PAYMENT_NOTIFIER_ID && msg.text) {
-        const match = msg.text.match(/Summa\s*([\d\s\.,]+)/i);
+        const match = msg.text.match(/Summa\s*([\d\s.,]+)/i);
         if (match) {
           const parsedAmount = Number(match[1].replace(/\s/g, '').replace(',', '.'));
 

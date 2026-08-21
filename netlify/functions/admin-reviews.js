@@ -1,5 +1,5 @@
 const { requireAdmin } = require('../../shared/auth');
-const { getAdminClient, request, toQuery, updateRow, deleteRow } = require('../../shared/db');
+const { getAdminClient, request, updateRow, deleteRow } = require('../../shared/db');
 
 function json(sc, body) { return { statusCode: sc, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }; }
 
