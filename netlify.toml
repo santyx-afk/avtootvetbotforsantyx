@@ -62,19 +62,23 @@
 # ishlata oladi, lekin AI kraulerlari (GPTBot, ClaudeBot, PerplexityBot)
 # ko'pincha ishlatmaydi — ular uchun SPA bo'sh sahifa bo'lib ko'rinadi.
 # Qoidalar SPA fallback'dan OLDIN turishi shart.
+#
+# Bo'lim va slug so'rov parametri sifatida uzatiladi. Funksiya ichida yo'lni
+# taxmin qilish shart emas: Netlify rewrite'dan keyin event.path'ning qanday
+# kelishi muhitga qarab farq qiladi, parametrlar esa doim bir xil.
 [[redirects]]
   from = "/obuna"
-  to = "/.netlify/functions/seo-page"
+  to = "/.netlify/functions/seo-page?section=obuna"
   status = 200
 
 [[redirects]]
   from = "/obuna/*"
-  to = "/.netlify/functions/seo-page"
+  to = "/.netlify/functions/seo-page?section=obuna&slug=:splat"
   status = 200
 
 [[redirects]]
   from = "/qollanma/*"
-  to = "/.netlify/functions/seo-page"
+  to = "/.netlify/functions/seo-page?section=qollanma&slug=:splat"
   status = 200
 
 # sitemap endi bazadan jonli quriladi (yangi obuna darrov tushadi).

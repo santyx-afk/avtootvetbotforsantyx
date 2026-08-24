@@ -369,19 +369,25 @@ function renderGuide(slug) {
 const SLUG_RE = /^[a-z0-9-]{1,60}$/;
 
 exports.handler = async (event) => {
-  // Netlify rewrite'dan keyin asl manzil event.path'da qoladi. Ba'zi
-  // muhitlarda (masalan `netlify dev`) u funksiya yo'liga almashadi —
-  // shuning uchun rawUrl zaxira sifatida tekshiriladi.
-  let pathname = String(event.path || '');
-  if (!pathname || pathname.includes('/.netlify/functions/')) {
-    try {
-      pathname = new URL(event.rawUrl).pathname;
-    } catch {
-      /* rawUrl yo'q — event.path bilan davom etamiz */
+  // Bo'lim va slug netlify.toml dagi rewrite orqali so'rov parametri sifatida
+  // keladi — bu eng ishonchli manba. Agar funksiya boshqa yo'l bilan
+  // chaqirilsa (masalan to'g'ridan-to'g'ri /.netlify/functions/... orqali),
+  // manzilning o'zidan o'qiymiz.
+  const params = event.queryStringParameters || {};
+  let section = params.section;
+  let slug = params.slug;
+
+  if (!section) {
+    let pathname = String(event.path || '');
+    if (!pathname || pathname.includes('/.netlify/functions/')) {
+      try {
+        pathname = new URL(event.rawUrl).pathname;
+      } catch {
+        /* rawUrl yo'q — event.path bilan davom etamiz */
+      }
     }
+    [section, slug] = pathname.split('?')[0].split('/').filter(Boolean);
   }
-  const parts = pathname.split('?')[0].split('/').filter(Boolean);
-  const [section, slug] = parts;
 
   try {
     // /obuna — barcha obunalar ro'yxati
