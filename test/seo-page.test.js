@@ -26,8 +26,12 @@ test('jsonLd: razmetka ichidan script tegini yopib bo\'lmaydi', () => {
 });
 
 test('money: uzbekcha format, butun songa yaxlitlaydi', () => {
-  assert.strictEqual(money(100000).replace(/ /g, ' '), '100 000');
-  assert.strictEqual(money('64990.00').replace(/ /g, ' '), '64 990');
+  // uz-UZ formati uzilmaydigan bo'shliq (U+00A0) ishlatadi. Regexda uni
+  // xom belgi sifatida yozib bo'lmaydi (no-irregular-whitespace), shuning
+  // uchun kod bilan yoziladi.
+  const nbsp = /\u00a0/g;
+  assert.strictEqual(money(100000).replace(nbsp, ' '), '100 000');
+  assert.strictEqual(money('64990.00').replace(nbsp, ' '), '64 990');
   assert.strictEqual(money(0), '0');
   assert.strictEqual(money(null), '0');
 });
