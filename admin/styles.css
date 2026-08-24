@@ -524,32 +524,6 @@ input[type="checkbox"] { width: 20px; height: 20px; min-height: auto; flex: 0 0 
   text-align: center;
 }
 
-.vac-tabs {
-  display: flex;
-  gap: 8px;
-  margin: 12px 0 16px;
-  overflow-x: auto;
-  padding-bottom: 4px;
-}
-.vac-tab {
-  flex: none;
-  padding: 8px 14px;
-  border-radius: 999px;
-  border: 1px solid var(--border, #e3e6ea);
-  background: transparent;
-  color: var(--muted);
-  font-size: 0.88rem;
-  font-family: inherit;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.vac-tab.active {
-  border-color: #7c5cff;
-  background: rgba(124, 92, 255, 0.12);
-  color: #7c5cff;
-  font-weight: 600;
-}
-.vac-pane h3 { margin: 20px 0 10px; font-size: 0.95rem; }
 
 /* Leadlar bo'limi */
 .hint {
@@ -557,4 +531,23 @@ input[type="checkbox"] { width: 20px; height: 20px; min-height: auto; flex: 0 0 
   color: var(--muted, #6b7280);
   font-size: 13.5px;
   line-height: 1.5;
+}
+
+/* Rejalar jadvalidagi plan ID — bosilganda nusxalanadi. */
+.copy-id {
+  cursor: pointer;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+.copy-id:hover { border-color: var(--primary, #2563eb); }
+
+/* Ko'p tanlovli ro'yxat (promokod -> tovarlar) */
+.grid-form select[multiple] {
+  min-height: 120px;
+  padding: 6px;
 }

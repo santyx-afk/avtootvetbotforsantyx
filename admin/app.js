@@ -50,7 +50,6 @@ const views = {
   reviews: document.getElementById('reviewsView'),
   faq: document.getElementById('faqView'),
   users: document.getElementById('usersView'),
-  vacancy: document.getElementById('vacancyView'),
   leads: document.getElementById('leadsView'),
   messages: document.getElementById('messagesView'),
   settings: document.getElementById('settingsView'),
@@ -166,9 +165,10 @@ function renderCategories() {
 
 function renderPlans() {
   const root = document.getElementById('plansList');
-  root.innerHTML = `<table><thead><tr><th>Nomi</th><th>Kategoriya</th><th>Narx</th><th>Rasm</th><th>Tartib</th><th></th></tr></thead><tbody>${state.plans.map((item) => `
+  root.innerHTML = `<table><thead><tr><th>Nomi</th><th>Plan ID</th><th>Kategoriya</th><th>Narx</th><th>Rasm</th><th>Tartib</th><th></th></tr></thead><tbody>${state.plans.map((item) => `
     <tr>
       <td>${esc(item.name)}${item.is_popular ? ' ⭐' : ''}</td>
+      <td><code class="copy-id" data-id="${esc(item.id)}" title="Nusxalash uchun bosing">${esc(item.id)}</code></td>
       <td>${esc(state.categories.find((category) => category.id === item.category_id)?.name || '-')}</td>
       <td>${money(item.price)} ${esc(item.currency)}</td>
       <td>${item.image_url ? '<span class="badge">✓</span>' : '-'}</td>
@@ -183,7 +183,25 @@ function renderPlans() {
   parentSelect.innerHTML = `<option value="">Yo'q</option>${state.plans.filter((item) => !item.parent_plan_id).map((item) => `<option value="${esc(item.id)}">${esc(item.name)}</option>`).join('')}`;
   document.getElementById('inventoryPlanId').innerHTML = planOptions;
   document.getElementById('inventoryPlanIdCreate').innerHTML = planOptions;
+  // Promokod formasidagi "qaysi tovarlarga" ro'yxati ham shu yerdan to'ladi.
+  const promoPlans = document.getElementById('promoPlanIds');
+  if (promoPlans) {
+    const selected = new Set([...promoPlans.selectedOptions].map((o) => o.value));
+    promoPlans.innerHTML = planOptions;
+    [...promoPlans.options].forEach((o) => { o.selected = selected.has(o.value); });
+  }
 }
+
+// Plan ID ustunidagi kodni bosganda nusxalanadi — inventar qo'shishda qo'l keladi.
+document.getElementById('plansList')?.addEventListener('click', (event) => {
+  const code = event.target.closest('.copy-id');
+  if (!code) return;
+  navigator.clipboard?.writeText(code.dataset.id).then(() => {
+    const old = code.textContent;
+    code.textContent = 'Nusxalandi ✓';
+    setTimeout(() => { code.textContent = old; }, 1200);
+  }).catch(() => {});
+});
 
 function fillCategoryForm(item = {}) {
   document.getElementById('categoryId').value = item.id || '';
@@ -260,10 +278,12 @@ function fillBannerForm(item = {}) {
 // --- Promos ---
 function renderPromos() {
   const root = document.getElementById('promosList');
-  root.innerHTML = `<table><thead><tr><th>Kod</th><th>Chegirma</th><th>Min buyurtma</th><th>Ishlatildi</th><th>Muddat</th><th>Holat</th><th></th></tr></thead><tbody>${state.promos.map((p) => `
+  const planName = (id) => state.plans.find((pl) => pl.id === id)?.name || id;
+  root.innerHTML = `<table><thead><tr><th>Kod</th><th>Chegirma</th><th>Tovarlar</th><th>Min buyurtma</th><th>Ishlatildi</th><th>Muddat</th><th>Holat</th><th></th></tr></thead><tbody>${state.promos.map((p) => `
     <tr>
       <td><strong>${esc(p.code)}</strong>${p.is_one_time ? ' <span class="badge">1x</span>' : ''}</td>
       <td>${money(p.discount_value)}${p.discount_type === 'fixed' ? ' UZS' : p.discount_type === 'cashback_percent' ? '% cashback' : '%'}</td>
+      <td>${p.plan_ids?.length ? esc(p.plan_ids.map(planName).join(', ')) : '<span class="badge">Hammasi</span>'}</td>
       <td>${money(p.min_order_amount)}</td>
       <td>${esc(p.used_count || 0)}${p.max_uses ? `/${esc(p.max_uses)}` : ''}</td>
       <td>${p.expires_at ? esc(String(p.expires_at).slice(0, 10)) : '-'}</td>
@@ -284,6 +304,11 @@ function fillPromoForm(item = {}) {
   document.getElementById('promoMinOrder').value = item.min_order_amount ?? 0;
   document.getElementById('promoMaxUses').value = item.max_uses ?? '';
   document.getElementById('promoExpiresAt').value = item.expires_at ? String(item.expires_at).slice(0, 10) : '';
+  const promoPlans = document.getElementById('promoPlanIds');
+  if (promoPlans) {
+    const chosen = new Set((item.plan_ids || []).map(String));
+    [...promoPlans.options].forEach((o) => { o.selected = chosen.has(o.value); });
+  }
   document.getElementById('promoIsOneTime').checked = item.is_one_time ?? false;
   document.getElementById('promoIsActive').checked = item.is_active ?? true;
   document.getElementById('promoFormTitle').textContent = item.id ? 'Promokodni tahrirlash' : 'Promokod qo\'shish';
@@ -336,13 +361,36 @@ function fillFaqForm(item = {}) {
 }
 
 // --- Users ---
+// Ro'yxatni toraytiruvchi filtrlar. Qidiruvdan tashqari holat bo'yicha
+// (bloklangan/faol, balansi bor, xarid qilgan) ham saralash mumkin.
+const USER_FILTERS = {
+  active: (u) => !u.is_blocked,
+  blocked: (u) => Boolean(u.is_blocked),
+  withBalance: (u) => Number(u.balance || 0) > 0,
+  buyers: (u) => Number(u.purchases || 0) > 0,
+  noPurchase: (u) => Number(u.purchases || 0) === 0,
+};
+
+const USER_SORTS = {
+  balance: (a, b) => Number(b.balance || 0) - Number(a.balance || 0),
+  purchases: (a, b) => Number(b.purchases || 0) - Number(a.purchases || 0),
+  activity: (a, b) => new Date(b.last_activity || 0) - new Date(a.last_activity || 0),
+};
+
 function renderUsers(filter = '') {
   const q = filter.toLowerCase();
-  const filtered = q ? state.users.filter((u) =>
+  let filtered = q ? state.users.filter((u) =>
     String(u.telegram_id).includes(q) ||
     (u.username || '').toLowerCase().includes(q) ||
     (u.full_name || '').toLowerCase().includes(q)
   ) : state.users;
+
+  const mode = document.getElementById('userFilter')?.value || '';
+  if (USER_FILTERS[mode]) filtered = filtered.filter(USER_FILTERS[mode]);
+
+  const sortKey = document.getElementById('userSort')?.value || 'new';
+  // 'new' — serverdan kelgan tartib (created_at desc), qayta saralash shart emas.
+  if (USER_SORTS[sortKey]) filtered = [...filtered].sort(USER_SORTS[sortKey]);
   const root = document.getElementById('usersList');
   // Ilgari qat'iy 100 ta ko'rsatilib "+N ta yana..." deb yozilardi va qolganiga
   // yetib bo'lmasdi. Endi "Yana ko'rsatish" tugmasi bilan ochiladi.
@@ -591,6 +639,7 @@ async function loadSettings() {
   document.getElementById('settingsReferralBonus').value = state.settings.referral_fixed_bonus ?? '';
   document.getElementById('settingsReferralPercent').value = state.settings.referral_percent ?? '';
   document.getElementById('settingsMinTopup').value = state.settings.min_topup ?? '';
+  document.getElementById('settingsWelcomeBonus').value = state.settings.welcome_bonus ?? 0;
   document.getElementById('welcomeText').value = state.settings.welcome_text || '';
   document.getElementById('contactText').value = state.settings.contact_text || '';
   document.getElementById('settingsGeneralTerms').value = state.settings.general_terms || '';
@@ -826,6 +875,7 @@ onSubmit('settingsForm', async () => {
       referral_fixed_bonus: document.getElementById('settingsReferralBonus').value ? Number(document.getElementById('settingsReferralBonus').value) : null,
       referral_percent: document.getElementById('settingsReferralPercent').value ? Number(document.getElementById('settingsReferralPercent').value) : null,
       min_topup: document.getElementById('settingsMinTopup').value ? Number(document.getElementById('settingsMinTopup').value) : null,
+      welcome_bonus: Number(document.getElementById('settingsWelcomeBonus').value || 0),
       welcome_text: document.getElementById('welcomeText').value,
       contact_text: document.getElementById('contactText').value,
       general_terms: document.getElementById('settingsGeneralTerms').value,
@@ -879,6 +929,7 @@ document.getElementById('promoForm')?.addEventListener('submit', async (event) =
     min_order_amount: Number(document.getElementById('promoMinOrder').value || 0),
     max_uses: document.getElementById('promoMaxUses').value ? Number(document.getElementById('promoMaxUses').value) : null,
     expires_at: document.getElementById('promoExpiresAt').value || null,
+    plan_ids: [...(document.getElementById('promoPlanIds')?.selectedOptions || [])].map((o) => o.value),
     is_one_time: document.getElementById('promoIsOneTime').checked,
     is_active: document.getElementById('promoIsActive').checked,
   };
@@ -958,6 +1009,49 @@ document.getElementById('userSearch')?.addEventListener('input', (e) => {
 document.getElementById('usersLoadMore')?.addEventListener('click', () => {
   state.usersShown += 100;
   renderUsers(document.getElementById('userSearch')?.value || '');
+});
+['userFilter', 'userSort'].forEach((id) => {
+  document.getElementById(id)?.addEventListener('change', () => {
+    state.usersShown = 100;
+    renderUsers(document.getElementById('userSearch')?.value || '');
+  });
+});
+
+// --- Hammaga pul qo'shish ---
+bindModal('creditAllModal', 'creditAllClose');
+document.getElementById('creditAllButton')?.addEventListener('click', () => {
+  document.getElementById('creditAllAmount').value = '';
+  document.getElementById('creditAllReason').value = '';
+  document.getElementById('creditAllMsg').textContent = '';
+  document.getElementById('creditAllModal').hidden = false;
+});
+document.getElementById('creditAllSubmit')?.addEventListener('click', async () => {
+  const btn = document.getElementById('creditAllSubmit');
+  const msg = document.getElementById('creditAllMsg');
+  const amount = Number(document.getElementById('creditAllAmount').value || 0);
+  const reason = document.getElementById('creditAllReason').value.trim();
+  if (!(amount > 0)) {
+    msg.style.color = 'var(--danger)';
+    msg.textContent = 'Summa kiriting';
+    return;
+  }
+  // Qaytarib bo'lmaydigan amal — aniq tasdiq so'raymiz.
+  if (!confirm(`Barcha bloklanmagan foydalanuvchilar balansiga ${money(amount)} UZS qo'shilsinmi? Bu amalni orqaga qaytarib bo'lmaydi.`)) return;
+
+  btn.disabled = true;
+  msg.style.color = '';
+  msg.textContent = 'Bajarilmoqda…';
+  try {
+    const res = await api('admin-users', { method: 'POST', body: JSON.stringify({ action: 'credit-all', amount, reason }) });
+    msg.style.color = 'var(--success, #16a34a)';
+    msg.textContent = res.message || 'Bajarildi';
+    await loadUsers();
+  } catch (error) {
+    msg.style.color = 'var(--danger)';
+    msg.textContent = error.message || 'Xatolik';
+  } finally {
+    btn.disabled = false;
+  }
 });
 document.getElementById('usersList')?.addEventListener('click', async (event) => {
   const detailBtn = event.target.closest('.user-detail');
@@ -1379,7 +1473,6 @@ const HELP_ITEMS = [
   { icon: '⭐', title: 'Sharhlar', body: 'Foydalanuvchilar yozgan sharhlar. Tasdiqlash, rad etish yoki o’chirish mumkin. Faqat tasdiqlangan sharhlar mahsulotda ko’rinadi.' },
   { icon: '👥', title: 'Foydalanuvchilar', body: 'Ro’yxatdan o’tgan barcha foydalanuvchilar. Qidiruv, bloklash/blokdan chiqarish mumkin. Bloklangan foydalanuvchi botni ham, Mini App’ni ham ishlata olmaydi.' },
   { icon: '🛒', title: 'Buyurtmalar', body: 'Barcha xaridlar. Statuslar: kutilmoqda, tasdiqlangan, rad etilgan, tugallangan. Admin approve/reject qiladi. "Batafsil" tugmasi qaysi akkaunt kimga va qachon ketganini, promokod va chegirmani ko’rsatadi. Qidiruv buyurtma raqami yoki Telegram ID bo’yicha. CSV export mumkin.' },
-  { icon: '💼', title: 'Vakansiyalar', body: 'Bepul ishchi/e’lon taxtasi. Yangi ishchi ro’yxatdan o’tsa tasdiqlash kerak. E’lonlarni ko’rish, arxivlash mumkin. Ishchi bilan bog’lanish tugmasi faqat u Telegram username qo’ygan bo’lsa ko’rinadi.' },
   { icon: '📥', title: 'Leadlar', body: 'Saytdagi "Izlagan obunangiz yo’qmi?" formasidan kelgan so’rovlar. Har biri adminga Telegram xabari sifatida ham keladi. Bajarilganini belgilash yoki o’chirish mumkin.' },
   { icon: '✉️', title: 'Xabar yuborish', body: 'Foydalanuvchilarga Telegram orqali xabar. Individual (bitta Telegram ID ga) yoki Broadcast (hammaga). Broadcast 25 talab parallel yuboriladi.' },
   { icon: '⚙️', title: 'Sozlamalar', body: 'Karta raqami, cashback foizi, referal bonus, min topup, welcome text, contact text, umumiy qoidalar. Bu yerda o’zgartirilgan narsa butun botga ta’sir qiladi.' },

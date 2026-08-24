@@ -107,7 +107,6 @@ async function showCategories({ supabase, chatId, messageId, asEdit = false }) {
   const text = `${welcomeText(settings)}\n\n🚀 Barcha obunalarni ko'rish va xarid qilish uchun Mini ilovani oching:`;
   const keyboardRows = [
     [{ text: '🚀 Mini ilovani ochish', web_app: { url: MINI_APP_URL } }],
-    [{ text: '💼 Vakansiya qidirish/joylash', web_app: { url: `${MINI_APP_URL}/vacancy` } }],
   ];
   if (asEdit && messageId) {
     return editMessage(chatId, messageId, text, inlineKeyboard(keyboardRows));
@@ -286,9 +285,16 @@ async function handleTextCommand({ supabase, message }) {
   if (state?.awaiting_promo && text && !text.startsWith('/')) {
     const items = await listCartItems(supabase, message.from.id);
     const basePrice = items.reduce((sum, item) => sum + Number(item.plan?.price || 0) * Number(item.quantity || 1), 0);
-    const result = await validatePromoCode(supabase, text, basePrice);
+    const planIds = items.map((item) => item.plan?.id).filter(Boolean);
+    const result = await validatePromoCode(supabase, text, basePrice, planIds);
     if (!result.ok) {
-      await sendMessage(message.chat.id, 'Promo kod yaroqsiz yoki muddati tugagan.', null);
+      await sendMessage(
+        message.chat.id,
+        result.reason === 'wrong_plan'
+          ? 'Bu promo kod savatdagi tovarlarga amal qilmaydi.'
+          : 'Promo kod yaroqsiz yoki muddati tugagan.',
+        null,
+      );
       return true;
     }
     await saveUserState(supabase, message.from.id, { ...state, awaiting_promo: false, promo_code: result.promo.code });

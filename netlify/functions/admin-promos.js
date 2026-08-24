@@ -23,6 +23,15 @@ function normalize(payload = {}) {
   }
   if (payload.is_one_time !== undefined) out.is_one_time = Boolean(payload.is_one_time);
   if (payload.is_active !== undefined) out.is_active = Boolean(payload.is_active);
+  // Promokod qaysi tovarlarga amal qiladi. Bo'sh ro'yxat = hamma tovarga
+  // (NULL sifatida saqlanadi, chunki tekshiruv NULL va bo'sh massivni bir xil
+  // ko'radi). Faqat UUID ko'rinishidagi qiymatlar qabul qilinadi.
+  if (payload.plan_ids !== undefined) {
+    const ids = (Array.isArray(payload.plan_ids) ? payload.plan_ids : [])
+      .map((id) => String(id || '').trim())
+      .filter((id) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id));
+    out.plan_ids = ids.length ? [...new Set(ids)] : null;
+  }
   return out;
 }
 

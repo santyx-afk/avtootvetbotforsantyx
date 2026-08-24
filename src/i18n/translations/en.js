@@ -26,29 +26,7 @@ export default {
     cart: 'Cart',
     wishlist: 'Wishlist',
     history: 'History',
-    vacancies: 'Vacancies',
     profile: 'Profile',
-  },
-  // --- Vacancies section (temporary — grouped under vacancies/feedback) ---
-  // Vacancy section bottom menu — same language as the store menu.
-  vacancyTabs: {
-    store: 'Store',
-    home: 'Home',
-    listings: 'My listings',
-    profile: 'Profile',
-  },
-  vacancies: {
-    title: 'Coming soon!',
-    desc: 'The vacancies section is under development. Stay tuned for updates.',
-  },
-  feedback: {
-    title: 'Feedback',
-    desc: 'Send us your feedback, suggestions or complaints',
-    placeholder: 'Write your message...',
-    send: 'Send',
-    success: 'Message sent! Thank you.',
-    error: 'Something went wrong. Please try again.',
-    empty: 'Please write a message.',
   },
   // --- Post-purchase review modal (temporary/removable) ---
   review: {
@@ -172,6 +150,7 @@ export default {
     promoApplied: 'Promo code applied',
     promoCashback: 'Cashback {amount} — credited to balance after payment',
     promoInvalid: 'Promo code is invalid or expired',
+    promoWrongPlan: 'This promo code does not apply to the items in your cart',
     discount: 'Discount',
     fromBalance: 'From balance',
     rulesTitle: 'Rules',
@@ -338,12 +317,6 @@ export default {
         { title: 'Subscription tracking', text: 'Active subscriptions and expiry dates are shown in your profile.' },
       ],
     },
-    vacancy: {
-      title: 'Job listings',
-      text:
-        'You can now find a freelancer or post your own services inside the bot — completely free. Sign up and publish your listing in a couple of minutes.',
-      cta: 'Browse listings',
-    },
     faq: {
       title: 'Frequently asked questions',
       items: [
@@ -370,10 +343,6 @@ export default {
         {
           q: 'Are these official subscriptions?',
           a: 'Yes, the services are based on official subscriptions. The only difference is the price — we make it considerably more affordable.',
-        },
-        {
-          q: 'How do I post a job listing?',
-          a: 'Open the bot, tap the vacancies button, sign up and create your listing — completely free.',
         },
       ],
     },

@@ -9,7 +9,7 @@ import { useTelegram } from './telegram/TelegramProvider.jsx';
 
 // Landing — santyx.uz ga kirgan odam ko'radigan yagona sahifa, shuning uchun u
 // asosiy paketda (darhol chiziladi). Qolgan hamma narsa faqat kerak bo'lganda
-// yuklanadi: ilgari tashrifchi butun ilovani (savat, checkout, vakansiya)
+// yuklanadi: ilgari tashrifchi butun ilovani (savat, checkout, profil)
 // yuklab olardi va birinchi chizish shuncha kutardi.
 const NotFound = lazy(() => import('./pages/NotFound.jsx'));
 const Layout = lazy(() => import('./components/Layout.jsx'));
@@ -23,10 +23,6 @@ const TopUp = lazy(() => import('./pages/TopUp.jsx'));
 const Wishlist = lazy(() => import('./pages/Wishlist.jsx'));
 const History = lazy(() => import('./pages/History.jsx'));
 const Profile = lazy(() => import('./pages/Profile.jsx'));
-const VacancyLayout = lazy(() => import('./components/VacancyLayout.jsx'));
-const VacancyHome = lazy(() => import('./pages/vacancy/VacancyHome.jsx'));
-const VacancyListings = lazy(() => import('./pages/vacancy/VacancyListings.jsx'));
-const VacancyProfile = lazy(() => import('./pages/vacancy/VacancyProfile.jsx'));
 const WebLogin = lazy(() => import('./pages/WebLogin.jsx'));
 // Maxfiylik siyosati — kirmagan tashrifchiga ham ochiq bo'lishi shart
 // (cookie bildirishnomasidagi havola shu yerga olib keladi).
@@ -119,6 +115,9 @@ export default function App() {
             }
           />
           <Route path="/" element={<Landing />} />
+          {/* Vakansiyalar bo'limi olib tashlandi. Eski havola bo'yicha kelgan
+              mehmon 404 ko'rmasin — bosh sahifaga yo'naltiramiz. */}
+          <Route path="/vacancy/*" element={<Navigate to="/" replace />} />
           {/* Noma'lum manzil — Landing emas, alohida 404 (noindex bilan).
               Ilgari bu yerda "*" -> Landing turardi va har qanday xato manzil
               200 OK bilan bosh sahifani ko'rsatardi (qidiruv uchun "soft 404"). */}
@@ -191,14 +190,8 @@ export default function App() {
           <Route path="/history" element={<History />} />
           <Route path="/profile" element={<Profile />} />
         </Route>
-        {/* Vakansiya (super-app) rejimi — bepul e'lonlar doskasi */}
-        <Route element={<VacancyLayout />}>
-          <Route path="/vacancy" element={<VacancyHome />} />
-          <Route path="/vacancy/listings" element={<VacancyListings />} />
-          <Route path="/vacancy/profile" element={<VacancyProfile />} />
-          {/* Eski chat/order yo'llari — bosh sahifaga qaytariladi */}
-          <Route path="/vacancy/*" element={<Navigate to="/vacancy" replace />} />
-        </Route>
+        {/* Vakansiyalar bo'limi olib tashlandi — eski havolalar katalogga ketadi */}
+        <Route path="/vacancy/*" element={<Navigate to="/catalog" replace />} />
         <Route path="/" element={<Navigate to="/catalog" replace />} />
         <Route path="*" element={<NotFound />} />
       </Routes>

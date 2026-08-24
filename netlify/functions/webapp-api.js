@@ -736,7 +736,10 @@ exports.handler = async (event) => {
         (s, i) => s + Number(i.plan?.price || 0) * Number(i.quantity || 1),
         0,
       );
-      const result = await validatePromoCode(supabase, code, basePrice);
+      // Promokod tanlangan tovarlarga bog'langan bo'lishi mumkin — savatdagi
+      // rejalar ro'yxatini uzatamiz.
+      const planIds = (items || []).map((i) => i.plan?.id).filter(Boolean);
+      const result = await validatePromoCode(supabase, code, basePrice, planIds);
       if (!result.ok) return json(200, { ok: true, valid: false, reason: result.reason });
       return json(200, {
         ok: true,
@@ -764,7 +767,12 @@ exports.handler = async (event) => {
       let discount = 0;
       let cashback = 0;
       if (body.promoCode) {
-        const res = await validatePromoCode(supabase, String(body.promoCode).trim(), basePrice);
+        const res = await validatePromoCode(
+          supabase,
+          String(body.promoCode).trim(),
+          basePrice,
+          cartItems.map((i) => i.plan.id).filter(Boolean),
+        );
         if (res.ok) {
           promo = res.promo;
           discount = res.discount;
@@ -1068,26 +1076,6 @@ exports.handler = async (event) => {
       // Wishlistda stock=0 obunalar ham ko'rsatiladi (foydalanuvchi o'chira olishi uchun).
 
       return json(200, { ok: true, items });
-    }
-
-    // Vaqtinchalik "Vakansiyalar" bo'limi — fikr/taklif yuborish (adminга Telegram xabari).
-    if (body.action === 'send-feedback') {
-      const message = String(body.message || '').trim().slice(0, 1000);
-      if (!message) return json(400, { ok: false, error: 'empty_message' });
-
-      const esc = (s) =>
-        String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      const uname = acctUser.username ? `@${acctUser.username}` : acctUser.first_name || 'Foydalanuvchi';
-      const text = `📝 Yangi fikr:\nFoydalanuvchi: ${esc(uname)} (ID: ${telegramId})\nXabar: ${esc(message)}`;
-
-      const settings = await fetchSettings(supabase).catch(() => null);
-      const admins = adminChatIds(settings);
-      await Promise.all(
-        admins.map((id) =>
-          sendMessage(id, text, null).catch((e) => console.warn('feedback send warn:', e?.message)),
-        ),
-      );
-      return json(200, { ok: true });
     }
 
     return json(400, { ok: false, error: 'unknown_action' });

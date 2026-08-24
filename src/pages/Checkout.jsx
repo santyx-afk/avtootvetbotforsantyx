@@ -25,7 +25,7 @@ export default function Checkout() {
   const [useBalance, setUseBalance] = useState(false);
   const [promoInput, setPromoInput] = useState('');
   const [promo, setPromo] = useState(null);
-  const [promoError, setPromoError] = useState(false);
+  const [promoError, setPromoError] = useState(null); // null | 'invalid' | 'wrong_plan'
   const [promoChecking, setPromoChecking] = useState(false);
   const [agreed, setAgreed] = useState(false);
   const [placing, setPlacing] = useState(false);
@@ -66,7 +66,7 @@ export default function Checkout() {
     if (!code) return;
     haptic.impact('light');
     setPromoChecking(true);
-    setPromoError(false);
+    setPromoError(null);
     try {
       const res = await apiCall('promo-validate', { code });
       if (res.valid) {
@@ -74,11 +74,13 @@ export default function Checkout() {
         haptic.notification('success');
       } else {
         setPromo(null);
-        setPromoError(true);
+        // Promokod tovarga bog'langan bo'lsa alohida matn — mijoz kodni
+        // noto'g'ri deb o'ylab qayta-qayta urinmasin.
+        setPromoError(res.reason === 'wrong_plan' ? 'wrong_plan' : 'invalid');
         haptic.notification('error');
       }
     } catch {
-      setPromoError(true);
+      setPromoError('invalid');
     } finally {
       setPromoChecking(false);
     }
@@ -252,7 +254,11 @@ export default function Checkout() {
               ) : (
                 <div className={styles.promoOk}>✓ {t('checkout.promoApplied')} (−{formatPrice(promoDiscount, currency)})</div>
               ))}
-            {promoError && <div className={styles.promoErr}>{t('checkout.promoInvalid')}</div>}
+            {promoError && (
+              <div className={styles.promoErr}>
+                {t(promoError === 'wrong_plan' ? 'checkout.promoWrongPlan' : 'checkout.promoInvalid')}
+              </div>
+            )}
           </div>
 
           {/* Qoidalar — faqat admin qoida kiritgan bo'lsa ko'rinadi */}
