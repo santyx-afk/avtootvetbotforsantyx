@@ -35,34 +35,8 @@ if (fs.existsSync(adminDir)) {
 }
 
 // ---------------- sitemap.xml ----------------
-// Ilgari sitemap qo'lda yozilgan edi va sanalari eskirib qolardi. Endi u har
-// build'da qayta yaratiladi: sana build kunidan olinadi, marshrutlar ro'yxati
-// esa shu yerda turadi (yangi ochiq sahifa qo'shsangiz — shu ro'yxatga qo'shing).
-const SITE_URL = 'https://santyx.uz';
-const PUBLIC_ROUTES = [
-  { path: '/', changefreq: 'weekly', priority: '1.0' },
-  { path: '/login', changefreq: 'monthly', priority: '0.5' },
-  { path: '/maxfiylik', changefreq: 'yearly', priority: '0.3' },
-  { path: '/shartlar', changefreq: 'yearly', priority: '0.3' },
-];
-
-function writeSitemap() {
-  const today = new Date().toISOString().slice(0, 10);
-  const urls = PUBLIC_ROUTES.map(
-    (route) =>
-      `  <url>\n` +
-      `    <loc>${SITE_URL}${route.path}</loc>\n` +
-      `    <lastmod>${today}</lastmod>\n` +
-      `    <changefreq>${route.changefreq}</changefreq>\n` +
-      `    <priority>${route.priority}</priority>\n` +
-      `  </url>`,
-  ).join('\n');
-
-  const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`;
-  fs.writeFileSync(path.join(distDir, 'sitemap.xml'), xml, 'utf8');
-  console.log(`sitemap.xml yangilandi (${PUBLIC_ROUTES.length} ta manzil, ${today}).`);
-}
-
-writeSitemap();
+// Sitemap endi build paytida emas, `netlify/functions/sitemap.js` da jonli
+// quriladi: obunalar ro'yxati bazadan olinadi, ya'ni admin panelda yangi reja
+// qo'shilsa build kutmasdan sitemap'ga tushadi.
 
 console.log('Build post-step tugadi.');

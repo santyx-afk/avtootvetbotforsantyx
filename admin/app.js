@@ -165,10 +165,11 @@ function renderCategories() {
 
 function renderPlans() {
   const root = document.getElementById('plansList');
-  root.innerHTML = `<table><thead><tr><th>Nomi</th><th>Plan ID</th><th>Kategoriya</th><th>Narx</th><th>Rasm</th><th>Tartib</th><th></th></tr></thead><tbody>${state.plans.map((item) => `
+  root.innerHTML = `<table><thead><tr><th>Nomi</th><th>Plan ID</th><th>Sahifa</th><th>Kategoriya</th><th>Narx</th><th>Rasm</th><th>Tartib</th><th></th></tr></thead><tbody>${state.plans.map((item) => `
     <tr>
       <td>${esc(item.name)}${item.is_popular ? ' ⭐' : ''}</td>
       <td><code class="copy-id" data-id="${esc(item.id)}" title="Nusxalash uchun bosing">${esc(item.id)}</code></td>
+      <td>${item.slug ? `<a href="/obuna/${esc(item.slug)}" target="_blank" rel="noopener">/${esc(item.slug)}</a>` : '<span class="hint">yo\'q</span>'}</td>
       <td>${esc(state.categories.find((category) => category.id === item.category_id)?.name || '-')}</td>
       <td>${money(item.price)} ${esc(item.currency)}</td>
       <td>${item.image_url ? '<span class="badge">✓</span>' : '-'}</td>
@@ -219,6 +220,7 @@ function fillPlanForm(item = {}) {
   document.getElementById('planCategoryId').value = item.category_id || state.categories[0]?.id || '';
   document.getElementById('planParentPlanId').value = item.parent_plan_id || '';
   document.getElementById('planName').value = item.name || '';
+  document.getElementById('planSlug').value = item.slug || '';
   document.getElementById('planButtonLabel').value = item.button_label || '';
   document.getElementById('planPrice').value = item.price || '';
   document.getElementById('planCurrency').value = item.currency || 'UZS';
@@ -837,6 +839,7 @@ onSubmit('planForm', async () => {
     category_id: document.getElementById('planCategoryId').value,
     parent_plan_id: document.getElementById('planParentPlanId').value || null,
     name: document.getElementById('planName').value,
+    slug: document.getElementById('planSlug').value,
     button_label: document.getElementById('planButtonLabel').value,
     price: Number(document.getElementById('planPrice').value || 0),
     old_price: document.getElementById('planOldPrice').value ? Number(document.getElementById('planOldPrice').value) : null,

@@ -2,6 +2,8 @@ const { requireAdmin } = require('../../shared/auth');
 const { getAdminClient, request, listTable, insertRow, updateRow, deleteRow, fetchPlan, toQuery } = require('../../shared/db');
 const { sendMessage } = require('../../shared/telegram');
 
+const { slugify } = require('../../shared/seo-page');
+
 const TABLES = { category: 'categories', plan: 'plans', promo: 'promo_codes' };
 
 function unauthorized() {
@@ -65,12 +67,22 @@ exports.handler = async (event) => {
       if (item.price !== undefined && Number.isNaN(Number(item.price))) throw badRequest('price numeric bo‘lishi kerak');
       if (item.old_price !== undefined && item.old_price !== null && item.old_price !== '' && Number.isNaN(Number(item.old_price))) throw badRequest('old_price numeric bo‘lishi kerak');
       if (item.delivery_type && !allowed.includes(item.delivery_type)) throw badRequest('delivery_type noto‘g‘ri');
-      return {
+      const out = {
         ...item,
         price: item.price !== undefined ? Number(item.price) : item.price,
         old_price: item.old_price === '' ? null : item.old_price === null || item.old_price === undefined ? item.old_price : Number(item.old_price),
         tags: Array.isArray(item.tags) ? item.tags : [],
       };
+
+      // slug — ochiq sahifa manzili (/obuna/<slug>). Bo'sh bo'lsa sahifa
+      // ochilmaydi. Yozilgan bo'lsa nomdan avtomatik tozalanadi, chunki
+      // URL da faqat kichik lotin harflari, raqam va chiziqcha bo'lishi kerak.
+      if (item.slug !== undefined) {
+        const slug = slugify(item.slug);
+        if (item.slug && !slug) throw badRequest('slug faqat lotin harflari va raqamlardan iborat bo‘lishi kerak');
+        out.slug = slug || null;
+      }
+      return out;
     };
 
     const sanitizePromo = (item = {}, { isCreate = false } = {}) => {

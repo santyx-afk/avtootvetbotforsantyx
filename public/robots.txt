@@ -1,6 +1,26 @@
+# santyx.uz
+# Ochiq sahifalar: /, /obuna, /obuna/*, /qollanma/*, /maxfiylik, /shartlar
+
 User-agent: *
 Allow: /
 Disallow: /admin/
 Disallow: /api/
+
+# AI yordamchilari javob berishdan oldin saytlarni o'qiydi. Ularga ataylab
+# ruxsat berilgan — maqsad aynan shu javoblarda ko'rinish.
+User-agent: GPTBot
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
 
 Sitemap: https://santyx.uz/sitemap.xml

@@ -479,6 +479,11 @@ export default function Landing() {
           <a href={INSTAGRAM_URL} target="_blank" rel="noopener noreferrer">
             {t('landing.footer.instagram')}
           </a>
+          {/* Bu ikkisi — server tomonda chiziladigan ochiq sahifalar.
+              <Link> emas, oddiy <a>: React Router ularni bilmaydi, brauzer
+              to'g'ridan-to'g'ri serverdan olishi kerak. */}
+          <a href="/obuna">{t('landing.footer.plans')}</a>
+          <a href="/qollanma/ozbekistondan-tolash">{t('landing.footer.payGuide')}</a>
           <Link to="/maxfiylik">{t('landing.footer.privacy')}</Link>
           <Link to="/shartlar">{t('landing.footer.terms')}</Link>
         </div>
