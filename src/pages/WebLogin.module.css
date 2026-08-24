@@ -99,13 +99,14 @@
 
 .codeBoxes {
   display: flex;
-  /* 8 ta katak tor telefon ekraniga ham sig'sin */
-  gap: clamp(4px, 1.6vw, 8px);
-  justify-content: space-between;
+  /* 4 ta katak — markazda tursin va kartaning eniga cho'zilib ketmasin */
+  gap: clamp(8px, 2.5vw, 12px);
+  justify-content: center;
   margin-bottom: 4px;
 }
 .codeBox {
   width: 100%;
+  max-width: 64px;
   aspect-ratio: 1 / 1.15;
   min-width: 0;
   padding: 0;

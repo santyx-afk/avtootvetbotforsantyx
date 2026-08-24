@@ -9,8 +9,9 @@ const BOT = (import.meta.env.VITE_BOT_USERNAME || 'santyxnarxbot').replace(/^@/,
 const BOT_LOGIN_URL = `https://t.me/${BOT}?start=web_login`;
 
 // Kod uzunligi serverdagi CODE_LENGTH bilan bir xil bo'lishi kerak
-// (shared/web-auth-service.js). 8 xonali — taxmin qilishga qarshi.
-const CODE_LENGTH = 8;
+// (shared/web-auth-service.js). 4 xonali — terishga qulay; taxminga qarshi
+// himoya server tarafdagi IP chegaralarida (webapp-api.js).
+const CODE_LENGTH = 4;
 const EMPTY_DIGITS = Array(CODE_LENGTH).fill('');
 
 // Brauzer orqali Telegram login: kod olish -> kodni kiritish -> JWT.

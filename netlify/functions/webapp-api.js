@@ -258,16 +258,34 @@ exports.handler = async (event) => {
     }
   }
   if (body.action === 'verify-web-code') {
-    // Kod taxmin qilishga qarshi chegara: bir IP dan 10 daqiqada 10 ta urinish,
-    // oshib ketsa 30 daqiqaga blok. Kodning o'zi ham 8 xonali (90 mln variant).
+    // Kod 4 xonali (9 000 variant) — himoya to'liq shu chegaralarda, shuning
+    // uchun ikkalasida ham failClosed: baza javob bermasa tekshiruv yopiladi
+    // (kod qidiruvi baribir o'sha bazada, demak bunda yo'qotish yo'q).
     const ip = rateLimit.clientIp(event.headers);
-    const gate = await rateLimit.hit(supabase, {
+    // 1) IP boshiga: 10 daqiqada 5 ta urinish, oshsa 30 daqiqa blok.
+    let gate = await rateLimit.hit(supabase, {
       scope: 'web_code',
       key: ip,
-      limit: 10,
+      limit: 5,
       windowSeconds: 600,
       blockSeconds: 1800,
+      failClosed: true,
     });
+    // 2) Umumiy to'siq: hujumchi IP larni aylantirsa per-IP chegara ojiz —
+    // barcha IP lar yig'indisi 10 daqiqada 80 tadan oshsa tekshiruv 15
+    // daqiqaga to'liq yopiladi. Halol trafik (kuniga o'nlab kirish) bunga
+    // yaqinlashmaydi; ataylab yopdirishga urinish esa faqat sayt loginini
+    // vaqtincha to'xtatadi — bot orqali xizmat ishlayveradi.
+    if (gate.allowed) {
+      gate = await rateLimit.hit(supabase, {
+        scope: 'web_code_global',
+        key: 'all',
+        limit: 80,
+        windowSeconds: 600,
+        blockSeconds: 900,
+        failClosed: true,
+      });
+    }
     if (!gate.allowed) {
       return json(
         429,
@@ -278,7 +296,9 @@ exports.handler = async (event) => {
     try {
       const result = await verifyWebLoginCode(supabase, body.code);
       if (!result.ok) return json(400, { ok: false, error: result.reason });
-      // To'g'ri kod — hisoblagichni tozalaymiz, halol foydalanuvchi jazolanmasin.
+      // To'g'ri kod — IP hisoblagichi tozalanadi, halol foydalanuvchi
+      // jazolanmasin. Umumiy to'siq ataylab tozalanmaydi: muvaffaqiyatlar
+      // taqsimlangan hujum statistikasini o'chirib yubormasligi kerak.
       await rateLimit.reset(supabase, 'web_code', ip);
       const token = signJwt({ telegram_id: result.telegram_id });
       return json(200, { ok: true, token, telegram_id: result.telegram_id });
