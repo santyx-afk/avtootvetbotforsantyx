@@ -10,7 +10,6 @@ const TABS = [
   { to: '/cart', icon: 'cart', key: 'cart' },
   { to: '/wishlist', icon: 'wishlist', key: 'wishlist' },
   { to: '/history', icon: 'history', key: 'history' },
-  { to: '/vacancy', icon: 'briefcase', key: 'vacancies' }, // vakansiya (super-app) rejimiga kirish
   { to: '/profile', icon: 'profile', key: 'profile' },
 ];
 

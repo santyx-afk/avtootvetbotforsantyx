@@ -29,19 +29,140 @@ async function notifyCustomer(telegramId, text) {
   await sendMessage(String(telegramId), text, null).catch((e) => console.warn('customer notify warn:', e?.message));
 }
 
+// PostgREST `or=(...)` filtri qavs, vergul, yulduzcha va qo'shtirnoq bilan
+// ajratiladi — qidiruv matnida ular qolsa filtr sintaksisi buziladi (yoki
+// begona shart qo'shib yuboriladi). Shuning uchun ular butunlay olib tashlanadi.
+function sanitizeSearch(value) {
+  return String(value || '').trim().replace(/[(),*"\\]/g, '').slice(0, 64);
+}
+
+// Bitta buyurtmaning to'liq tafsiloti: mijoz, reja, pul taqsimoti (promo,
+// chegirma, balans, cashback) va eng muhimi — qaysi inventar birligi (akkaunt
+// yoki kalit) yetkazilgani. Kredensiallarning O'ZI qaytarilmaydi: faqat qaysi
+// akkaunt ketgani ko'rsatiladi, ichini ochish Inventory bo'limidagi "Ko'rish"
+// tugmasi orqali (audit izini bitta joyda ushlab turish uchun).
+async function orderDetail(supabase, orderId) {
+  const { data } = await request(supabase, 'orders', {
+    query: `select=*&id=eq.${encodeURIComponent(orderId)}&limit=1`,
+  });
+  const order = data?.[0];
+  if (!order) return null;
+
+  const [planRes, userRes, invRes, itemsRes] = await Promise.all([
+    order.plan_id
+      ? request(supabase, 'plans', { query: `select=name&id=eq.${encodeURIComponent(order.plan_id)}&limit=1` }).catch(() => ({ data: [] }))
+      : Promise.resolve({ data: [] }),
+    order.user_telegram_id
+      ? request(supabase, 'users', {
+        query: `select=telegram_id,username,full_name,phone&telegram_id=eq.${encodeURIComponent(order.user_telegram_id)}&limit=1`,
+      }).catch(() => ({ data: [] }))
+      : Promise.resolve({ data: [] }),
+    // Inventar birligi ikki yo'l bilan bog'lanadi: orders.inventory_item_id yoki
+    // inventory_items.assigned_order_id. Ikkalasini ham tekshiramiz.
+    order.inventory_item_id
+      ? request(supabase, 'inventory_items', {
+        query: `select=id,type,login,status,reserved_at,delivered_at,sold_at&id=eq.${encodeURIComponent(order.inventory_item_id)}&limit=1`,
+      }).catch(() => ({ data: [] }))
+      : request(supabase, 'inventory_items', {
+        query: `select=id,type,login,status,reserved_at,delivered_at,sold_at&assigned_order_id=eq.${encodeURIComponent(order.id)}&limit=5`,
+      }).catch(() => ({ data: [] })),
+    request(supabase, 'order_items', {
+      query: `select=quantity,unit_price,total_price,delivery_status,delivery_error,delivered_at&order_id=eq.${encodeURIComponent(order.id)}`,
+    }).catch(() => ({ data: [] })),
+  ]);
+
+  const user = userRes.data?.[0] || null;
+  const inventory = (invRes.data || []).map((i) => ({
+    id: i.id,
+    type: i.type,
+    // Login to'liq ko'rsatilmaydi — ro'yxatdagi maskalash bilan bir xil.
+    login_masked: i.login ? `${String(i.login).slice(0, 2)}***` : null,
+    status: i.status,
+    reserved_at: i.reserved_at,
+    delivered_at: i.delivered_at,
+    sold_at: i.sold_at,
+  }));
+
+  return {
+    id: order.id,
+    order_number: order.order_number,
+    status: order.status,
+    order_type: order.order_type || 'purchase',
+    plan_name: planRes.data?.[0]?.name || '-',
+    user: {
+      telegram_id: order.user_telegram_id,
+      username: user?.username || null,
+      full_name: user?.full_name || null,
+      phone: user?.phone || null,
+    },
+    money: {
+      base_price: Number(order.base_price || 0),
+      amount: Number(order.unique_price ?? order.amount ?? 0),
+      expected_amount: Number(order.expected_amount || 0),
+      promo_code: order.promo_code || null,
+      discount_amount: Number(order.discount_amount || 0),
+      balance_used: Number(order.balance_used || 0),
+      cashback_amount: Number(order.cashback_amount || 0),
+      payment_method: order.payment_method || null,
+      payment_source: order.payment_source || null,
+    },
+    delivery: {
+      status: order.delivery_status || null,
+      attempts: Number(order.delivery_attempts || 0),
+      error: order.delivery_error || null,
+      items: inventory,
+      order_items: itemsRes.data || [],
+    },
+    timeline: {
+      created_at: order.created_at,
+      receipt_uploaded_at: order.receipt_uploaded_at,
+      paid_at: order.paid_at,
+      approved_at: order.approved_at,
+      rejected_at: order.rejected_at,
+      delivered_at: order.delivered_at,
+      completed_at: order.completed_at,
+      expires_at: order.expires_at,
+    },
+    admin_comment: order.admin_comment || null,
+  };
+}
+
+// Testlar uchun ochiladi.
+exports._sanitizeSearch = sanitizeSearch;
+
 exports.handler = async (event) => {
   if (!requireAdmin(event.headers)) return json(401, { ok: false, error: 'Unauthorized' });
   const supabase = getAdminClient();
   try {
+    // Bitta buyurtma tafsiloti: qaysi akkaunt ketgan, kimga, qachon.
+    if (event.httpMethod === 'GET' && event.queryStringParameters?.order_id) {
+      const detail = await orderDetail(supabase, event.queryStringParameters.order_id);
+      if (!detail) return json(404, { ok: false, error: 'Buyurtma topilmadi' });
+      return json(200, { ok: true, detail });
+    }
+
     if (event.httpMethod === 'GET') {
-      const status = event.queryStringParameters?.status;
-      const limit = Number(event.queryStringParameters?.limit || 50);
-      const query = { select: '*', order: 'created_at.desc', limit };
+      const params = event.queryStringParameters || {};
+      const status = params.status;
+      // Ilgari limit qat'iy 50 edi va frontend uni oshirmasdi — 500+ buyurtmadan
+      // faqat oxirgi 50 tasi ko'rinardi. Endi sahifalash bor (limit + offset).
+      const limit = Math.min(Math.max(Number(params.limit || 50), 1), 500);
+      const offset = Math.max(Number(params.offset || 0), 0);
+      const query = { select: '*', order: 'created_at.desc', limit, offset };
       if (status) query.status = `eq.${status}`;
-      const { data: orders } = await request(supabase, 'orders', { query: toQuery(query) });
-      const plans = await listTable(supabase, 'plans');
+
+      // Qidiruv: buyurtma raqami yoki Telegram ID bo'yicha.
+      const search = sanitizeSearch(params.search);
+      if (search) {
+        query.or = `(order_number.ilike.*${search}*,user_telegram_id.ilike.*${search}*)`;
+      }
+
+      const [{ data: orders, count }, plans] = await Promise.all([
+        request(supabase, 'orders', { query: toQuery(query), headers: { Prefer: 'count=exact' } }),
+        listTable(supabase, 'plans'),
+      ]);
       const mapped = (orders || []).map((o) => ({ ...o, plan_name: plans.find((p) => p.id === o.plan_id)?.name || '-' }));
-      return json(200, { ok: true, orders: mapped });
+      return json(200, { ok: true, orders: mapped, total: count ?? mapped.length, limit, offset });
     }
 
     if (event.httpMethod === 'POST') {

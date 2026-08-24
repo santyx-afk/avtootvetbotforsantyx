@@ -129,11 +129,40 @@ async function fetchCategory(client, categoryId) {
   return data?.[0] ? mapCategory(data[0]) : null;
 }
 
+// Xush kelibsiz bonusi: yangi foydalanuvchi balansiga sozlamalardagi summa.
+//
+// Ikki marta to'lanmasligi UPDATE shartiga tayanadi: `welcome_bonus_at=is.null`
+// bo'lgan qatorgina yangilanadi, ya'ni ikkita parallel so'rovdan faqat bittasi
+// qatorni ushlaydi va bonusni beradi. Boshqasi bo'sh natija oladi va chiqadi.
+async function grantWelcomeBonus(client, telegramId) {
+  const settings = await fetchSettings(client).catch(() => null);
+  const amount = Math.round(Number(settings?.welcome_bonus || 0));
+  if (!(amount > 0)) return null;
+
+  const { data } = await request(client, 'users', {
+    method: 'PATCH',
+    query: `telegram_id=eq.${encodeURIComponent(String(telegramId))}&welcome_bonus_at=is.null`,
+    headers: { Prefer: 'return=representation' },
+    body: { welcome_bonus_at: new Date().toISOString() },
+  });
+  if (!data?.length) return null; // boshqa so'rov ulgurdi — bonus allaqachon berilgan
+
+  // `bonus` — wallet_transactions.type CHECK cheklovida ruxsat etilgan tur.
+  return addWalletTransaction(client, {
+    user_telegram_id: telegramId,
+    amount,
+    type: 'bonus',
+    description: 'Xush kelibsiz sovg‘asi — ro‘yxatdan o‘tganingiz uchun',
+  });
+}
+
 async function upsertUser(client, telegramUser) {
-  return request(client, 'users', {
+  const result = await request(client, 'users', {
     method: 'POST',
-    query: 'on_conflict=telegram_id',
-    headers: { Prefer: 'resolution=merge-duplicates' },
+    // Javobda welcome_bonus_at qaytadi — yangi foydalanuvchini aniqlash uchun
+    // qo'shimcha so'rov kerak emas (upsertUser har bir xabarda chaqiriladi).
+    query: 'on_conflict=telegram_id&select=telegram_id,welcome_bonus_at',
+    headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
     body: {
       telegram_id: String(telegramUser.id),
       username: telegramUser.username || null,
@@ -142,6 +171,13 @@ async function upsertUser(client, telegramUser) {
       updated_at: new Date().toISOString(),
     },
   });
+
+  if (result.data?.[0] && !result.data[0].welcome_bonus_at) {
+    // Bonus bermaslik ro'yxatdan o'tishni buzmasligi kerak.
+    await grantWelcomeBonus(client, telegramUser.id)
+      .catch((error) => console.warn('welcome bonus warn:', error?.message));
+  }
+  return result;
 }
 
 async function saveUserState(client, telegramId, state) {
@@ -347,12 +383,30 @@ async function getPromoCode(client, code) {
   return data?.[0] || null;
 }
 
-async function validatePromoCode(client, code, basePrice) {
+// Promokod tanlangan tovarlarga tegishlimi.
+// `plan_ids` bo'sh yoki NULL bo'lsa — promokod hamma tovarga amal qiladi
+// (eski promokodlar shu holatda, shuning uchun xatti-harakat o'zgarmaydi).
+// Savatda bir nechta tovar bo'lsa, promokod ULARNING HAMMASIGA tegishli
+// bo'lishi shart emas — kamida bittasiga tegsa yetarli, chegirma esa
+// baribir umumiy summadan hisoblanadi.
+function promoAppliesToPlans(promo, planIds) {
+  const allowed = Array.isArray(promo?.plan_ids) ? promo.plan_ids.filter(Boolean) : [];
+  if (!allowed.length) return true;
+  const wanted = (Array.isArray(planIds) ? planIds : [planIds]).filter(Boolean).map(String);
+  if (!wanted.length) return true; // tovar noma'lum — bu bosqichda to'smaymiz
+  const allowedSet = new Set(allowed.map(String));
+  return wanted.some((id) => allowedSet.has(id));
+}
+
+// `planIds` — buyurtmadagi reja(lar) id'si. Berilmasa tovar tekshiruvi
+// o'tkazilmaydi (chaqiruvchi hali tovarni bilmasa).
+async function validatePromoCode(client, code, basePrice, planIds = null) {
   const promo = await getPromoCode(client, code);
   if (!promo) return { ok: false, reason: 'not_found' };
   if (promo.expires_at && new Date(promo.expires_at).getTime() < Date.now()) return { ok: false, reason: 'expired', promo };
   if (promo.max_uses && Number(promo.used_count || 0) >= Number(promo.max_uses)) return { ok: false, reason: 'usage_limit', promo };
   if (promo.min_order_amount && Number(basePrice || 0) < Number(promo.min_order_amount)) return { ok: false, reason: 'min_order', promo };
+  if (planIds !== null && !promoAppliesToPlans(promo, planIds)) return { ok: false, reason: 'wrong_plan', promo };
   const discount = calculatePromoDiscount(basePrice, promo);
   const cashback = calculatePromoCashback(basePrice, promo);
   return { ok: true, promo, discount, cashback };
@@ -380,6 +434,59 @@ async function adjustWalletBalance(client, telegramId, delta) {
   }
 }
 
+// Balans o'zgarishi haqida mijozga yuboriladigan matn.
+// Sabab tranzaksiya turiga qarab tanlanadi; `description` bo'lsa qo'shiladi.
+const BALANCE_REASON = {
+  cashback: 'Cashback',
+  referral: 'Referal bonusi',
+  credit: 'Hisob to‘ldirildi',
+  debit: 'Xarid uchun yechildi',
+  admin_credit: 'Administrator qo‘shdi',
+  admin_debit: 'Administrator yechdi',
+  bonus: 'Bonus',
+  refund: 'Qaytarilgan mablag‘',
+};
+
+function balanceMessage({ type, amount, balance, description }) {
+  const negative = type === 'debit' || type === 'admin_debit';
+  const money = (v) => Number(v || 0).toLocaleString('uz-UZ');
+  const reason = BALANCE_REASON[type] || 'Balans o‘zgarishi';
+  return [
+    negative
+      ? `➖ <b>Balansingizdan ${money(amount)} UZS yechildi</b>`
+      : `➕ <b>Balansingizga ${money(amount)} UZS qo‘shildi</b>`,
+    '',
+    `Sabab: ${reason}`,
+    description ? `Izoh: ${description}` : null,
+    '',
+    `💰 Joriy balans: <b>${money(balance)} UZS</b>`,
+  ].filter((line) => line !== null).join('\n');
+}
+
+// Balans o'zgarganda mijozga Telegram xabari. Xabar ketmasa ham balans
+// o'zgarishi kuchda qoladi — shuning uchun xato yutiladi, faqat logga tushadi.
+// `notify: false` bilan o'chirib qo'yish mumkin (ommaviy to'ldirishda xabarlar
+// alohida, guruhlab yuboriladi).
+async function notifyBalanceChange(item, wallet) {
+  if (item.notify === false) return;
+  try {
+    // Dumaloq bog'liqlik yo'q: telegram.js faqat config'ga tayanadi.
+    const { sendMessage } = require('./telegram');
+    await sendMessage(
+      String(item.user_telegram_id),
+      balanceMessage({
+        type: item.type,
+        amount: Math.abs(Number(item.amount || 0)),
+        balance: wallet?.balance,
+        description: item.description,
+      }),
+      null,
+    );
+  } catch (error) {
+    console.warn('balance notify warn:', error?.message);
+  }
+}
+
 // Tranzaksiya yozuvi user_wallets.balance ni o'zi yangilamaydi, shuning uchun ikkalasi shu yerda birga bajariladi
 async function addWalletTransaction(client, item) {
   const amount = Math.abs(Number(item.amount || 0));
@@ -389,6 +496,9 @@ async function addWalletTransaction(client, item) {
   // debit va admin_debit balansni kamaytiradi; qolganlari oshiradi
   const negative = item.type === 'debit' || item.type === 'admin_debit';
   const wallet = await adjustWalletBalance(client, item.user_telegram_id, negative ? -amount : amount);
+  // Har qanday balans o'zgarishi shu funksiyadan o'tadi (cashback, referal,
+  // admin, xarid, to'ldirish) — shuning uchun xabar ham shu yerda yuboriladi.
+  await notifyBalanceChange(item, wallet);
   return { ...(data?.[0] || {}), wallet };
 }
 
@@ -878,6 +988,9 @@ module.exports = {
   expireOrder,
   getPromoCode,
   validatePromoCode,
+  promoAppliesToPlans,
+  grantWelcomeBonus,
+  rpcRequest,
   getUserBalance,
   addWalletTransaction,
   adjustWalletBalance,

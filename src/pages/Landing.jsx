@@ -433,20 +433,6 @@ export default function Landing() {
         </div>
       </section>
 
-      <section className={`${styles.section} ${styles.reveal}`}>
-        <h2 className={styles.sectionTitle}>{t('landing.vacancy.title')}</h2>
-        <p className={styles.heroText}>{t('landing.vacancy.text')}</p>
-        <div className={styles.heroActions}>
-          <button
-            type="button"
-            className={styles.cta}
-            onClick={() => window.open(BOT_URL, '_blank', 'noopener')}
-          >
-            {t('landing.vacancy.cta')}
-          </button>
-        </div>
-      </section>
-
       {/* FAQ — native <details>, JS talab qilmaydi */}
       <section className={styles.section}>
         <h2 className={`${styles.sectionTitle} ${styles.reveal}`}>{t('landing.faq.title')}</h2>

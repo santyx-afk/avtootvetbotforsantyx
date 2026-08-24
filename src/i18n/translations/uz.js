@@ -26,29 +26,7 @@ export default {
     cart: 'Savat',
     wishlist: 'Sevimli',
     history: 'Tarix',
-    vacancies: 'Vakansiyalar',
     profile: 'Profil',
-  },
-  // Vakansiya bo'limining pastki menyusi — do'kon menyusi bilan bir xil tilda bo'lishi uchun.
-  vacancyTabs: {
-    store: 'Do\'kon',
-    home: 'Bosh sahifa',
-    listings: 'E\'lonlarim',
-    profile: 'Profil',
-  },
-  // --- Vakansiyalar bo'limi (vaqtinchalik — vacancies/feedback prefiksi bilan guruhlangan) ---
-  vacancies: {
-    title: 'Tez orada yangiliklar!',
-    desc: 'Vakansiyalar bo\'limi ustida ish olib borilmoqda. Yangiliklar haqida birinchi bo\'lib xabardor bo\'lish uchun kuzatib boring.',
-  },
-  feedback: {
-    title: 'Fikr va takliflar',
-    desc: 'Bizga o\'z fikringizni, taklifingizni yoki shikoyatingizni yuboring',
-    placeholder: 'Xabaringizni yozing...',
-    send: 'Yuborish',
-    success: 'Xabaringiz yuborildi! Rahmat.',
-    error: 'Xatolik yuz berdi. Qayta urinib ko\'ring.',
-    empty: 'Iltimos, xabar yozing.',
   },
   // --- Xariddan keyingi sharh modali (vaqtinchalik/olib tashlanadigan) ---
   review: {
@@ -172,6 +150,7 @@ export default {
     promoApplied: 'Promokod qo\'llandi',
     promoCashback: 'Cashback {amount} — to\'lovdan keyin balansga qaytadi',
     promoInvalid: 'Promokod yaroqsiz yoki muddati tugagan',
+    promoWrongPlan: 'Bu promokod savatdagi tovarlarga amal qilmaydi',
     discount: 'Chegirma',
     fromBalance: 'Balansdan',
     rulesTitle: 'Qoidalar',
@@ -338,12 +317,6 @@ export default {
         { title: 'Obuna nazorati', text: 'Faol obunalaringiz va tugash muddati profilda ko‘rinadi.' },
       ],
     },
-    vacancy: {
-      title: 'Vakansiya e’lonlari',
-      text:
-        'Endi bot ichida ishchi qidirish yoki o‘z xizmatingizni taklif qilish uchun e’lon joylash mumkin — butunlay tekin. Ro‘yxatdan o‘ting va e’loningizni bir necha daqiqada chop eting.',
-      cta: 'Vakansiyalarni ko‘rish',
-    },
     faq: {
       title: 'Ko‘p so‘raladigan savollar',
       items: [
@@ -370,10 +343,6 @@ export default {
         {
           q: 'Bu rasmiy obunami?',
           a: 'Ha, xizmatlar rasmiy obunalar asosida beriladi. Farqi — narx: biz uni sezilarli hamyonbop qilamiz.',
-        },
-        {
-          q: 'Vakansiya e’lonini qanday joylayman?',
-          a: 'Botni oching, “Vakansiya qidirish/joylash” tugmasini bosing, ro‘yxatdan o‘ting va e’loningizni yarating — butunlay tekin.',
         },
       ],
     },

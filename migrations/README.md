@@ -23,7 +23,10 @@ frontend murojaat qilib krash bo'lgani). Endi tartib quyidagicha.
 | Fayl | Qo'llangan sana | Izoh |
 |---|---|---|
 | [BASELINE.md](BASELINE.md) | 2026-08-16 | Boshlang'ich snapshot — joriy 42 jadval holati |
-| [2026-08-17_leads.sql](2026-08-17_leads.sql) | ⏳ kutilmoqda | Landing lead formasi uchun `leads` jadvali |
+| [2026-08-17_leads.sql](2026-08-17_leads.sql) | 2026-08-24 | Landing lead formasi uchun `leads` jadvali |
+| [2026-08-24_promo-plans-and-balance.sql](2026-08-24_promo-plans-and-balance.sql) | 2026-08-24 | Promokodni tovarga bog'lash (`plan_ids`), xush kelibsiz bonusi (`welcome_bonus`, `welcome_bonus_at`) |
+| [2026-08-24_credit-all-users.sql](2026-08-24_credit-all-users.sql) | 2026-08-24 | `credit_all_users()` — hamma balansini bittada to'ldirish (anon roldan huquq olib tashlangan) |
+| [2026-08-24_drop-vacancy-tables.sql](2026-08-24_drop-vacancy-tables.sql) | ⚠️ **loyiha egasi ishga tushiradi** | Vakansiya jadvallarini o'chirish — ma'lumot yo'qoladi, avval zaxira oling |
 
 ## BASELINE.md haqida
 

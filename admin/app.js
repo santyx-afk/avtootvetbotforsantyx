@@ -1,4 +1,43 @@
-const state = { categories: [], plans: [], settings: null, orders: [], inventory: [], banners: [], promos: [], reviews: [], faq: [], users: [], leads: [] };
+const state = {
+  categories: [], plans: [], settings: null, orders: [], inventory: [],
+  banners: [], promos: [], reviews: [], faq: [], users: [], leads: [],
+  ordersTotal: 0,
+  usersShown: 100,
+};
+
+// Jadvallar innerHTML orqali chiziladi, ma'lumotning bir qismi esa
+// foydalanuvchi kiritgan matn (Telegram ismi/username, sharh, lead, izoh).
+// Escape qilinmasa admin panelda saqlangan XSS bo'ladi: mijoz o'z Telegram
+// ismiga <img onerror=...> yozib qo'ysa, admin sahifani ochganda skript
+// admin sessiyasi ichida ishga tushadi. Har bir dinamik qiymat shu funksiyadan
+// o'tishi SHART.
+const ESC_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+function esc(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (ch) => ESC_MAP[ch]);
+}
+
+function money(value) {
+  return Number(value || 0).toLocaleString('uz-UZ');
+}
+
+// Sana: bo'sh bo'lsa "—", noto'g'ri bo'lsa xom qiymat (escape qilingan holda).
+function dt(value) {
+  if (!value) return '—';
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? esc(value) : d.toLocaleString('uz-UZ');
+}
+
+// Batafsil oynalardagi bitta "yorliq + qiymat" kartochkasi.
+function cell(label, value) {
+  return `<div class="detail-cell"><span class="k">${esc(label)}</span><span class="v">${esc(value ?? '—')}</span></div>`;
+}
+
+// Foydalanuvchini ko'rsatish uchun qulay yorliq: @username yoki ism yoki ID.
+function userLabel(u = {}) {
+  if (u.username) return `@${u.username}`;
+  if (u.full_name) return u.full_name;
+  return String(u.telegram_id ?? '—');
+}
 
 const views = {
   dashboard: document.getElementById('dashboardView'),
@@ -11,7 +50,6 @@ const views = {
   reviews: document.getElementById('reviewsView'),
   faq: document.getElementById('faqView'),
   users: document.getElementById('usersView'),
-  vacancy: document.getElementById('vacancyView'),
   leads: document.getElementById('leadsView'),
   messages: document.getElementById('messagesView'),
   settings: document.getElementById('settingsView'),
@@ -63,11 +101,13 @@ function renderStats(stats) {
     ['Referallar', stats.totalReferrals || 0],
     ['Referal bonuslari', Number(stats.referralBonusTotal || 0).toLocaleString('uz-UZ')],
   ];
-  document.getElementById('statsCards').innerHTML = cards.map(([label, value]) => `<div class="card"><h3>${label}</h3><strong>${value}</strong></div>`).join('');
-  document.getElementById('topCategories').innerHTML = stats.mostViewedCategories.map((item) => `<li>${item.name}: ${item.total}</li>`).join('') || '<li>Ma\'lumot yo\'q</li>';
-  document.getElementById('topPlans').innerHTML = stats.mostViewedPlans.map((item) => `<li>${item.name}: ${item.total}</li>`).join('') || '<li>Ma\'lumot yo\'q</li>';
-  document.getElementById('topPayments').innerHTML = stats.mostPaymentClicks.map((item) => `<li>${item.name}: ${item.total}</li>`).join('') || '<li>Ma\'lumot yo\'q</li>';
-  document.getElementById('eventLogs').innerHTML = stats.eventLogs.map((item) => `<li><strong>${item.event_type}</strong> — ${new Date(item.created_at).toLocaleString('uz-UZ')}</li>`).join('') || '<li>Ma\'lumot yo\'q</li>';
+  document.getElementById('statsCards').innerHTML = cards.map(([label, value]) => `<div class="card"><h3>${esc(label)}</h3><strong>${esc(value ?? 0)}</strong></div>`).join('');
+  // API qisman javob qaytarsa ham dashboard qulamasin — har bir ro'yxat guard bilan.
+  const list = (rows, fn) => (Array.isArray(rows) ? rows : []).map(fn).join('') || '<li>Ma\'lumot yo\'q</li>';
+  document.getElementById('topCategories').innerHTML = list(stats.mostViewedCategories, (item) => `<li>${esc(item.name)}: ${esc(item.total)}</li>`);
+  document.getElementById('topPlans').innerHTML = list(stats.mostViewedPlans, (item) => `<li>${esc(item.name)}: ${esc(item.total)}</li>`);
+  document.getElementById('topPayments').innerHTML = list(stats.mostPaymentClicks, (item) => `<li>${esc(item.name)}: ${esc(item.total)}</li>`);
+  document.getElementById('eventLogs').innerHTML = list(stats.eventLogs, (item) => `<li><strong>${esc(item.event_type)}</strong> — ${dt(item.created_at)}</li>`);
 
   // Revenue chart
   if (typeof Chart !== 'undefined' && stats.dailyRevenue) {
@@ -110,9 +150,9 @@ function renderCategories() {
   const root = document.getElementById('categoriesList');
   root.innerHTML = `<table><thead><tr><th>Nomi</th><th>Slug</th><th>Tartib</th><th>Holat</th><th></th></tr></thead><tbody>${state.categories.map((item) => `
     <tr>
-      <td>${item.name}</td>
-      <td>${item.slug}</td>
-      <td>${item.sort_order}</td>
+      <td>${esc(item.name)}</td>
+      <td>${esc(item.slug)}</td>
+      <td>${esc(item.sort_order)}</td>
       <td><span class="badge">${item.is_active ? 'Faol' : 'NoFaol'}</span></td>
       <td>
         <button class="ghost edit-category" data-id="${item.id}">Edit</button>
@@ -120,28 +160,48 @@ function renderCategories() {
       </td>
     </tr>`).join('')}</tbody></table>`;
   const categorySelect = document.getElementById('planCategoryId');
-  categorySelect.innerHTML = state.categories.map((item) => `<option value="${item.id}">${item.name}</option>`).join('');
+  categorySelect.innerHTML = state.categories.map((item) => `<option value="${esc(item.id)}">${esc(item.name)}</option>`).join('');
 }
 
 function renderPlans() {
   const root = document.getElementById('plansList');
-  root.innerHTML = `<table><thead><tr><th>Nomi</th><th>Kategoriya</th><th>Narx</th><th>Rasm</th><th>Tartib</th><th></th></tr></thead><tbody>${state.plans.map((item) => `
+  root.innerHTML = `<table><thead><tr><th>Nomi</th><th>Plan ID</th><th>Kategoriya</th><th>Narx</th><th>Rasm</th><th>Tartib</th><th></th></tr></thead><tbody>${state.plans.map((item) => `
     <tr>
-      <td>${item.name}${item.is_popular ? ' ⭐' : ''}</td>
-      <td>${state.categories.find((category) => category.id === item.category_id)?.name || '-'}</td>
-      <td>${Number(item.price || 0).toLocaleString('uz-UZ')} ${item.currency}</td>
+      <td>${esc(item.name)}${item.is_popular ? ' ⭐' : ''}</td>
+      <td><code class="copy-id" data-id="${esc(item.id)}" title="Nusxalash uchun bosing">${esc(item.id)}</code></td>
+      <td>${esc(state.categories.find((category) => category.id === item.category_id)?.name || '-')}</td>
+      <td>${money(item.price)} ${esc(item.currency)}</td>
       <td>${item.image_url ? '<span class="badge">✓</span>' : '-'}</td>
-      <td>${item.sort_order}</td>
+      <td>${esc(item.sort_order)}</td>
       <td>
         <button class="ghost edit-plan" data-id="${item.id}">Edit</button>
         <button class="ghost danger delete-item" data-type="plan" data-id="${item.id}">Delete</button>
       </td>
     </tr>`).join('')}</tbody></table>`;
   const parentSelect = document.getElementById('planParentPlanId');
-  parentSelect.innerHTML = `<option value="">Yo'q</option>${state.plans.filter((item) => !item.parent_plan_id).map((item) => `<option value="${item.id}">${item.name}</option>`).join('')}`;
-  document.getElementById('inventoryPlanId').innerHTML = state.plans.map((item) => `<option value="${item.id}">${item.name}</option>`).join('');
-  document.getElementById('inventoryPlanIdCreate').innerHTML = state.plans.map((item) => `<option value="${item.id}">${item.name}</option>`).join('');
+  const planOptions = state.plans.map((item) => `<option value="${esc(item.id)}">${esc(item.name)}</option>`).join('');
+  parentSelect.innerHTML = `<option value="">Yo'q</option>${state.plans.filter((item) => !item.parent_plan_id).map((item) => `<option value="${esc(item.id)}">${esc(item.name)}</option>`).join('')}`;
+  document.getElementById('inventoryPlanId').innerHTML = planOptions;
+  document.getElementById('inventoryPlanIdCreate').innerHTML = planOptions;
+  // Promokod formasidagi "qaysi tovarlarga" ro'yxati ham shu yerdan to'ladi.
+  const promoPlans = document.getElementById('promoPlanIds');
+  if (promoPlans) {
+    const selected = new Set([...promoPlans.selectedOptions].map((o) => o.value));
+    promoPlans.innerHTML = planOptions;
+    [...promoPlans.options].forEach((o) => { o.selected = selected.has(o.value); });
+  }
 }
+
+// Plan ID ustunidagi kodni bosganda nusxalanadi — inventar qo'shishda qo'l keladi.
+document.getElementById('plansList')?.addEventListener('click', (event) => {
+  const code = event.target.closest('.copy-id');
+  if (!code) return;
+  navigator.clipboard?.writeText(code.dataset.id).then(() => {
+    const old = code.textContent;
+    code.textContent = 'Nusxalandi ✓';
+    setTimeout(() => { code.textContent = old; }, 1200);
+  }).catch(() => {});
+});
 
 function fillCategoryForm(item = {}) {
   document.getElementById('categoryId').value = item.id || '';
@@ -188,9 +248,9 @@ function renderBanners() {
   const root = document.getElementById('bannersList');
   root.innerHTML = `<table><thead><tr><th>Sarlavha</th><th>Rasm</th><th>Tartib</th><th>Holat</th><th></th></tr></thead><tbody>${state.banners.map((b) => `
     <tr>
-      <td>${b.title}</td>
+      <td>${esc(b.title)}</td>
       <td>${b.image_url ? '<span class="badge">✓</span>' : '-'}</td>
-      <td>${b.sort_order || 0}</td>
+      <td>${esc(b.sort_order || 0)}</td>
       <td><span class="badge">${b.is_active ? 'Faol' : 'NoFaol'}</span></td>
       <td>
         <button class="ghost edit-banner" data-id="${b.id}">Edit</button>
@@ -218,17 +278,20 @@ function fillBannerForm(item = {}) {
 // --- Promos ---
 function renderPromos() {
   const root = document.getElementById('promosList');
-  root.innerHTML = `<table><thead><tr><th>Kod</th><th>Chegirma</th><th>Min buyurtma</th><th>Ishlatildi</th><th>Muddat</th><th>Holat</th><th></th></tr></thead><tbody>${state.promos.map((p) => `
+  const planName = (id) => state.plans.find((pl) => pl.id === id)?.name || id;
+  root.innerHTML = `<table><thead><tr><th>Kod</th><th>Chegirma</th><th>Tovarlar</th><th>Min buyurtma</th><th>Ishlatildi</th><th>Muddat</th><th>Holat</th><th></th></tr></thead><tbody>${state.promos.map((p) => `
     <tr>
-      <td><strong>${p.code}</strong>${p.is_one_time ? ' <span class="badge">1x</span>' : ''}</td>
-      <td>${Number(p.discount_value || 0).toLocaleString('uz-UZ')}${p.discount_type === 'fixed' ? ' UZS' : p.discount_type === 'cashback_percent' ? '% cashback' : '%'}</td>
-      <td>${Number(p.min_order_amount || 0).toLocaleString('uz-UZ')}</td>
-      <td>${p.used_count || 0}${p.max_uses ? `/${p.max_uses}` : ''}</td>
-      <td>${p.expires_at ? String(p.expires_at).slice(0, 10) : '-'}</td>
+      <td><strong>${esc(p.code)}</strong>${p.is_one_time ? ' <span class="badge">1x</span>' : ''}</td>
+      <td>${money(p.discount_value)}${p.discount_type === 'fixed' ? ' UZS' : p.discount_type === 'cashback_percent' ? '% cashback' : '%'}</td>
+      <td>${p.plan_ids?.length ? esc(p.plan_ids.map(planName).join(', ')) : '<span class="badge">Hammasi</span>'}</td>
+      <td>${money(p.min_order_amount)}</td>
+      <td>${esc(p.used_count || 0)}${p.max_uses ? `/${esc(p.max_uses)}` : ''}</td>
+      <td>${p.expires_at ? esc(String(p.expires_at).slice(0, 10)) : '-'}</td>
       <td><span class="badge">${p.is_active ? 'Faol' : 'NoFaol'}</span></td>
       <td>
-        <button class="ghost edit-promo" data-id="${p.id}">Edit</button>
-        <button class="ghost danger delete-promo" data-id="${p.id}">Del</button>
+        <button class="ghost promo-usage" data-code="${esc(p.code)}">Batafsil</button>
+        <button class="ghost edit-promo" data-id="${esc(p.id)}">Edit</button>
+        <button class="ghost danger delete-promo" data-id="${esc(p.id)}">Del</button>
       </td>
     </tr>`).join('')}</tbody></table>`;
 }
@@ -241,6 +304,11 @@ function fillPromoForm(item = {}) {
   document.getElementById('promoMinOrder').value = item.min_order_amount ?? 0;
   document.getElementById('promoMaxUses').value = item.max_uses ?? '';
   document.getElementById('promoExpiresAt').value = item.expires_at ? String(item.expires_at).slice(0, 10) : '';
+  const promoPlans = document.getElementById('promoPlanIds');
+  if (promoPlans) {
+    const chosen = new Set((item.plan_ids || []).map(String));
+    [...promoPlans.options].forEach((o) => { o.selected = chosen.has(o.value); });
+  }
   document.getElementById('promoIsOneTime').checked = item.is_one_time ?? false;
   document.getElementById('promoIsActive').checked = item.is_active ?? true;
   document.getElementById('promoFormTitle').textContent = item.id ? 'Promokodni tahrirlash' : 'Promokod qo\'shish';
@@ -253,11 +321,11 @@ function renderReviews() {
   const filtered = statusFilter ? state.reviews.filter((r) => r.status === statusFilter) : state.reviews;
   root.innerHTML = `<table><thead><tr><th>Foydalanuvchi</th><th>Reja</th><th>Baho</th><th>Sharh</th><th>Holat</th><th></th></tr></thead><tbody>${filtered.map((r) => `
     <tr>
-      <td>${r.user_telegram_id}</td>
-      <td>${state.plans.find((p) => p.id === r.plan_id)?.name || r.plan_id}</td>
-      <td class="review-stars">${'★'.repeat(r.rating)}${'☆'.repeat(5 - r.rating)}</td>
-      <td>${r.text || '-'}</td>
-      <td><span class="badge">${r.status || 'pending'}</span></td>
+      <td>${esc(r.user_telegram_id)}</td>
+      <td>${esc(state.plans.find((p) => p.id === r.plan_id)?.name || r.plan_id)}</td>
+      <td class="review-stars">${'★'.repeat(Math.max(0, Math.min(5, Number(r.rating) || 0)))}${'☆'.repeat(5 - Math.max(0, Math.min(5, Number(r.rating) || 0)))}</td>
+      <td>${esc(r.text || '-')}</td>
+      <td><span class="badge">${esc(r.status || 'pending')}</span></td>
       <td>
         ${r.status !== 'approved' ? `<button class="ghost review-action" data-action="approve" data-id="${r.id}">✓</button>` : ''}
         ${r.status !== 'rejected' ? `<button class="ghost danger review-action" data-action="reject" data-id="${r.id}">✕</button>` : ''}
@@ -271,8 +339,8 @@ function renderFaq() {
   const root = document.getElementById('faqList');
   root.innerHTML = `<table><thead><tr><th>Savol</th><th>Tartib</th><th>Holat</th><th></th></tr></thead><tbody>${state.faq.map((f, idx) => `
     <tr>
-      <td>${f.question}</td>
-      <td>${f.sort_order || 0}</td>
+      <td>${esc(f.question)}</td>
+      <td>${esc(f.sort_order || 0)}</td>
       <td><span class="badge">${f.is_active ? 'Faol' : 'NoFaol'}</span></td>
       <td class="faq-order-btns">
         ${idx > 0 ? `<button class="ghost faq-move" data-id="${f.id}" data-dir="up">↑</button>` : ''}
@@ -293,30 +361,64 @@ function fillFaqForm(item = {}) {
 }
 
 // --- Users ---
+// Ro'yxatni toraytiruvchi filtrlar. Qidiruvdan tashqari holat bo'yicha
+// (bloklangan/faol, balansi bor, xarid qilgan) ham saralash mumkin.
+const USER_FILTERS = {
+  active: (u) => !u.is_blocked,
+  blocked: (u) => Boolean(u.is_blocked),
+  withBalance: (u) => Number(u.balance || 0) > 0,
+  buyers: (u) => Number(u.purchases || 0) > 0,
+  noPurchase: (u) => Number(u.purchases || 0) === 0,
+};
+
+const USER_SORTS = {
+  balance: (a, b) => Number(b.balance || 0) - Number(a.balance || 0),
+  purchases: (a, b) => Number(b.purchases || 0) - Number(a.purchases || 0),
+  activity: (a, b) => new Date(b.last_activity || 0) - new Date(a.last_activity || 0),
+};
+
 function renderUsers(filter = '') {
   const q = filter.toLowerCase();
-  const filtered = q ? state.users.filter((u) =>
+  let filtered = q ? state.users.filter((u) =>
     String(u.telegram_id).includes(q) ||
     (u.username || '').toLowerCase().includes(q) ||
     (u.full_name || '').toLowerCase().includes(q)
   ) : state.users;
+
+  const mode = document.getElementById('userFilter')?.value || '';
+  if (USER_FILTERS[mode]) filtered = filtered.filter(USER_FILTERS[mode]);
+
+  const sortKey = document.getElementById('userSort')?.value || 'new';
+  // 'new' — serverdan kelgan tartib (created_at desc), qayta saralash shart emas.
+  if (USER_SORTS[sortKey]) filtered = [...filtered].sort(USER_SORTS[sortKey]);
   const root = document.getElementById('usersList');
-  root.innerHTML = `<table><thead><tr><th>Telegram ID</th><th>Username</th><th>Ism</th><th>Balans</th><th>Xaridlar</th><th>Faollik</th><th>Blocked</th><th></th></tr></thead><tbody>${filtered.slice(0, 100).map((u) => `
+  // Ilgari qat'iy 100 ta ko'rsatilib "+N ta yana..." deb yozilardi va qolganiga
+  // yetib bo'lmasdi. Endi "Yana ko'rsatish" tugmasi bilan ochiladi.
+  const shown = filtered.slice(0, state.usersShown);
+  root.innerHTML = `<table><thead><tr><th>Telegram ID</th><th>Username</th><th>Ism</th><th>Balans</th><th>Xaridlar</th><th>Faollik</th><th>Blocked</th><th></th></tr></thead><tbody>${shown.map((u) => `
     <tr>
-      <td>${u.telegram_id}</td>
-      <td>${u.username || '-'}</td>
-      <td>${u.full_name || '-'}</td>
-      <td>${Number(u.balance || 0).toLocaleString('uz-UZ')}</td>
-      <td>${u.purchases || 0}</td>
-      <td>${u.last_activity ? new Date(u.last_activity).toLocaleDateString('uz-UZ') : '-'}</td>
+      <td>${esc(u.telegram_id)}</td>
+      <td>${u.username ? `@${esc(u.username)}` : '-'}</td>
+      <td>${esc(u.full_name || '-')}</td>
+      <td>${money(u.balance)}</td>
+      <td>${esc(u.purchases || 0)}</td>
+      <td>${u.last_activity ? esc(new Date(u.last_activity).toLocaleDateString('uz-UZ')) : '-'}</td>
       <td>${u.is_blocked ? '🚫' : '-'}</td>
       <td>
-        <button class="ghost user-detail" data-id="${u.telegram_id}">Batafsil</button>
-        <button class="ghost user-action" data-action="${u.is_blocked ? 'unblock' : 'block'}" data-id="${u.telegram_id}">${u.is_blocked ? 'Unblock' : 'Block'}</button>
-        <button class="ghost user-msg" data-id="${u.telegram_id}">Xabar</button>
+        <button class="ghost user-detail" data-id="${esc(u.telegram_id)}">Batafsil</button>
+        <button class="ghost user-action" data-action="${u.is_blocked ? 'unblock' : 'block'}" data-id="${esc(u.telegram_id)}">${u.is_blocked ? 'Unblock' : 'Block'}</button>
+        <button class="ghost user-msg" data-id="${esc(u.telegram_id)}">Xabar</button>
       </td>
     </tr>`).join('')}</tbody></table>`;
-  if (filtered.length > 100) root.innerHTML += `<p>+${filtered.length - 100} ta yana...</p>`;
+
+  const countEl = document.getElementById('usersCount');
+  if (countEl) {
+    countEl.textContent = filtered.length
+      ? `${shown.length} / ${filtered.length} ta ko'rsatilmoqda (jami ${state.users.length})`
+      : 'Foydalanuvchi topilmadi';
+  }
+  const moreBtn = document.getElementById('usersLoadMore');
+  if (moreBtn) moreBtn.hidden = filtered.length <= shown.length;
 }
 
 async function loadDashboard() {
@@ -333,23 +435,64 @@ async function loadData() {
   await loadInventory();
 }
 
-async function loadOrders() {
+const ORDERS_PAGE = 100;
+
+// Buyurtmalar. Ilgari server qat'iy 50 ta qaytarardi va frontend uni oshirmasdi
+// — 500+ buyurtmadan faqat oxirgi 50 tasi ko'rinardi. Endi qidiruv (№ yoki
+// Telegram ID) va "Yana yuklash" (offset) bor.
+async function loadOrders({ append = false } = {}) {
   const status = document.getElementById('orderStatusFilter')?.value || '';
-  const data = await api(`admin-orders${status ? `?status=${encodeURIComponent(status)}` : ''}`);
-  state.orders = data.orders || [];
-  const root = document.getElementById('ordersList');
-  root.innerHTML = `<table><thead><tr><th>№</th><th>User</th><th>Reja</th><th>Summa</th><th>Status</th><th>Delivery</th><th>Vaqt</th><th>Amal</th></tr></thead><tbody>${state.orders.map((o) => {
-  const canApprove = ['payment_uploaded', 'checking'].includes(o.status);
-  const isProcessed = ['approved', 'rejected', 'completed', 'cancelled'].includes(o.status);
-  return `
-  <tr><td>${o.order_number}</td><td>${o.user_telegram_id}</td><td>${o.plan_name || '-'}</td><td>${Number(o.amount || 0).toLocaleString('uz-UZ')}</td><td>${o.status}</td><td>${o.delivery_status || '-'}</td><td>${new Date(o.created_at).toLocaleString('uz-UZ')}</td>
-  <td>
-    <button class="ghost order-action" data-action="approve" data-id="${o.id}" ${canApprove ? '' : 'disabled'}>Approve</button>
-    <button class="ghost danger order-action" data-action="reject" data-id="${o.id}" ${isProcessed ? 'disabled' : ''}>Reject</button>
-    <button class="ghost order-action" data-action="retry_delivery" data-id="${o.id}">Retry</button>
-    <button class="ghost order-action" data-action="complete" data-id="${o.id}">Complete</button>
-  </td></tr>`;}).join('')}</tbody></table>`;
+  const search = document.getElementById('orderSearch')?.value.trim() || '';
+  const offset = append ? state.orders.length : 0;
+
+  const params = new URLSearchParams({ limit: String(ORDERS_PAGE), offset: String(offset) });
+  if (status) params.set('status', status);
+  if (search) params.set('search', search);
+
+  const data = await api(`admin-orders?${params.toString()}`);
+  const batch = data.orders || [];
+  state.orders = append ? [...state.orders, ...batch] : batch;
+  state.ordersTotal = Number(data.total ?? state.orders.length);
+
+  renderOrders();
   renderRecentOrders();
+}
+
+function renderOrders() {
+  const root = document.getElementById('ordersList');
+  if (!root) return;
+  if (!state.orders.length) {
+    root.innerHTML = '<p class="detail-empty">Buyurtma topilmadi.</p>';
+  } else {
+    root.innerHTML = `<table><thead><tr><th>№</th><th>User</th><th>Reja</th><th>Summa</th><th>Promo</th><th>Chegirma</th><th>Status</th><th>Delivery</th><th>Vaqt</th><th>Amal</th></tr></thead><tbody>${state.orders.map((o) => {
+      const canApprove = ['payment_uploaded', 'checking'].includes(o.status);
+      const isProcessed = ['approved', 'rejected', 'completed', 'cancelled'].includes(o.status);
+      return `
+  <tr>
+    <td>${esc(o.order_number)}</td>
+    <td>${esc(o.user_telegram_id)}</td>
+    <td>${esc(o.plan_name || '-')}</td>
+    <td>${money(o.unique_price ?? o.amount)}</td>
+    <td>${o.promo_code ? `<span class="badge">${esc(o.promo_code)}</span>` : '-'}</td>
+    <td>${Number(o.discount_amount || 0) > 0 ? `−${money(o.discount_amount)}` : '-'}</td>
+    <td>${esc(o.status)}</td>
+    <td>${esc(o.delivery_status || '-')}</td>
+    <td>${dt(o.created_at)}</td>
+    <td>
+      <button class="ghost order-detail" data-id="${esc(o.id)}">Batafsil</button>
+      <button class="ghost order-action" data-action="approve" data-id="${esc(o.id)}" ${canApprove ? '' : 'disabled'}>Approve</button>
+      <button class="ghost danger order-action" data-action="reject" data-id="${esc(o.id)}" ${isProcessed ? 'disabled' : ''}>Reject</button>
+      <button class="ghost order-action" data-action="retry_delivery" data-id="${esc(o.id)}">Retry</button>
+      <button class="ghost order-action" data-action="complete" data-id="${esc(o.id)}">Complete</button>
+    </td>
+  </tr>`;
+    }).join('')}</tbody></table>`;
+  }
+
+  const countEl = document.getElementById('ordersCount');
+  if (countEl) countEl.textContent = `${state.orders.length} / ${state.ordersTotal} ta buyurtma`;
+  const moreBtn = document.getElementById('ordersLoadMore');
+  if (moreBtn) moreBtn.hidden = state.orders.length >= state.ordersTotal;
 }
 
 // Dashboard uchun so'nggi 6 ta buyurtma (faqat ko'rish)
@@ -359,7 +502,7 @@ function renderRecentOrders() {
   const recent = state.orders.slice(0, 6);
   if (!recent.length) { root.innerHTML = '<p>Buyurtmalar yo\'q</p>'; return; }
   root.innerHTML = `<table><thead><tr><th>№</th><th>User</th><th>Reja</th><th>Summa</th><th>Status</th><th>Vaqt</th></tr></thead><tbody>${recent.map((o) => `
-    <tr><td>${o.order_number}</td><td>${o.user_telegram_id}</td><td>${o.plan_name || '-'}</td><td>${Number(o.amount || 0).toLocaleString('uz-UZ')}</td><td><span class="badge">${o.status}</span></td><td>${new Date(o.created_at).toLocaleString('uz-UZ')}</td></tr>`).join('')}</tbody></table>`;
+    <tr><td>${esc(o.order_number)}</td><td>${esc(o.user_telegram_id)}</td><td>${esc(o.plan_name || '-')}</td><td>${money(o.unique_price ?? o.amount)}</td><td><span class="badge">${esc(o.status)}</span></td><td>${dt(o.created_at)}</td></tr>`).join('')}</tbody></table>`;
 }
 
 async function loadInventory() {
@@ -369,9 +512,39 @@ async function loadInventory() {
   state.inventory = data.items || [];
   const c = data.counts || {};
   document.getElementById('inventoryCounts').innerHTML = `available:${c.available || 0}, reserved:${c.reserved || 0}, delivered:${c.delivered || 0}, sold:${c.sold || 0}, disabled:${c.disabled || 0}`;
-  document.getElementById('inventoryList').innerHTML = `<table><thead><tr><th>Type</th><th>Login</th><th>Password</th><th>Key</th><th>Status</th><th>Qo'shilgan</th><th></th></tr></thead><tbody>${state.inventory.map((i) => `<tr data-inv-id="${i.id}">
-  <td>${i.type}</td><td class="inv-login">${i.login || '-'}</td><td class="inv-pass">${i.password_encrypted || '-'}</td><td class="inv-key">${i.license_key_encrypted || '-'}</td><td>${i.status}</td><td>${i.created_at ? new Date(i.created_at).toLocaleString('uz-UZ') : '-'}</td>
-  <td><button class="ghost inv-reveal" data-id="${i.id}">Ko'rish</button> <button class="ghost danger inv-disable" data-id="${i.id}">Disable</button></td></tr>`).join('')}</tbody></table>`;
+  renderInventory();
+}
+
+function renderInventory() {
+  const root = document.getElementById('inventoryList');
+  if (!root) return;
+  const statusFilter = document.getElementById('inventoryStatusFilter')?.value || '';
+  const rows = statusFilter ? state.inventory.filter((i) => i.status === statusFilter) : state.inventory;
+
+  if (!rows.length) {
+    root.innerHTML = '<p class="detail-empty">Bu filtr bo\'yicha akkaunt yo\'q.</p>';
+    return;
+  }
+
+  // "Kimga" va "Sotilgan" ustunlari: bu ma'lumot bazada allaqachon bor edi
+  // (assigned_user_telegram_id, sold_at/delivered_at) — faqat ko'rsatilmasdi.
+  root.innerHTML = `<table><thead><tr><th>Type</th><th>Login</th><th>Password</th><th>Key</th><th>Status</th><th>Kimga</th><th>Sotilgan</th><th>Qo'shilgan</th><th></th></tr></thead><tbody>${rows.map((i) => {
+    const soldAt = i.sold_at || i.delivered_at || i.reserved_at;
+    return `<tr data-inv-id="${esc(i.id)}">
+  <td>${esc(i.type)}</td>
+  <td class="inv-login">${esc(i.login || '-')}</td>
+  <td class="inv-pass">${esc(i.password_encrypted || '-')}</td>
+  <td class="inv-key">${esc(i.license_key_encrypted || '-')}</td>
+  <td>${esc(i.status)}</td>
+  <td>${i.assigned_user_telegram_id ? esc(i.assigned_user_telegram_id) : '-'}</td>
+  <td>${soldAt ? dt(soldAt) : '-'}</td>
+  <td>${dt(i.created_at)}</td>
+  <td>
+    <button class="ghost inv-detail" data-id="${esc(i.id)}">Batafsil</button>
+    <button class="ghost inv-reveal" data-id="${esc(i.id)}">Ko'rish</button>
+    <button class="ghost danger inv-disable" data-id="${esc(i.id)}">Disable</button>
+  </td></tr>`;
+  }).join('')}</tbody></table>`;
 }
 
 async function loadBanners() {
@@ -407,12 +580,6 @@ async function loadFaq() {
 }
 
 // --- Leadlar (saytdagi forma) ---
-// Lead matnlari tashrifchi tomonidan kiritiladi — XSS oldini olish uchun
-// jadvalga qo'yishdan avval albatta escape qilinadi.
-function escLead(value) {
-  return String(value ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
-}
-
 function renderLeads() {
   const root = document.getElementById('leadsList');
   if (!root) return;
@@ -428,10 +595,10 @@ function renderLeads() {
   }
   root.innerHTML = `<table><thead><tr><th>Izlayapti</th><th>Kontakt</th><th>Ism</th><th>Sana</th><th>Holat</th><th></th></tr></thead><tbody>${state.leads.map((l) => `
     <tr>
-      <td>${escLead(l.wanted)}</td>
-      <td>${escLead(l.contact)}</td>
-      <td>${escLead(l.name || '—')}</td>
-      <td>${new Date(l.created_at).toLocaleString('uz-UZ')}</td>
+      <td>${esc(l.wanted)}</td>
+      <td>${esc(l.contact)}</td>
+      <td>${esc(l.name || '—')}</td>
+      <td>${dt(l.created_at)}</td>
       <td><span class="badge">${l.status === 'done' ? 'Bajarildi' : 'Yangi'}</span></td>
       <td>
         ${l.status === 'done'
@@ -472,6 +639,7 @@ async function loadSettings() {
   document.getElementById('settingsReferralBonus').value = state.settings.referral_fixed_bonus ?? '';
   document.getElementById('settingsReferralPercent').value = state.settings.referral_percent ?? '';
   document.getElementById('settingsMinTopup').value = state.settings.min_topup ?? '';
+  document.getElementById('settingsWelcomeBonus').value = state.settings.welcome_bonus ?? 0;
   document.getElementById('welcomeText').value = state.settings.welcome_text || '';
   document.getElementById('contactText').value = state.settings.contact_text || '';
   document.getElementById('settingsGeneralTerms').value = state.settings.general_terms || '';
@@ -480,7 +648,9 @@ async function loadSettings() {
 async function deleteItem(type, id) {
   if (!confirm('Rostdan ham o\'chirmoqchimisiz?')) return;
   await api('admin-data', { method: 'DELETE', body: JSON.stringify({ type, id }) });
-  await initApp();
+  // Ilgari initApp() chaqirilardi — bitta o'chirish uchun 9 ta so'rov ketardi.
+  // Kategoriya/reja o'zgarishi uchun loadData() yetarli.
+  await loadData();
 }
 
 async function initApp() {
@@ -545,6 +715,24 @@ function setupImageUpload(fileInputId, urlInputId, previewId, uploadBtnId) {
       if (file) handleFile(file);
     });
   }
+}
+
+// Forma yuborishdagi xatolar ilgari jimgina yo'qolardi (unhandled rejection) —
+// admin saqlanmaganini bilmay qolardi. Bu o'ram xatoni ko'rsatadi va ikki marta
+// bosishdan saqlaydi.
+function onSubmit(formId, handler) {
+  document.getElementById(formId)?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const btn = event.currentTarget.querySelector('button[type="submit"]');
+    if (btn) btn.disabled = true;
+    try {
+      await handler(event);
+    } catch (error) {
+      alert(error.message || 'Xatolik yuz berdi');
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  });
 }
 
 // --- Login ---
@@ -628,8 +816,7 @@ document.getElementById('plansList').addEventListener('click', (event) => {
   }
 });
 
-document.getElementById('categoryForm').addEventListener('submit', async (event) => {
-  event.preventDefault();
+onSubmit('categoryForm', async () => {
   const item = {
     id: document.getElementById('categoryId').value || undefined,
     name: document.getElementById('categoryName').value,
@@ -641,11 +828,10 @@ document.getElementById('categoryForm').addEventListener('submit', async (event)
   };
   await api('admin-data', { method: item.id ? 'PUT' : 'POST', body: JSON.stringify({ type: 'category', item }) });
   fillCategoryForm();
-  await initApp();
+  await loadData();
 });
 
-document.getElementById('planForm').addEventListener('submit', async (event) => {
-  event.preventDefault();
+onSubmit('planForm', async () => {
   const item = {
     id: document.getElementById('planId').value || undefined,
     category_id: document.getElementById('planCategoryId').value,
@@ -672,12 +858,11 @@ document.getElementById('planForm').addEventListener('submit', async (event) => 
   };
   await api('admin-data', { method: item.id ? 'PUT' : 'POST', body: JSON.stringify({ type: 'plan', item }) });
   fillPlanForm();
-  await initApp();
+  await loadData();
 });
 
 // Settings
-document.getElementById('settingsForm').addEventListener('submit', async (event) => {
-  event.preventDefault();
+onSubmit('settingsForm', async () => {
   await api('admin-settings', {
     method: 'PUT',
     body: JSON.stringify({
@@ -690,19 +875,19 @@ document.getElementById('settingsForm').addEventListener('submit', async (event)
       referral_fixed_bonus: document.getElementById('settingsReferralBonus').value ? Number(document.getElementById('settingsReferralBonus').value) : null,
       referral_percent: document.getElementById('settingsReferralPercent').value ? Number(document.getElementById('settingsReferralPercent').value) : null,
       min_topup: document.getElementById('settingsMinTopup').value ? Number(document.getElementById('settingsMinTopup').value) : null,
+      welcome_bonus: Number(document.getElementById('settingsWelcomeBonus').value || 0),
       welcome_text: document.getElementById('welcomeText').value,
       contact_text: document.getElementById('contactText').value,
       general_terms: document.getElementById('settingsGeneralTerms').value,
     }),
   });
-  await initApp();
+  await loadSettings();
 });
 
 // --- Banners ---
 document.getElementById('newBannerButton')?.addEventListener('click', () => fillBannerForm());
 document.getElementById('bannerReset')?.addEventListener('click', () => fillBannerForm());
-document.getElementById('bannerForm')?.addEventListener('submit', async (event) => {
-  event.preventDefault();
+onSubmit('bannerForm', async () => {
   const item = {
     id: document.getElementById('bannerId').value || undefined,
     title: document.getElementById('bannerTitle').value,
@@ -744,6 +929,7 @@ document.getElementById('promoForm')?.addEventListener('submit', async (event) =
     min_order_amount: Number(document.getElementById('promoMinOrder').value || 0),
     max_uses: document.getElementById('promoMaxUses').value ? Number(document.getElementById('promoMaxUses').value) : null,
     expires_at: document.getElementById('promoExpiresAt').value || null,
+    plan_ids: [...(document.getElementById('promoPlanIds')?.selectedOptions || [])].map((o) => o.value),
     is_one_time: document.getElementById('promoIsOneTime').checked,
     is_active: document.getElementById('promoIsActive').checked,
   };
@@ -754,6 +940,11 @@ document.getElementById('promoForm')?.addEventListener('submit', async (event) =
   } catch (err) { alert(err.message); }
 });
 document.getElementById('promosList')?.addEventListener('click', async (event) => {
+  const usageBtn = event.target.closest('.promo-usage');
+  if (usageBtn) {
+    openPromoUsage(usageBtn.dataset.code).catch((e) => alert(e.message));
+    return;
+  }
   const editBtn = event.target.closest('.edit-promo');
   if (editBtn) {
     fillPromoForm(state.promos.find((p) => p.id === editBtn.dataset.id));
@@ -779,8 +970,7 @@ document.getElementById('reviewsList')?.addEventListener('click', async (event) 
 // --- FAQ ---
 document.getElementById('newFaqButton')?.addEventListener('click', () => fillFaqForm());
 document.getElementById('faqReset')?.addEventListener('click', () => fillFaqForm());
-document.getElementById('faqForm')?.addEventListener('submit', async (event) => {
-  event.preventDefault();
+onSubmit('faqForm', async () => {
   const item = {
     id: document.getElementById('faqId').value || undefined,
     question: document.getElementById('faqQuestion').value,
@@ -812,7 +1002,57 @@ document.getElementById('faqList')?.addEventListener('click', async (event) => {
 
 // --- Users ---
 document.getElementById('reloadUsersButton')?.addEventListener('click', () => loadUsers());
-document.getElementById('userSearch')?.addEventListener('input', (e) => renderUsers(e.target.value));
+document.getElementById('userSearch')?.addEventListener('input', (e) => {
+  state.usersShown = 100; // yangi qidiruvda ro'yxat boshidan boshlansin
+  renderUsers(e.target.value);
+});
+document.getElementById('usersLoadMore')?.addEventListener('click', () => {
+  state.usersShown += 100;
+  renderUsers(document.getElementById('userSearch')?.value || '');
+});
+['userFilter', 'userSort'].forEach((id) => {
+  document.getElementById(id)?.addEventListener('change', () => {
+    state.usersShown = 100;
+    renderUsers(document.getElementById('userSearch')?.value || '');
+  });
+});
+
+// --- Hammaga pul qo'shish ---
+bindModal('creditAllModal', 'creditAllClose');
+document.getElementById('creditAllButton')?.addEventListener('click', () => {
+  document.getElementById('creditAllAmount').value = '';
+  document.getElementById('creditAllReason').value = '';
+  document.getElementById('creditAllMsg').textContent = '';
+  document.getElementById('creditAllModal').hidden = false;
+});
+document.getElementById('creditAllSubmit')?.addEventListener('click', async () => {
+  const btn = document.getElementById('creditAllSubmit');
+  const msg = document.getElementById('creditAllMsg');
+  const amount = Number(document.getElementById('creditAllAmount').value || 0);
+  const reason = document.getElementById('creditAllReason').value.trim();
+  if (!(amount > 0)) {
+    msg.style.color = 'var(--danger)';
+    msg.textContent = 'Summa kiriting';
+    return;
+  }
+  // Qaytarib bo'lmaydigan amal — aniq tasdiq so'raymiz.
+  if (!confirm(`Barcha bloklanmagan foydalanuvchilar balansiga ${money(amount)} UZS qo'shilsinmi? Bu amalni orqaga qaytarib bo'lmaydi.`)) return;
+
+  btn.disabled = true;
+  msg.style.color = '';
+  msg.textContent = 'Bajarilmoqda…';
+  try {
+    const res = await api('admin-users', { method: 'POST', body: JSON.stringify({ action: 'credit-all', amount, reason }) });
+    msg.style.color = 'var(--success, #16a34a)';
+    msg.textContent = res.message || 'Bajarildi';
+    await loadUsers();
+  } catch (error) {
+    msg.style.color = 'var(--danger)';
+    msg.textContent = error.message || 'Xatolik';
+  } finally {
+    btn.disabled = false;
+  }
+});
 document.getElementById('usersList')?.addEventListener('click', async (event) => {
   const detailBtn = event.target.closest('.user-detail');
   if (detailBtn) {
@@ -842,11 +1082,11 @@ function renderUserDetail(data) {
   document.getElementById('userBalance').textContent = Number(data.balance || 0).toLocaleString('uz-UZ');
   const purchases = data.purchases || [];
   document.getElementById('userPurchases').innerHTML = purchases.length
-    ? `<table><thead><tr><th>Sana</th><th>Obuna</th><th>Narx</th><th>Status</th><th>Promo</th></tr></thead><tbody>${purchases.map((p) => `<tr><td>${new Date(p.created_at).toLocaleString('uz-UZ')}</td><td>${p.plan_name}</td><td>${Number(p.amount).toLocaleString('uz-UZ')}</td><td><span class="badge">${PURCHASE_STATUS[p.status] || p.status}</span></td><td>${p.promo_code || '-'}</td></tr>`).join('')}</tbody></table>`
+    ? `<table><thead><tr><th>Sana</th><th>№</th><th>Obuna</th><th>Narx</th><th>Status</th><th>Promo</th></tr></thead><tbody>${purchases.map((p) => `<tr><td>${dt(p.created_at)}</td><td>${esc(p.order_number || '-')}</td><td>${esc(p.plan_name)}</td><td>${money(p.amount)}</td><td><span class="badge">${esc(PURCHASE_STATUS[p.status] || p.status)}</span></td><td>${esc(p.promo_code || '-')}</td></tr>`).join('')}</tbody></table>`
     : '<p style="padding:10px">Xaridlar yo\'q</p>';
   const hist = data.balanceHistory || [];
   document.getElementById('userBalanceHistory').innerHTML = hist.length
-    ? `<table><thead><tr><th>Sana</th><th>Tur</th><th>Summa</th><th>Izoh</th></tr></thead><tbody>${hist.map((h) => `<tr><td>${new Date(h.created_at).toLocaleString('uz-UZ')}</td><td>${h.type}</td><td>${Number(h.amount).toLocaleString('uz-UZ')}</td><td>${h.description || '-'}</td></tr>`).join('')}</tbody></table>`
+    ? `<table><thead><tr><th>Sana</th><th>Tur</th><th>Summa</th><th>Izoh</th></tr></thead><tbody>${hist.map((h) => `<tr><td>${dt(h.created_at)}</td><td>${esc(h.type)}</td><td>${money(h.amount)}</td><td>${esc(h.description || '-')}</td></tr>`).join('')}</tbody></table>`
     : '<p style="padding:10px">Balans tarixi yo\'q</p>';
 }
 
@@ -887,6 +1127,177 @@ document.getElementById('userModal')?.addEventListener('click', (e) => { if (e.t
 document.getElementById('balanceAdd')?.addEventListener('click', () => adjustBalance('add'));
 document.getElementById('balanceSub')?.addEventListener('click', () => adjustBalance('subtract'));
 
+// --- Umumiy modal yopish: ✕ tugmasi, fon bosilishi va Escape ---
+function bindModal(modalId, closeId) {
+  const modal = document.getElementById(modalId);
+  if (!modal) return;
+  const close = () => { modal.hidden = true; };
+  document.getElementById(closeId)?.addEventListener('click', close);
+  modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+}
+bindModal('promoUsageModal', 'promoUsageClose');
+bindModal('invDetailModal', 'invDetailClose');
+bindModal('orderDetailModal', 'orderDetailClose');
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  ['userModal', 'promoUsageModal', 'invDetailModal', 'orderDetailModal'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el && !el.hidden) el.hidden = true;
+  });
+});
+
+// --- Promokod batafsil: kim, qancha to'lab ishlatgan ---
+const PROMO_PAID_HINT = 'Jamlanmaga faqat to\'langan buyurtmalar (approved/completed) kiradi.';
+
+async function openPromoUsage(code) {
+  const modal = document.getElementById('promoUsageModal');
+  document.getElementById('promoUsageTitle').textContent = `Promokod: ${code}`;
+  document.getElementById('promoUsageSummary').innerHTML = '';
+  document.getElementById('promoUsageList').innerHTML = '<p class="detail-empty">Yuklanmoqda…</p>';
+  modal.hidden = false;
+
+  try {
+    const data = await api(`admin-promos?usage=${encodeURIComponent(code)}`);
+    const sum = data.summary || { total: 0, paid: 0, revenue: 0, discount_total: 0, unique_users: 0 };
+    document.getElementById('promoUsageSummary').innerHTML = [
+      cell('Jami ishlatilgan', `${sum.total} marta`),
+      cell('To\'langan', `${sum.paid} ta`),
+      cell('Tushum', `${money(sum.revenue)} UZS`),
+      cell('Berilgan chegirma', `${money(sum.discount_total)} UZS`),
+      cell('Turli mijoz', `${sum.unique_users} ta`),
+    ].join('');
+
+    const rows = data.orders || [];
+    document.getElementById('promoUsageList').innerHTML = rows.length
+      ? `<div class="table-card"><table><thead><tr><th>Sana</th><th>№</th><th>Mijoz</th><th>Obuna</th><th>To'lagan</th><th>Chegirma</th><th>Status</th></tr></thead><tbody>${rows.map((o) => `
+        <tr>
+          <td>${dt(o.created_at)}</td>
+          <td>${esc(o.order_number)}</td>
+          <td>${esc(userLabel(o))}${o.username ? ` <span class="hint">(${esc(o.user_telegram_id)})</span>` : ''}</td>
+          <td>${esc(o.plan_name)}</td>
+          <td>${money(o.amount)}</td>
+          <td>${Number(o.discount_amount || 0) > 0 ? `−${money(o.discount_amount)}` : '-'}</td>
+          <td><span class="badge">${esc(PURCHASE_STATUS[o.status] || o.status)}</span></td>
+        </tr>`).join('')}</tbody></table></div><p class="hint">${esc(PROMO_PAID_HINT)}</p>`
+      : '<p class="detail-empty">Bu promokod hali ishlatilmagan.</p>';
+  } catch (error) {
+    document.getElementById('promoUsageList').innerHTML = `<p class="detail-empty">${esc(error.message || 'Yuklanmadi')}</p>`;
+  }
+}
+
+// --- Inventar birligi batafsil: akkaunt kimga va qachon ketgan ---
+async function openInvDetail(id) {
+  const modal = document.getElementById('invDetailModal');
+  const body = document.getElementById('invDetailBody');
+  body.innerHTML = '<p class="detail-empty">Yuklanmoqda…</p>';
+  modal.hidden = false;
+
+  try {
+    const { detail: d } = await api('admin-inventory', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'detail', id }),
+    });
+    document.getElementById('invDetailTitle').textContent = `${d.type === 'license_key' ? 'Kalit' : 'Akkaunt'} — ${d.status}`;
+
+    const who = d.user
+      ? [
+        cell('Kimga ketgan', userLabel(d.user)),
+        cell('Telegram ID', d.user.telegram_id),
+        cell('Ism', d.user.full_name || '—'),
+      ].join('')
+      : '';
+
+    const order = d.order
+      ? [
+        cell('Buyurtma №', d.order.order_number),
+        cell('Buyurtma holati', PURCHASE_STATUS[d.order.status] || d.order.status),
+        cell('To\'langan', `${money(d.order.amount)} UZS`),
+        cell('Promokod', d.order.promo_code || '—'),
+      ].join('')
+      : '';
+
+    body.innerHTML = `
+      <div class="detail-grid">
+        ${cell('Reja', d.plan_name || '—')}
+        ${cell('Turi', d.type)}
+        ${cell('Holat', d.status)}
+        ${cell('Login', d.login_masked || '—')}
+      </div>
+      <h4>Kimga ketgan</h4>
+      ${d.user ? `<div class="detail-grid">${who}</div>` : '<p class="detail-empty">Hali hech kimga biriktirilmagan.</p>'}
+      <h4>Buyurtma</h4>
+      ${d.order ? `<div class="detail-grid">${order}</div>` : '<p class="detail-empty">Bog\'langan buyurtma yo\'q.</p>'}
+      <h4>Vaqt chizig'i</h4>
+      <div class="detail-grid">
+        ${cell('Qo\'shilgan', dt(d.created_at))}
+        ${cell('Band qilingan', dt(d.reserved_at))}
+        ${cell('Yetkazilgan', dt(d.delivered_at))}
+        ${cell('Sotilgan', dt(d.sold_at))}
+      </div>
+      ${d.notes ? `<h4>Izoh</h4><p>${esc(d.notes)}</p>` : ''}`;
+  } catch (error) {
+    body.innerHTML = `<p class="detail-empty">${esc(error.message || 'Yuklanmadi')}</p>`;
+  }
+}
+
+// --- Buyurtma batafsil: pul taqsimoti, yetkazilgan akkaunt, vaqt chizig'i ---
+async function openOrderDetail(id) {
+  const modal = document.getElementById('orderDetailModal');
+  const body = document.getElementById('orderDetailBody');
+  body.innerHTML = '<p class="detail-empty">Yuklanmoqda…</p>';
+  modal.hidden = false;
+
+  try {
+    const { detail: d } = await api(`admin-orders?order_id=${encodeURIComponent(id)}`);
+    document.getElementById('orderDetailTitle').textContent = `Buyurtma ${d.order_number}`;
+
+    const items = d.delivery.items || [];
+    const delivered = items.length
+      ? `<div class="table-card"><table><thead><tr><th>Turi</th><th>Login</th><th>Holat</th><th>Yetkazilgan</th><th>Sotilgan</th></tr></thead><tbody>${items.map((i) => `
+        <tr>
+          <td>${esc(i.type)}</td>
+          <td>${esc(i.login_masked || '—')}</td>
+          <td>${esc(i.status)}</td>
+          <td>${dt(i.delivered_at)}</td>
+          <td>${dt(i.sold_at)}</td>
+        </tr>`).join('')}</tbody></table></div>
+        <p class="hint">Login/parolni to'liq ko'rish uchun Inventory bo'limidagi "Ko'rish" tugmasidan foydalaning.</p>`
+      : '<p class="detail-empty">Bu buyurtmaga akkaunt biriktirilmagan.</p>';
+
+    body.innerHTML = `
+      <div class="detail-grid">
+        ${cell('Mijoz', userLabel(d.user))}
+        ${cell('Telegram ID', d.user.telegram_id)}
+        ${cell('Obuna', d.plan_name)}
+        ${cell('Holat', PURCHASE_STATUS[d.status] || d.status)}
+      </div>
+      <h4>To'lov</h4>
+      <div class="detail-grid">
+        ${cell('To\'langan summa', `${money(d.money.amount)} UZS`)}
+        ${cell('Promokod', d.money.promo_code || '—')}
+        ${cell('Chegirma', `${money(d.money.discount_amount)} UZS`)}
+        ${cell('Balansdan', `${money(d.money.balance_used)} UZS`)}
+        ${cell('Cashback', `${money(d.money.cashback_amount)} UZS`)}
+        ${cell('To\'lov usuli', d.money.payment_method || '—')}
+      </div>
+      <h4>Yetkazilgan akkaunt</h4>
+      ${delivered}
+      ${d.delivery.error ? `<p class="detail-empty">Yetkazishda xato: ${esc(d.delivery.error)} (${esc(d.delivery.attempts)} urinish)</p>` : ''}
+      <h4>Vaqt chizig'i</h4>
+      <div class="detail-grid">
+        ${cell('Yaratilgan', dt(d.timeline.created_at))}
+        ${cell('Chek yuklangan', dt(d.timeline.receipt_uploaded_at))}
+        ${cell('To\'langan', dt(d.timeline.paid_at))}
+        ${cell('Tasdiqlangan', dt(d.timeline.approved_at))}
+        ${cell('Yetkazilgan', dt(d.timeline.delivered_at))}
+        ${cell('Yakunlangan', dt(d.timeline.completed_at))}
+      </div>
+      ${d.admin_comment ? `<h4>Admin izohi</h4><p>${esc(d.admin_comment)}</p>` : ''}`;
+  } catch (error) {
+    body.innerHTML = `<p class="detail-empty">${esc(error.message || 'Yuklanmadi')}</p>`;
+  }
+}
+
 // --- Messages ---
 document.getElementById('messageType')?.addEventListener('change', (e) => {
   document.getElementById('messageTelegramIdLabel').hidden = e.target.value === 'broadcast';
@@ -912,16 +1323,31 @@ document.getElementById('messageForm')?.addEventListener('submit', async (event)
 // --- Orders ---
 document.getElementById('reloadOrdersButton')?.addEventListener('click', () => loadOrders().catch((e) => alert(e.message)));
 document.getElementById('orderStatusFilter')?.addEventListener('change', () => loadOrders().catch((e) => alert(e.message)));
+document.getElementById('ordersLoadMore')?.addEventListener('click', () => loadOrders({ append: true }).catch((e) => alert(e.message)));
+
+// Qidiruv har bosilgan harfda so'rov yubormasin — 350ms kutadi.
+let orderSearchTimer = null;
+document.getElementById('orderSearch')?.addEventListener('input', () => {
+  clearTimeout(orderSearchTimer);
+  orderSearchTimer = setTimeout(() => loadOrders().catch((e) => alert(e.message)), 350);
+});
 document.getElementById('exportOrdersCsv')?.addEventListener('click', () => {
-  const header = ['№', 'User', 'Reja', 'Summa', 'Status', 'Delivery', 'Vaqt'];
+  const header = ['№', 'User', 'Reja', 'Summa', 'Promo', 'Chegirma', 'Balansdan', 'Cashback', 'Status', 'Delivery', 'Vaqt'];
   const rows = [header, ...state.orders.map((o) => [
     o.order_number, o.user_telegram_id, o.plan_name || '-',
-    o.amount, o.status, o.delivery_status || '-',
+    o.unique_price ?? o.amount, o.promo_code || '', o.discount_amount || 0,
+    o.balance_used || 0, o.cashback_amount || 0,
+    o.status, o.delivery_status || '-',
     new Date(o.created_at).toLocaleString('uz-UZ'),
   ])];
   exportCsv('orders.csv', rows);
 });
 document.getElementById('ordersList')?.addEventListener('click', async (event) => {
+  const detailBtn = event.target.closest('.order-detail');
+  if (detailBtn) {
+    openOrderDetail(detailBtn.dataset.id).catch((e) => alert(e.message));
+    return;
+  }
   const btn = event.target.closest('.order-action');
   if (!btn) return;
   const res = await api('admin-orders', { method: 'POST', body: JSON.stringify({ action: btn.dataset.action, orderId: btn.dataset.id }) });
@@ -933,9 +1359,13 @@ document.getElementById('ordersList')?.addEventListener('click', async (event) =
 });
 
 // --- Inventory ---
-document.getElementById('inventoryFilterForm')?.addEventListener('submit', async (event) => { event.preventDefault(); await loadInventory(); });
-document.getElementById('inventoryForm')?.addEventListener('submit', async (event) => {
+document.getElementById('inventoryFilterForm')?.addEventListener('submit', async (event) => {
   event.preventDefault();
+  await loadInventory().catch((e) => alert(e.message));
+});
+// Holat filtri allaqachon yuklangan ro'yxat ustida ishlaydi — qayta so'rov shart emas.
+document.getElementById('inventoryStatusFilter')?.addEventListener('change', () => renderInventory());
+onSubmit('inventoryForm', async () => {
   await api('admin-inventory', {
     method: 'POST',
     body: JSON.stringify({
@@ -952,6 +1382,11 @@ document.getElementById('inventoryForm')?.addEventListener('submit', async (even
   await loadInventory();
 });
 document.getElementById('inventoryList')?.addEventListener('click', async (event) => {
+  const detailBtn = event.target.closest('.inv-detail');
+  if (detailBtn) {
+    openInvDetail(detailBtn.dataset.id).catch((e) => alert(e.message));
+    return;
+  }
   // "Ko'rish" — maskalangan login/parol/kalit o'rniga haqiqiy qiymatlarni ochadi.
   // Qayta bosilsa ("Yashirish") ro'yxatdagi maskalangan holatga qaytaradi.
   const reveal = event.target.closest('.inv-reveal');
@@ -1037,7 +1472,8 @@ const HELP_ITEMS = [
   { icon: '🎟️', title: 'Promokodlar', body: 'Chegirma kodlari. Kod, chegirma turi (foiz/summa), qiymati, minimal buyurtma summasi, amal muddati. Foydalanuvchi checkout’da kiritadi.' },
   { icon: '⭐', title: 'Sharhlar', body: 'Foydalanuvchilar yozgan sharhlar. Tasdiqlash, rad etish yoki o’chirish mumkin. Faqat tasdiqlangan sharhlar mahsulotda ko’rinadi.' },
   { icon: '👥', title: 'Foydalanuvchilar', body: 'Ro’yxatdan o’tgan barcha foydalanuvchilar. Qidiruv, bloklash/blokdan chiqarish mumkin. Bloklangan foydalanuvchi botni ham, Mini App’ni ham ishlata olmaydi.' },
-  { icon: '🛒', title: 'Buyurtmalar', body: 'Barcha xaridlar. Statuslar: kutilmoqda, tasdiqlangan, rad etilgan, tugallangan. Admin approve/reject qiladi. CSV export mumkin.' },
+  { icon: '🛒', title: 'Buyurtmalar', body: 'Barcha xaridlar. Statuslar: kutilmoqda, tasdiqlangan, rad etilgan, tugallangan. Admin approve/reject qiladi. "Batafsil" tugmasi qaysi akkaunt kimga va qachon ketganini, promokod va chegirmani ko’rsatadi. Qidiruv buyurtma raqami yoki Telegram ID bo’yicha. CSV export mumkin.' },
+  { icon: '📥', title: 'Leadlar', body: 'Saytdagi "Izlagan obunangiz yo’qmi?" formasidan kelgan so’rovlar. Har biri adminga Telegram xabari sifatida ham keladi. Bajarilganini belgilash yoki o’chirish mumkin.' },
   { icon: '✉️', title: 'Xabar yuborish', body: 'Foydalanuvchilarga Telegram orqali xabar. Individual (bitta Telegram ID ga) yoki Broadcast (hammaga). Broadcast 25 talab parallel yuboriladi.' },
   { icon: '⚙️', title: 'Sozlamalar', body: 'Karta raqami, cashback foizi, referal bonus, min topup, welcome text, contact text, umumiy qoidalar. Bu yerda o’zgartirilgan narsa butun botga ta’sir qiladi.' },
 ];
