@@ -27,6 +27,7 @@ frontend murojaat qilib krash bo'lgani). Endi tartib quyidagicha.
 | [2026-08-24_promo-plans-and-balance.sql](2026-08-24_promo-plans-and-balance.sql) | 2026-08-24 | Promokodni tovarga bog'lash (`plan_ids`), xush kelibsiz bonusi (`welcome_bonus`, `welcome_bonus_at`) |
 | [2026-08-24_credit-all-users.sql](2026-08-24_credit-all-users.sql) | 2026-08-24 | `credit_all_users()` — hamma balansini bittada to'ldirish (anon roldan huquq olib tashlangan) |
 | [2026-08-24_drop-vacancy-tables.sql](2026-08-24_drop-vacancy-tables.sql) | ⚠️ **loyiha egasi ishga tushiradi** | Vakansiya jadvallarini o'chirish — ma'lumot yo'qoladi, avval zaxira oling |
+| [2026-08-24_plan-slugs.sql](2026-08-24_plan-slugs.sql) | 2026-08-24 | Rejalarga URL nomi (`slug`) — ochiq mahsulot sahifalari uchun |
 
 ## BASELINE.md haqida
 

@@ -373,6 +373,8 @@ export default {
     footer: {
       channel: 'Telegram channel',
       instagram: 'Instagram',
+      plans: 'Subscriptions and prices',
+      payGuide: 'How to pay',
       privacy: 'Privacy policy',
       terms: 'Terms of use',
       copyright: '© 2026 Santyx Pro',

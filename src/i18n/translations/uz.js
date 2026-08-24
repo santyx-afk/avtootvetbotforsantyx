@@ -373,6 +373,8 @@ export default {
     footer: {
       channel: 'Telegram kanal',
       instagram: 'Instagram',
+      plans: 'Obunalar va narxlar',
+      payGuide: 'Qanday to\'lanadi',
       privacy: 'Maxfiylik siyosati',
       terms: 'Foydalanish shartlari',
       copyright: '© 2026 Santyx Pro',
