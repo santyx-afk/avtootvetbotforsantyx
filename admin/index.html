@@ -156,6 +156,16 @@
               <div class="card form-card">
                 <form id="inventoryFilterForm" class="grid-form">
                   <label>Reja<select id="inventoryPlanId"></select></label>
+                  <label>Holat
+                    <select id="inventoryStatusFilter">
+                      <option value="">Barchasi</option>
+                      <option value="available">available</option>
+                      <option value="reserved">reserved</option>
+                      <option value="delivered">delivered</option>
+                      <option value="sold">sold</option>
+                      <option value="disabled">disabled</option>
+                    </select>
+                  </label>
                   <div class="actions"><button type="submit">Ko'rish</button></div>
                 </form>
                 <div id="inventoryCounts"></div>
@@ -320,20 +330,32 @@
                 <input id="userSearch" placeholder="Qidirish (ID, username, ism)" />
                 <button id="reloadUsersButton">Yangilash</button>
               </div>
+              <div id="usersCount" class="hint"></div>
               <div id="usersList" class="table-card"></div>
+              <div class="actions">
+                <button id="usersLoadMore" class="ghost" hidden>Yana ko'rsatish</button>
+              </div>
             </section>
 
             <section id="ordersView" class="view" hidden>
               <div class="toolbar">
                 <h2>Buyurtmalar</h2>
+                <input id="orderSearch" type="search" placeholder="№ yoki Telegram ID" />
                 <select id="orderStatusFilter">
                   <option value="">Barchasi</option>
-                  <option>pending_payment</option><option>payment_uploaded</option><option>approved</option><option>waiting_stock</option><option>completed</option><option>rejected</option>
+                  <option>pending_payment</option><option>payment_uploaded</option><option>checking</option>
+                  <option>payment_detected</option><option>approved</option><option>delivering</option>
+                  <option>waiting_stock</option><option>completed</option><option>rejected</option>
+                  <option>cancelled</option><option>expired</option><option>failed</option>
                 </select>
                 <button id="reloadOrdersButton">Yangilash</button>
                 <button id="exportOrdersCsv" class="ghost">CSV Export</button>
               </div>
+              <div id="ordersCount" class="hint"></div>
               <div id="ordersList" class="table-card"></div>
+              <div class="actions">
+                <button id="ordersLoadMore" class="ghost" hidden>Yana yuklash</button>
+              </div>
             </section>
 
             <section id="messagesView" class="view" hidden>
@@ -408,6 +430,41 @@
                 <div id="userPurchases" class="table-card"></div>
                 <h4>Balans tarixi</h4>
                 <div id="userBalanceHistory" class="table-card"></div>
+              </div>
+            </div>
+
+            <!-- Promokod ishlatilish tarixi: kim, qancha to'lab ishlatgan -->
+            <div id="promoUsageModal" class="modal-overlay" hidden>
+              <div class="modal-card">
+                <div class="modal-head">
+                  <h3 id="promoUsageTitle">Promokod</h3>
+                  <button type="button" id="promoUsageClose" class="ghost">✕</button>
+                </div>
+                <div id="promoUsageSummary" class="detail-grid"></div>
+                <h4>Ishlatilgan buyurtmalar</h4>
+                <div id="promoUsageList" class="table-card"></div>
+              </div>
+            </div>
+
+            <!-- Inventar birligi: kimga, qachon, qaysi buyurtma orqali ketgan -->
+            <div id="invDetailModal" class="modal-overlay" hidden>
+              <div class="modal-card">
+                <div class="modal-head">
+                  <h3 id="invDetailTitle">Akkaunt tafsiloti</h3>
+                  <button type="button" id="invDetailClose" class="ghost">✕</button>
+                </div>
+                <div id="invDetailBody"></div>
+              </div>
+            </div>
+
+            <!-- Buyurtma tafsiloti: pul taqsimoti, yetkazilgan akkaunt, vaqt chizig'i -->
+            <div id="orderDetailModal" class="modal-overlay" hidden>
+              <div class="modal-card">
+                <div class="modal-head">
+                  <h3 id="orderDetailTitle">Buyurtma</h3>
+                  <button type="button" id="orderDetailClose" class="ghost">✕</button>
+                </div>
+                <div id="orderDetailBody"></div>
               </div>
             </div>
           </div>

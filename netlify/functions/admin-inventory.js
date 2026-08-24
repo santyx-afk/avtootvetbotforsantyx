@@ -1,5 +1,5 @@
 const { requireAdmin } = require('../../shared/auth');
-const { getAdminClient, createInventoryItem, listInventoryByPlan, getInventoryCountsByPlan, getInventoryItemById, updateRow } = require('../../shared/db');
+const { getAdminClient, request, createInventoryItem, listInventoryByPlan, getInventoryCountsByPlan, getInventoryItemById, updateRow } = require('../../shared/db');
 const { encryptText, decryptText } = require('../../shared/encryption');
 
 function json(statusCode, body) {
@@ -23,6 +23,67 @@ exports.handler = async (event) => {
         const item = await updateRow(supabase, 'inventory_items', payload.id, { status: 'disabled' });
         return json(200, { ok: true, item });
       }
+      // Batafsil: akkaunt kimga, qachon va qaysi buyurtma orqali ketgan.
+      // Kredensiallar bu yerda QAYTARILMAYDI — ular faqat "reveal" orqali.
+      if (payload.action === 'detail') {
+        const item = await getInventoryItemById(supabase, payload.id);
+        if (!item) return json(404, { ok: false, error: 'Topilmadi' });
+
+        const [orderRes, userRes, planRes] = await Promise.all([
+          item.assigned_order_id
+            ? request(supabase, 'orders', {
+              query: `select=order_number,status,amount,unique_price,created_at,delivered_at,promo_code,discount_amount&id=eq.${encodeURIComponent(item.assigned_order_id)}&limit=1`,
+            }).catch(() => ({ data: [] }))
+            : Promise.resolve({ data: [] }),
+          item.assigned_user_telegram_id
+            ? request(supabase, 'users', {
+              query: `select=telegram_id,username,full_name&telegram_id=eq.${encodeURIComponent(item.assigned_user_telegram_id)}&limit=1`,
+            }).catch(() => ({ data: [] }))
+            : Promise.resolve({ data: [] }),
+          item.plan_id
+            ? request(supabase, 'plans', {
+              query: `select=name&id=eq.${encodeURIComponent(item.plan_id)}&limit=1`,
+            }).catch(() => ({ data: [] }))
+            : Promise.resolve({ data: [] }),
+        ]);
+        const order = orderRes.data?.[0] || null;
+        const user = userRes.data?.[0] || null;
+
+        return json(200, {
+          ok: true,
+          detail: {
+            id: item.id,
+            type: item.type,
+            status: item.status,
+            plan_name: planRes.data?.[0]?.name || null,
+            login_masked: item.login ? `${String(item.login).slice(0, 2)}***` : null,
+            notes: item.notes || null,
+            created_at: item.created_at,
+            reserved_at: item.reserved_at,
+            delivered_at: item.delivered_at,
+            sold_at: item.sold_at,
+            user: item.assigned_user_telegram_id
+              ? {
+                telegram_id: item.assigned_user_telegram_id,
+                username: user?.username || null,
+                full_name: user?.full_name || null,
+              }
+              : null,
+            order: order
+              ? {
+                order_number: order.order_number,
+                status: order.status,
+                amount: Number(order.unique_price ?? order.amount ?? 0),
+                promo_code: order.promo_code || null,
+                discount_amount: Number(order.discount_amount || 0),
+                created_at: order.created_at,
+                delivered_at: order.delivered_at,
+              }
+              : null,
+          },
+        });
+      }
+
       // Ichidagini ko'rish: ro'yxatda login/parol maskalanadi, admin so'raganda
       // shu action haqiqiy qiymatlarni qaytaradi (sessiya cookie bilan himoyalangan).
       // Bitta maydon ochilmasa qolganlari baribir ko'rsatiladi (delivery-service

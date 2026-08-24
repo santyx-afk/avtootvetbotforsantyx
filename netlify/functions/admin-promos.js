@@ -1,5 +1,5 @@
 const { requireAdmin } = require('../../shared/auth');
-const { getAdminClient, request, insertRow, updateRow, deleteRow } = require('../../shared/db');
+const { getAdminClient, request, toQuery, insertRow, updateRow, deleteRow } = require('../../shared/db');
 
 function json(sc, body) { return { statusCode: sc, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }; }
 
@@ -26,10 +26,101 @@ function normalize(payload = {}) {
   return out;
 }
 
+// PostgREST filtri uchun qiymatni xavfsizlash: vergul va qavs filtr sintaksisini
+// buzadi, shuning uchun promokodni faqat ruxsat etilgan belgilar bilan cheklaymiz.
+function safeCode(value) {
+  return String(value || '').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 64);
+}
+
+// Promokod ishlatilish tarixi: qaysi buyurtmalarda qo'llangan, kim, qancha to'lagan.
+// `promo_codes` jadvalida faqat `used_count` bor, shuning uchun tafsilot
+// `orders.promo_code` bo'yicha yig'iladi.
+async function promoUsage(db, rawCode) {
+  const code = safeCode(rawCode);
+  if (!code) return { code: '', orders: [], summary: null };
+
+  const { data: orders } = await request(db, 'orders', {
+    query: toQuery({
+      select: 'order_number,user_telegram_id,plan_id,amount,unique_price,discount_amount,cashback_amount,status,created_at',
+      promo_code: `eq.${code}`,
+      order: 'created_at.desc',
+      limit: 200,
+    }),
+  });
+  const rows = orders || [];
+
+  // Reja nomi va foydalanuvchi username'ini bitta so'rovda olib, xaritaga solamiz.
+  const planIds = [...new Set(rows.map((o) => o.plan_id).filter(Boolean))];
+  const userIds = [...new Set(rows.map((o) => String(o.user_telegram_id)).filter(Boolean))];
+  const [plansRes, usersRes] = await Promise.all([
+    planIds.length
+      ? request(db, 'plans', { query: `select=id,name&id=in.(${planIds.join(',')})` }).catch(() => ({ data: [] }))
+      : Promise.resolve({ data: [] }),
+    userIds.length
+      ? request(db, 'users', {
+        query: `select=telegram_id,username,full_name&telegram_id=in.(${userIds.map(encodeURIComponent).join(',')})`,
+      }).catch(() => ({ data: [] }))
+      : Promise.resolve({ data: [] }),
+  ]);
+  const planMap = Object.fromEntries((plansRes.data || []).map((p) => [p.id, p.name]));
+  const userMap = Object.fromEntries((usersRes.data || []).map((u) => [String(u.telegram_id), u]));
+
+  // Faqat haqiqatda pul kelgan buyurtmalar jamlanmaga kiradi — rad etilgan yoki
+  // to'lanmagan buyurtma tushum emas.
+  const PAID = new Set(['approved', 'completed', 'delivered']);
+  let paidCount = 0;
+  let revenue = 0;
+  let discountTotal = 0;
+
+  const list = rows.map((o) => {
+    const user = userMap[String(o.user_telegram_id)] || null;
+    const paid = Number(o.unique_price ?? o.amount ?? 0);
+    const discount = Number(o.discount_amount || 0);
+    const isPaid = PAID.has(String(o.status));
+    if (isPaid) {
+      paidCount += 1;
+      revenue += paid;
+      discountTotal += discount;
+    }
+    return {
+      order_number: o.order_number,
+      user_telegram_id: o.user_telegram_id,
+      username: user?.username || null,
+      full_name: user?.full_name || null,
+      plan_name: planMap[o.plan_id] || '-',
+      amount: paid,
+      discount_amount: discount,
+      cashback_amount: Number(o.cashback_amount || 0),
+      status: o.status,
+      is_paid: isPaid,
+      created_at: o.created_at,
+    };
+  });
+
+  return {
+    code,
+    orders: list,
+    summary: {
+      total: list.length,
+      paid: paidCount,
+      revenue,
+      discount_total: discountTotal,
+      unique_users: new Set(list.map((o) => String(o.user_telegram_id))).size,
+    },
+  };
+}
+
+// Testlar uchun ochiladi (filtrga injection oldini olish mantig'i).
+exports._safeCode = safeCode;
+
 exports.handler = async (event) => {
   if (!requireAdmin(event.headers)) return json(401, { ok: false, error: 'Unauthorized' });
   const db = getAdminClient();
   try {
+    if (event.httpMethod === 'GET' && event.queryStringParameters?.usage) {
+      const usage = await promoUsage(db, event.queryStringParameters.usage);
+      return json(200, { ok: true, ...usage });
+    }
     if (event.httpMethod === 'GET') {
       const { data } = await request(db, 'promo_codes', { query: 'select=*&order=created_at.desc' });
       return json(200, { ok: true, promos: data || [] });

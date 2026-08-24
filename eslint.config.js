@@ -9,7 +9,7 @@ const reactHooks = require('eslint-plugin-react-hooks');
 // ishlatilmagan o'zgaruvchilar. Uslub (formatting) qoidalari ataylab yo'q.
 module.exports = [
   {
-    ignores: ['dist/**', 'node_modules/**', '.netlify/**', 'admin/**'],
+    ignores: ['dist/**', 'node_modules/**', '.netlify/**'],
   },
 
   // ---- Frontend (React, ESM, brauzer) ----
@@ -38,6 +38,25 @@ module.exports = [
       // vacancyCall) bilan sinxronlashda effekt ichida setState chaqirish
       // React hujjatlarida ham tavsiya etilgan yo'l. Shuning uchun o'chirilgan.
       'react-hooks/set-state-in-effect': 'off',
+    },
+  },
+
+  // ---- Admin panel (klassik brauzer skripti, modul emas) ----
+  // Ilgari butunlay e'tiborsiz qoldirilgandi (`ignores` ro'yxatida edi). Admin
+  // panel eng ko'p qo'l bilan yoziladigan joy, shuning uchun u ham tekshiruvdan
+  // o'tsin. `sourceType: 'script'` — bu yerda import/export yo'q; Chart esa
+  // CDN'dan keladi.
+  {
+    files: ['admin/**/*.js'],
+    ...js.configs.recommended,
+    languageOptions: {
+      ecmaVersion: 2023,
+      sourceType: 'script',
+      globals: { ...globals.browser, Chart: 'readonly' },
+    },
+    rules: {
+      ...js.configs.recommended.rules,
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
     },
   },
 

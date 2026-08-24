@@ -463,6 +463,34 @@ input[type="checkbox"] { width: 20px; height: 20px; min-height: auto; flex: 0 0 
 .modal-head h3 { font-size: 1.15rem; }
 .modal-head button { min-height: 36px; padding: 6px 12px; }
 .modal-card h4 { margin: 18px 0 8px; font-size: 1rem; }
+
+/* Batafsil oynalardagi "yorliq + qiymat" kartochkalari (promokod, akkaunt,
+   buyurtma tafsilotlari). Tor ekranda bitta ustunga tushadi. */
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+.detail-cell {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  min-width: 0;
+}
+.detail-cell .k {
+  display: block;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted, #6b7280);
+  margin-bottom: 2px;
+}
+.detail-cell .v {
+  font-weight: 600;
+  word-break: break-word;
+}
+.detail-empty { padding: 10px; color: var(--muted, #6b7280); }
 .user-balance-box {
   background: var(--bg);
   border: 1px solid var(--border);

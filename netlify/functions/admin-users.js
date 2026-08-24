@@ -38,11 +38,16 @@ exports.handler = async (event) => {
 
     // --- Foydalanuvchilar ro'yxati (balans + xaridlar soni + oxirgi faollik) ---
     if (event.httpMethod === 'GET') {
+      // Ilgari limit 500 edi — 889 foydalanuvchidan 389 tasi admin panelda
+      // umuman ko'rinmasdi (qidiruv ham faqat yuklanganlar ichida ishlardi).
+      // Endi standart 5000: butun baza bir marta keladi, qidiruv to'liq ishlaydi.
+      const limit = Math.min(Math.max(Number(event.queryStringParameters?.limit || 5000), 1), 10000);
+      const cols = 'telegram_id,username,full_name,phone,language_code,is_blocked,created_at,updated_at';
       const [usersRes, walletsRes, ordersRes] = await Promise.all([
-        request(db, 'users', { query: 'select=telegram_id,username,full_name,phone,language_code,is_blocked,created_at,updated_at&order=created_at.desc&limit=500' })
-          .catch(() => request(db, 'users', { query: 'select=telegram_id,username,full_name,phone,language_code,created_at&order=created_at.desc&limit=500' })),
+        request(db, 'users', { query: `select=${cols}&order=created_at.desc&limit=${limit}` })
+          .catch(() => request(db, 'users', { query: `select=telegram_id,username,full_name,phone,language_code,created_at&order=created_at.desc&limit=${limit}` })),
         request(db, 'user_wallets', { query: 'select=user_telegram_id,balance' }).catch(() => ({ data: [] })),
-        request(db, 'orders', { query: 'select=user_telegram_id,created_at,order_type&order=created_at.desc&limit=2000' }).catch(() => ({ data: [] })),
+        request(db, 'orders', { query: 'select=user_telegram_id,created_at,order_type&order=created_at.desc&limit=10000' }).catch(() => ({ data: [] })),
       ]);
       const balanceMap = {};
       for (const w of walletsRes.data || []) balanceMap[String(w.user_telegram_id)] = Number(w.balance || 0);
