@@ -153,9 +153,22 @@ function balanceText(wallet = {}) {
   return [`💰 <b>Balansingiz</b>`, '', `Mavjud balans: <b>${escapeHtml(formatPrice(wallet.balance || 0, 'UZS'))}</b>`, '', 'Balansdan checkout paytida foydalanish, refund va bonuslar uchun wallet tarixi saqlanadi.'].join('\n');
 }
 
-function referralText({ telegramId, botUsername }) {
+// Shartlar sozlamalardan keladi (referral_fixed_bonus / referral_percent) —
+// qiymatlar berilmasa umumiy matn chiqadi, eski chaqiruvlar buzilmaydi.
+function referralText({ telegramId, botUsername, fixedBonus = 0, percent = 0 }) {
   const username = String(botUsername || 'santyxnarxbot').replace('@', '');
-  return ['🤝 <b>Referral havolangiz</b>', '', `https://t.me/${escapeHtml(username)}?start=ref_${escapeHtml(telegramId)}`, '', 'Do‘stingiz birinchi muvaffaqiyatli xariddan keyin sizga bonus beriladi.'].join('\n');
+  const perks = [];
+  if (Number(fixedBonus) > 0) perks.push(`har bir yangi do‘st uchun +${Number(fixedBonus).toLocaleString('uz-UZ')} UZS`);
+  if (Number(percent) > 0) perks.push(`uning har bir xaridi uchun ${Number(percent)}% bonus`);
+  return [
+    '🤝 <b>Referral havolangiz</b>',
+    '',
+    `https://t.me/${escapeHtml(username)}?start=ref_${escapeHtml(telegramId)}`,
+    '',
+    perks.length
+      ? `Havolani do‘stlaringizga ulashing: ${perks.join(', ')} balansingizga tushadi.`
+      : 'Do‘stlaringizni taklif qiling va bonuslarga ega bo‘ling.',
+  ].join('\n');
 }
 
 function receiptAcceptedText(order) {

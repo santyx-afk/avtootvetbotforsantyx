@@ -1,9 +1,18 @@
 const { request, fetchSettings, addWalletTransaction, createAuditLog } = require('./db');
 const { sendMessage } = require('./telegram');
 
-// Buyurtma bajarilganda referrerga bonus beradi:
-//  - fix bonus: referal birinchi marta xarid qilganda (status registered -> paid)
-//  - foizli bonus: har bir xaridda referrer balansiga qo'shiladi
+// Buyurtma bajarilganda referrerga foizli bonus beradi.
+//
+// Tartib ataylab shunday qat'iy:
+//   1) referral_payouts ga "da'vo" (claim) yoziladi — PRIMARY KEY order_id
+//      tufayli xuddi shu buyurtma uchun ikkinchi urinish bo'sh qaytadi va
+//      funksiya jim chiqib ketadi. Ilgari idempotentlik audit_logs dan
+//      O'QISH edi, yozuv esa jarayon oxirida: 2026-08-23 da jarayon o'rtada
+//      uzilib pul to'langan-u, hech qanday iz qolmagan — takror to'lov
+//      xavfi ochiq edi.
+//   2) pul (wallet) va referrals hisobi;
+//   3) Telegram xabari ENG OXIRIDA — jarayon o'lsa xabar yo'qoladi xolos,
+//      hisob-kitob buzilmaydi.
 async function processReferralPayout(supabase, order) {
   try {
     const telegramId = String(order.user_telegram_id);
@@ -11,52 +20,51 @@ async function processReferralPayout(supabase, order) {
       query: `select=*&referred_telegram_id=eq.${telegramId}&limit=1`,
     });
     const ref = data?.[0];
-    if (!ref) return;
-
-    // Idempotentlik: shu buyurtma uchun referal bonus allaqachon to'langan bo'lsa qaytamiz
-    // (payout ham avto-to'lov, ham admin approve yo'lidan chaqirilishi mumkin).
-    const prior = await request(supabase, 'audit_logs', {
-      query: `select=id&order_id=eq.${order.id}&action=eq.referral_payout&limit=1`,
-    }).then((r) => r.data).catch(() => []);
-    if (prior && prior[0]) return;
+    // 'cancelled' — admin panel orqali to'xtatilgan referal: bonus to'lanmaydi.
+    if (!ref || ref.status === 'cancelled') return;
 
     const settings = await fetchSettings(supabase);
     const referrerId = ref.referrer_telegram_id;
     const orderAmount = Number(order.base_price || order.amount || 0);
-    const isFirstPurchase = ref.status === 'registered';
-
-    let accrued = 0;
-
-    // Eslatma: fix (signup) bonus endi bot /start ref_ da beriladi (ro'yxatdan o'tganda).
-    // Bu yerda faqat har xarid uchun foizli bonus.
-
-    // Foizli bonus — har bir xarid uchun
     const percent = Number(settings?.referral_percent || 0);
-    if (percent > 0 && orderAmount > 0) {
-      const percentBonus = Math.floor(orderAmount * percent / 100);
-      if (percentBonus > 0) {
-        await addWalletTransaction(supabase, {
-          user_telegram_id: referrerId,
-          order_id: order.id,
-          amount: percentBonus,
-          type: 'referral',
-          description: `Referal ${percent}% (#${telegramId} xaridi)`,
-        });
-        accrued += percentBonus;
-        await sendMessage(referrerId, `🎁 Referalingiz xarid qildi! Balansingizga +${percentBonus.toLocaleString('uz-UZ')} UZS (${percent}%) qo'shildi.`).catch(() => {});
-      }
-    }
+    const percentBonus = percent > 0 && orderAmount > 0 ? Math.floor((orderAmount * percent) / 100) : 0;
+    if (percentBonus <= 0) return;
 
-    // Referral yozuvini bitta yangilash bilan yopamiz
+    // 1) Da'vo: shu buyurtma bo'yicha payout faqat bitta bo'ladi.
+    const { data: claim } = await request(supabase, 'referral_payouts', {
+      method: 'POST',
+      query: 'on_conflict=order_id',
+      headers: { Prefer: 'return=representation,resolution=ignore-duplicates' },
+      body: {
+        order_id: order.id,
+        referrer_telegram_id: referrerId,
+        referred_telegram_id: telegramId,
+        amount: percentBonus,
+        kind: 'percent',
+      },
+    });
+    if (!claim?.[0]) return; // allaqachon to'langan (yoki parallel chaqiruv yutdi)
+
+    // 2) Pul va hisob. notify: false — quyida o'zimizning aniqroq
+    // "referalingiz xarid qildi" xabarimiz bor, ikki xabar ketmasin.
+    await addWalletTransaction(supabase, {
+      user_telegram_id: referrerId,
+      order_id: order.id,
+      amount: percentBonus,
+      type: 'referral',
+      description: `Referal ${percent}% (#${telegramId} xaridi)`,
+      notify: false,
+    });
+
     await request(supabase, 'referrals', {
       method: 'PATCH',
       query: `referred_telegram_id=eq.${telegramId}`,
       body: {
         // 'rewarded' — referrals.status CHECK constraint faqat
-        // ('registered','rewarded','cancelled') qabul qiladi ('paid' emas).
+        // ('registered','rewarded','cancelled') qabul qiladi.
         status: 'rewarded',
         first_order_id: ref.first_order_id || order.id,
-        total_earned: Number(ref.total_earned || 0) + accrued,
+        total_earned: Number(ref.total_earned || 0) + percentBonus,
         purchase_count: Number(ref.purchase_count || 0) + 1,
         updated_at: new Date().toISOString(),
       },
@@ -67,8 +75,11 @@ async function processReferralPayout(supabase, order) {
       user_telegram_id: telegramId,
       action: 'referral_payout',
       status: 'completed',
-      metadata: { referrer: referrerId, percent, accrued, first: isFirstPurchase },
+      metadata: { referrer: referrerId, percent, accrued: percentBonus, first: ref.status === 'registered' },
     });
+
+    // 3) Xabar — barcha hisob yozuvlaridan keyin.
+    await sendMessage(referrerId, `🎁 Referalingiz xarid qildi! Balansingizga +${percentBonus.toLocaleString('uz-UZ')} UZS (${percent}%) qo'shildi.`).catch(() => {});
   } catch (err) {
     console.warn('referral payout warn:', err?.message);
   }

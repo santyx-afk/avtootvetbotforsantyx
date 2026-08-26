@@ -107,6 +107,10 @@ async function showCategories({ supabase, chatId, messageId, asEdit = false }) {
   const text = `${welcomeText(settings)}\n\n🚀 Barcha obunalarni ko'rish va xarid qilish uchun Mini ilovani oching:`;
   const keyboardRows = [
     [{ text: '🚀 Mini ilovani ochish', web_app: { url: MINI_APP_URL } }],
+    // Referal dastur ko'zga tashlansin: Mini App'ga o'tilgach havola faqat
+    // Profil ichida qolib, hech kim ishlatmay qo'ygan edi (2026-08-04 dan
+    // keyin birorta ham referal kirish bo'lmagan).
+    [{ text: '🤝 Do\'st taklif qilish — bonus olish', callback_data: 'show_referral' }],
   ];
   if (asEdit && messageId) {
     return editMessage(chatId, messageId, text, inlineKeyboard(keyboardRows));
@@ -269,6 +273,18 @@ async function handleCallback({ supabase, callbackQuery }) {
       return;
     }
 
+    // Start menyusidagi "Do'st taklif qilish" tugmasi: referal havola va shartlar.
+    if (data === 'show_referral') {
+      const settings = await fetchSettings(supabase);
+      await sendMessage(chatId, referralText({
+        telegramId,
+        botUsername: process.env.BOT_USERNAME || 'santyxnarxbot',
+        fixedBonus: settings?.referral_fixed_bonus,
+        percent: settings?.referral_percent,
+      }), null);
+      return;
+    }
+
     // Eski inline katalog oqimi olib tashlandi: har qanday navigatsiya callback'i
     // (nav/category/plan/buy — jumladan eski xabarlardagilar) endi Mini ilova tugmasini ko'rsatadi.
     await showCategories({ supabase, chatId, messageId, asEdit: true });
@@ -307,8 +323,13 @@ async function handleTextCommand({ supabase, message }) {
     return true;
   }
   if (text === '/referral' || text === '/ref') {
-    const botUsername = process.env.BOT_USERNAME || 'santyxnarxbot';
-    await sendMessage(message.chat.id, referralText({ telegramId: message.from.id, botUsername }), null);
+    const settings = await fetchSettings(supabase);
+    await sendMessage(message.chat.id, referralText({
+      telegramId: message.from.id,
+      botUsername: process.env.BOT_USERNAME || 'santyxnarxbot',
+      fixedBonus: settings?.referral_fixed_bonus,
+      percent: settings?.referral_percent,
+    }), null);
     return true;
   }
   if (text === '/help') {
@@ -463,11 +484,14 @@ async function handleStart({ supabase, message }) {
           const settings = await fetchSettings(supabase).catch(() => null);
           const signupBonus = Number(settings?.referral_fixed_bonus || 0);
           if (signupBonus > 0) {
+            // notify: false — pastda o'zimizning aniqroq xabarimiz ketadi,
+            // umumiy "balans o'zgardi" xabari bilan ikkilanmasin.
             await addWalletTransaction(supabase, {
               user_telegram_id: referrerId,
               amount: signupBonus,
               type: 'referral',
               description: `Referal signup bonus (#${referredId})`,
+              notify: false,
             });
             await request(supabase, 'referrals', {
               method: 'PATCH',
