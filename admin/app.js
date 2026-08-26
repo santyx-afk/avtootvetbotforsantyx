@@ -1,6 +1,7 @@
 const state = {
   categories: [], plans: [], settings: null, orders: [], inventory: [],
   banners: [], promos: [], reviews: [], faq: [], users: [], leads: [],
+  referrals: [], referralMeta: null,
   ordersTotal: 0,
   usersShown: 100,
 };
@@ -51,6 +52,7 @@ const views = {
   faq: document.getElementById('faqView'),
   users: document.getElementById('usersView'),
   leads: document.getElementById('leadsView'),
+  referrals: document.getElementById('referralsView'),
   messages: document.getElementById('messagesView'),
   settings: document.getElementById('settingsView'),
   help: document.getElementById('helpView'),
@@ -621,6 +623,74 @@ async function loadLeads() {
   renderLeads();
 }
 
+// --- Referallar ---
+function refStatusBadge(status) {
+  if (status === 'rewarded') return '<span class="badge">Bonus olgan</span>';
+  if (status === 'cancelled') return '<span class="badge">Bekor qilingan</span>';
+  return '<span class="badge">Ro\'yxatda</span>';
+}
+
+function renderReferrals() {
+  const root = document.getElementById('referralsList');
+  if (!root) return;
+  const meta = state.referralMeta || {};
+  const summary = meta.summary || {};
+
+  const statsRoot = document.getElementById('referralStats');
+  if (statsRoot) {
+    const cards = [
+      ['Jami referallar', summary.total ?? 0],
+      ['Bonus olganlar', summary.rewarded ?? 0],
+      ['To\'langan bonus', money(summary.total_earned)],
+      ['Kutilayotgan bonus', money(summary.pending_total)],
+    ];
+    statsRoot.innerHTML = cards.map(([label, value]) => `<div class="card"><h3>${esc(label)}</h3><strong>${esc(value)}</strong></div>`).join('');
+  }
+  const hint = document.getElementById('referralTermsHint');
+  if (hint) {
+    hint.textContent = `Joriy shartlar: yangi do'st uchun ${money(meta.fixed_bonus)} UZS, har xariddan ${Number(meta.percent || 0)}%. O'zgartirish — Sozlamalar bo'limida.`;
+  }
+
+  if (!state.referrals.length) {
+    root.innerHTML = '<p class="hint">Hozircha referal yo\'q. Bot /start menyusidagi "Do\'st taklif qilish" tugmasi va Mini App profilidagi havola orqali yig\'iladi.</p>';
+    return;
+  }
+  root.innerHTML = `<table><thead><tr>
+    <th>Taklif qilgan</th><th>Kelgan do'st</th><th>Sana</th><th>Holat</th>
+    <th>Xaridlar</th><th>Ishlagan</th><th>Kutilmoqda</th><th></th>
+  </tr></thead><tbody>${state.referrals.map((r) => `
+    <tr>
+      <td>${esc(userLabel(r.referrer))}<div class="hint">${esc(r.referrer_telegram_id)}</div></td>
+      <td>${esc(userLabel(r.referred))}<div class="hint">${esc(r.referred_telegram_id)}</div></td>
+      <td>${dt(r.created_at)}</td>
+      <td>${refStatusBadge(r.status)}</td>
+      <td>${esc(r.paid_orders)}</td>
+      <td>${money(r.total_earned)}</td>
+      <td>${r.pending_amount > 0 ? `<strong>${money(r.pending_amount)}</strong> (${esc(r.pending_orders)} ta)` : '—'}</td>
+      <td>
+        ${r.pending_amount > 0 && r.status !== 'cancelled'
+          ? `<button class="ghost ref-pay" data-id="${esc(r.referred_telegram_id)}" data-sum="${esc(r.pending_amount)}">To'lash</button>`
+          : ''}
+        ${r.status === 'cancelled'
+          ? `<button class="ghost ref-reactivate" data-id="${esc(r.referred_telegram_id)}">Tiklash</button>`
+          : `<button class="ghost ref-cancel" data-id="${esc(r.referred_telegram_id)}">Bekor</button>`}
+        <button class="ghost danger ref-delete" data-id="${esc(r.referred_telegram_id)}">Del</button>
+      </td>
+    </tr>`).join('')}</tbody></table>`;
+}
+
+async function loadReferrals() {
+  try {
+    const data = await api('admin-referrals');
+    state.referrals = data.referrals || [];
+    state.referralMeta = data;
+  } catch {
+    state.referrals = [];
+    state.referralMeta = null;
+  }
+  renderReferrals();
+}
+
 async function loadUsers() {
   try {
     const data = await api('admin-users');
@@ -667,7 +737,7 @@ async function initApp() {
   document.body.classList.add('authed');
   document.getElementById('loginView').hidden = true;
   document.getElementById('appView').hidden = false;
-  await Promise.all([loadDashboard(), loadData(), loadSettings(), loadBanners(), loadPromos(), loadReviews(), loadFaq(), loadUsers(), loadLeads()]);
+  await Promise.all([loadDashboard(), loadData(), loadSettings(), loadBanners(), loadPromos(), loadReviews(), loadFaq(), loadUsers(), loadLeads(), loadReferrals()]);
 }
 
 // --- Image upload helper ---
@@ -799,6 +869,38 @@ document.getElementById('leadsList')?.addEventListener('click', async (event) =>
       return;
     }
     await loadLeads();
+  } catch (error) {
+    alert(error.message);
+  }
+});
+
+// Referallar
+document.getElementById('referralsRefresh')?.addEventListener('click', () => {
+  loadReferrals().catch(() => {});
+});
+document.getElementById('referralsList')?.addEventListener('click', async (event) => {
+  const payBtn = event.target.closest('.ref-pay');
+  const cancelBtn = event.target.closest('.ref-cancel');
+  const reactivateBtn = event.target.closest('.ref-reactivate');
+  const deleteBtn = event.target.closest('.ref-delete');
+  try {
+    if (payBtn) {
+      if (!confirm(`Kutilayotgan ${payBtn.dataset.sum} UZS bonus referrer balansiga to'lansinmi?`)) return;
+      payBtn.disabled = true;
+      const res = await api('admin-referrals', { method: 'POST', body: JSON.stringify({ action: 'pay-pending', referred_telegram_id: payBtn.dataset.id }) });
+      alert(res.paid > 0 ? `To'landi: ${Number(res.amount).toLocaleString('uz-UZ')} UZS (${res.paid} ta buyurtma)` : (res.message || 'To\'lanadigan buyurtma topilmadi'));
+    } else if (cancelBtn) {
+      if (!confirm('Bu referal bekor qilinsinmi? Keyingi xaridlaridan bonus to\'lanmaydi.')) return;
+      await api('admin-referrals', { method: 'POST', body: JSON.stringify({ action: 'cancel', referred_telegram_id: cancelBtn.dataset.id }) });
+    } else if (reactivateBtn) {
+      await api('admin-referrals', { method: 'POST', body: JSON.stringify({ action: 'reactivate', referred_telegram_id: reactivateBtn.dataset.id }) });
+    } else if (deleteBtn) {
+      if (!confirm('Referal yozuvi o\'chirilsinmi? (To\'lov tarixi saqlanib qoladi)')) return;
+      await api('admin-referrals', { method: 'POST', body: JSON.stringify({ action: 'delete', referred_telegram_id: deleteBtn.dataset.id }) });
+    } else {
+      return;
+    }
+    await loadReferrals();
   } catch (error) {
     alert(error.message);
   }
