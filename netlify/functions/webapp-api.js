@@ -866,7 +866,7 @@ exports.handler = async (event) => {
         getUserBalance(supabase, telegramId).catch(() => ({ balance: 0 })),
         fetchSettings(supabase).catch(() => null),
         request(supabase, 'users', {
-          query: `select=phone,birthday,photo_url&telegram_id=eq.${telegramId}&limit=1`,
+          query: `select=phone,birthday,photo_url,phone_verified_at&telegram_id=eq.${telegramId}&limit=1`,
         }).catch(() => ({ data: [] })),
         request(supabase, 'subscriptions', {
           query: `select=plan_name,expires_at,status&user_telegram_id=eq.${telegramId}&status=eq.active&order=expires_at.asc`,
@@ -927,6 +927,9 @@ exports.handler = async (event) => {
         subscriptions,
         referral: {
           link: `https://t.me/${BOT}?start=ref_${telegramId}`,
+          // Havola faqat raqamini Telegram orqali tasdiqlaganlarga ochiladi
+          // (nakrutkaga qarshi; qo'lda terilgan raqam tasdiq hisoblanmaydi).
+          locked: !u.phone_verified_at,
           invited: refs.length,
           bonus_earned: refs.reduce((s, r) => s + Number(r.total_earned ?? r.reward_value ?? 0), 0),
           percent: Number(settings?.referral_percent ?? 10),

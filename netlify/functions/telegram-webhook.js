@@ -104,14 +104,38 @@ exports.handler = async (event) => {
       const isOwnContact = !contact.user_id || String(contact.user_id) === fromId;
       const digits = String(contact.phone_number || '').replace(/\D/g, '');
       if (fromId && digits && isOwnContact) {
-        const { request, upsertUser } = require('../../shared/db');
+        const { request, upsertUser, grantWelcomeBonus } = require('../../shared/db');
+        const { payReferralSignupBonus } = require('../../shared/referral-service');
+        const { sendMessage } = require('../../shared/telegram');
         try {
           await upsertUser(supabase, update.message.from);
+          const phone = `+${digits}`;
+
+          // Bitta SIM bilan bir nechta akkauntdan bonus yig'ishga qarshi:
+          // raqam boshqa akkauntda allaqachon bo'lsa, saqlaymiz-u bonus yo'q.
+          const { data: dup } = await request(supabase, 'users', {
+            query: `select=telegram_id&phone=eq.${encodeURIComponent(phone)}&telegram_id=neq.${fromId}&limit=1`,
+          });
+
+          // phone_verified_at faqat SHU yerda qo'yiladi: kontaktni Telegramning
+          // o'zi yuborgan va isOwnContact tekshirilgan — soxtalab bo'lmaydi.
+          // Mini App'da qo'lda terilgan raqam (save-contact) bu belgini olmaydi.
           await request(supabase, 'users', {
             method: 'PATCH',
             query: `telegram_id=eq.${fromId}`,
-            body: { phone: `+${digits}`, updated_at: new Date().toISOString() },
+            body: { phone, phone_verified_at: new Date().toISOString(), updated_at: new Date().toISOString() },
           });
+
+          // Reply klaviaturani yig'ishtirib, tasdiq beramiz.
+          await sendMessage(fromId, '✅ Raqamingiz saqlandi!', { remove_keyboard: true }).catch(() => {});
+
+          if (!dup?.[0]) {
+            // Bonuslar faqat tasdiqlangan raqamdan keyin (2026-08-27
+            // nakrutkasi: 131 soxta akkaunt darhol bonus olgan edi).
+            await grantWelcomeBonus(supabase, fromId)
+              .catch((e) => console.warn('welcome bonus warn:', e?.message));
+            await payReferralSignupBonus(supabase, fromId).catch(() => {});
+          }
         } catch (e) {
           console.warn('save contact phone warn:', e?.message);
         }

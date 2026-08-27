@@ -102,6 +102,39 @@ function parsePromoOptions(tokens = []) {
 // Bosh menyu: inline katalog o'rniga bitta "Mini ilovani ochish" (WebApp) tugmasi.
 const MINI_APP_URL = (process.env.APP_BASE_URL || 'https://santyx.uz').replace(/\/+$/, '');
 
+// Telefon raqamini Telegram orqali ulashish tugmasi (reply keyboard).
+// Kontakt xabari webhook'da isOwnContact bilan tekshiriladi — soxtalab
+// bo'lmaydi, shuning uchun barcha bonuslar shu qadamga bog'langan.
+const CONTACT_KEYBOARD = {
+  keyboard: [[{ text: '📱 Raqamni ulashish', request_contact: true }]],
+  resize_keyboard: true,
+  one_time_keyboard: true,
+};
+
+// Referal havola faqat raqamini tasdiqlaganlarga beriladi (nakrutkaga
+// qarshi qo'shimcha to'siq): tasdiqsiz foydalanuvchiga kontakt so'rovi chiqadi.
+async function sendReferralInfo({ supabase, chatId, telegramId }) {
+  const { request } = require('./db');
+  const { data } = await request(supabase, 'users', {
+    query: `select=phone_verified_at&telegram_id=eq.${telegramId}&limit=1`,
+  });
+  if (!data?.[0]?.phone_verified_at) {
+    await sendMessage(
+      chatId,
+      '🤝 Referal havola olish uchun avval telefon raqamingizni ulashing — pastdagi tugmani bosing.',
+      CONTACT_KEYBOARD,
+    );
+    return;
+  }
+  const settings = await fetchSettings(supabase);
+  await sendMessage(chatId, referralText({
+    telegramId,
+    botUsername: process.env.BOT_USERNAME || 'santyxnarxbot',
+    fixedBonus: settings?.referral_fixed_bonus,
+    percent: settings?.referral_percent,
+  }), null);
+}
+
 async function showCategories({ supabase, chatId, messageId, asEdit = false }) {
   const settings = await fetchSettings(supabase);
   const text = `${welcomeText(settings)}\n\n🚀 Barcha obunalarni ko'rish va xarid qilish uchun Mini ilovani oching:`;
@@ -275,13 +308,7 @@ async function handleCallback({ supabase, callbackQuery }) {
 
     // Start menyusidagi "Do'st taklif qilish" tugmasi: referal havola va shartlar.
     if (data === 'show_referral') {
-      const settings = await fetchSettings(supabase);
-      await sendMessage(chatId, referralText({
-        telegramId,
-        botUsername: process.env.BOT_USERNAME || 'santyxnarxbot',
-        fixedBonus: settings?.referral_fixed_bonus,
-        percent: settings?.referral_percent,
-      }), null);
+      await sendReferralInfo({ supabase, chatId, telegramId });
       return;
     }
 
@@ -323,13 +350,7 @@ async function handleTextCommand({ supabase, message }) {
     return true;
   }
   if (text === '/referral' || text === '/ref') {
-    const settings = await fetchSettings(supabase);
-    await sendMessage(message.chat.id, referralText({
-      telegramId: message.from.id,
-      botUsername: process.env.BOT_USERNAME || 'santyxnarxbot',
-      fixedBonus: settings?.referral_fixed_bonus,
-      percent: settings?.referral_percent,
-    }), null);
+    await sendReferralInfo({ supabase, chatId: message.chat.id, telegramId: message.from.id });
     return true;
   }
   if (text === '/help') {
@@ -437,8 +458,12 @@ async function handleStart({ supabase, message }) {
   // Bookkeeping (foydalanuvchi, analitika, referal) ni kategoriyalarni ko'rsatish
   // bilan PARALLEL bajaramiz. Promise.all barcha yozuvlarni kutadi (serverless'da
   // yo'qolmaydi), lekin ketma-ket emas — shuning uchun user tezroq javob oladi.
+  // Natijasi keyin kerak (telefon so'rash-so'ramaslikni hal qiladi), shuning
+  // uchun alohida o'zgaruvchida — lekin baribir qolganlar bilan parallel.
+  const userTask = upsertUser(supabase, message.from)
+    .catch((e) => { console.warn('upsertUser warn:', e?.message); return null; });
   const tasks = [
-    upsertUser(supabase, message.from).catch((e) => console.warn('upsertUser warn:', e?.message)),
+    userTask,
     trackEvent(supabase, { eventType: 'start_used', telegramId: message.from.id }).catch(() => {}),
   ];
 
@@ -469,36 +494,28 @@ async function handleStart({ supabase, message }) {
       createAuditLog(supabase, { user_telegram_id: referredId, action: 'referral_registered', status: 'created', metadata: { referrer: referrerId } }).catch(() => {}),
       (async () => {
         try {
-          const { request, addWalletTransaction } = require('./db');
-          // return=representation + ignore-duplicates: yangi qo'shilsa qatorni qaytaradi,
-          // mavjud bo'lsa bo'sh => signup bonus takror berilmaydi.
-          const { data } = await request(supabase, 'referrals', {
+          const { request } = require('./db');
+          // return=representation + ignore-duplicates: yangi qo'shilsa qatorni
+          // qaytaradi, mavjud bo'lsa bo'sh — takror ro'yxatga olinmaydi.
+          const { data: inserted } = await request(supabase, 'referrals', {
             method: 'POST',
             query: 'on_conflict=referred_telegram_id',
             headers: { Prefer: 'return=representation,resolution=ignore-duplicates' },
             body: { referrer_telegram_id: referrerId, referred_telegram_id: referredId, status: 'registered' },
           });
-          if (!data?.[0]) return; // allaqachon mavjud
+          if (!inserted?.[0]) return; // allaqachon mavjud
 
-          // Signup bonus: referal havola orqali yangi foydalanuvchi qo'shilganda referrerga
-          const settings = await fetchSettings(supabase).catch(() => null);
-          const signupBonus = Number(settings?.referral_fixed_bonus || 0);
-          if (signupBonus > 0) {
-            // notify: false — pastda o'zimizning aniqroq xabarimiz ketadi,
-            // umumiy "balans o'zgardi" xabari bilan ikkilanmasin.
-            await addWalletTransaction(supabase, {
-              user_telegram_id: referrerId,
-              amount: signupBonus,
-              type: 'referral',
-              description: `Referal signup bonus (#${referredId})`,
-              notify: false,
-            });
-            await request(supabase, 'referrals', {
-              method: 'PATCH',
-              query: `referred_telegram_id=eq.${referredId}`,
-              body: { total_earned: signupBonus, updated_at: new Date().toISOString() },
-            }).catch(() => {});
-            await sendMessage(referrerId, `🎉 Sizning referal havolangiz orqali yangi foydalanuvchi qo'shildi! +${signupBonus.toLocaleString('uz-UZ')} UZS`).catch(() => {});
+          // Signup bonus BU YERDA to'lanmaydi: 2026-08-27 da bitta akkaunt 32
+          // soniyada 131 soxta akkaunt bilan 655 000 UZS yig'ib ketdi (akkaunt
+          // ochish bepul). Bonus taklif qilingan odam raqamini Telegram orqali
+          // TASDIQLAGANDA to'lanadi (telegram-webhook kontakt bo'limi). Raqami
+          // avvaldan tasdiqlangan bo'lsa — hoziroq.
+          const { data: u } = await request(supabase, 'users', {
+            query: `select=phone_verified_at&telegram_id=eq.${referredId}&limit=1`,
+          });
+          if (u?.[0]?.phone_verified_at) {
+            const { payReferralSignupBonus } = require('./referral-service');
+            await payReferralSignupBonus(supabase, referredId);
           }
         } catch (error) {
           console.warn('referral signup warn:', error?.message);
@@ -509,6 +526,19 @@ async function handleStart({ supabase, message }) {
 
   tasks.push(showCategories({ supabase, chatId: message.chat.id, asEdit: false }));
   await Promise.all(tasks);
+
+  // Raqami tasdiqlanmagan va hali welcome bonus olmagan foydalanuvchini
+  // kontakt ulashishga undaymiz — welcome bonus ham, referal bonusi ham
+  // endi faqat shu qadamdan keyin to'lanadi (nakrutkaga qarshi).
+  const userRow = (await userTask)?.data?.[0];
+  if (userRow && !userRow.phone_verified_at && !userRow.welcome_bonus_at) {
+    const settings = await fetchSettings(supabase).catch(() => null);
+    const bonus = Math.round(Number(settings?.welcome_bonus || 0));
+    const text = bonus > 0
+      ? `🎁 <b>Raqamingizni ulashing — ${bonus.toLocaleString('uz-UZ')} UZS bonus!</b>\n\nPastdagi tugma orqali telefon raqamingizni tasdiqlang, bonus darhol balansingizga tushadi.`
+      : '📱 Buyurtmalar va bonuslar uchun telefon raqamingizni ulashing — pastdagi tugmani bosing.';
+    await sendMessage(message.chat.id, text, CONTACT_KEYBOARD).catch(() => {});
+  }
 }
 
 module.exports = {

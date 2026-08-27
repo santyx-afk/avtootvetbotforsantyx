@@ -215,6 +215,8 @@ export default {
     expiresToday: 'Expires today',
     referral: 'Referral program',
     referralHint: 'Invite friends — earn a bonus on every purchase they make.',
+    referralLocked: 'Your referral link unlocks after confirming your phone number via Telegram.',
+    unlockReferral: 'Share phone number',
     invited: 'Invited',
     bonusEarned: 'Bonus earned',
     copyLink: 'Copy link',

@@ -215,6 +215,8 @@ export default {
     expiresToday: 'Bugun tugaydi',
     referral: 'Referal dastur',
     referralHint: 'Do\'stlaringizni taklif qiling — har biri xarid qilganda bonus oling.',
+    referralLocked: 'Referal havola telefon raqamingiz Telegram orqali tasdiqlangach ochiladi.',
+    unlockReferral: 'Raqamni ulashish',
     invited: 'Taklif qilingan',
     bonusEarned: 'Olingan bonus',
     copyLink: 'Havolani nusxalash',
