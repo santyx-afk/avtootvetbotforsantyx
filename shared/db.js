@@ -159,9 +159,9 @@ async function grantWelcomeBonus(client, telegramId) {
 async function upsertUser(client, telegramUser) {
   const result = await request(client, 'users', {
     method: 'POST',
-    // Javobda welcome_bonus_at qaytadi — yangi foydalanuvchini aniqlash uchun
-    // qo'shimcha so'rov kerak emas (upsertUser har bir xabarda chaqiriladi).
-    query: 'on_conflict=telegram_id&select=telegram_id,welcome_bonus_at',
+    // Javobda bonus/telefon holati qaytadi — chaqiruvchi (handleStart) raqam
+    // so'rash kerakligini qo'shimcha so'rovsiz biladi.
+    query: 'on_conflict=telegram_id&select=telegram_id,welcome_bonus_at,phone,phone_verified_at',
     headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
     body: {
       telegram_id: String(telegramUser.id),
@@ -172,11 +172,10 @@ async function upsertUser(client, telegramUser) {
     },
   });
 
-  if (result.data?.[0] && !result.data[0].welcome_bonus_at) {
-    // Bonus bermaslik ro'yxatdan o'tishni buzmasligi kerak.
-    await grantWelcomeBonus(client, telegramUser.id)
-      .catch((error) => console.warn('welcome bonus warn:', error?.message));
-  }
+  // Diqqat: welcome bonus endi BU YERDA berilmaydi. 2026-08-27 da bitta
+  // akkaunt 131 soxta akkaunt ochib bonuslarni yig'ib ketdi — akkaunt ochish
+  // bepul, SIM esa emas. Bonus foydalanuvchi raqamini Telegram orqali
+  // tasdiqlaganda to'lanadi (telegram-webhook kontakt bo'limi).
   return result;
 }
 

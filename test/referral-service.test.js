@@ -21,15 +21,16 @@ function makeRef(extra = {}) {
 
 const ORDER = { id: 'o1', user_telegram_id: '200', base_price: 64990, amount: 43005 };
 
-function loadService({ percent = 10, claimTaken = false, refRow = makeRef() } = {}) {
+function loadService({ percent = 10, fixedBonus = 5000, claimTaken = false, refRow = makeRef() } = {}) {
   const seq = [];
   const wallet = [];
   const patches = [];
   const audits = [];
   const messages = [];
+  const state = { signupClaimUsed: false };
 
   const fakeDb = {
-    async request(_client, table, { method = 'GET', body } = {}) {
+    async request(_client, table, { method = 'GET', query = '', body } = {}) {
       if (table === 'referrals' && method === 'GET') {
         return { data: refRow ? [refRow] : [] };
       }
@@ -39,6 +40,13 @@ function loadService({ percent = 10, claimTaken = false, refRow = makeRef() } = 
         return { data: claimTaken ? [] : [{ ...body }] };
       }
       if (table === 'referrals' && method === 'PATCH') {
+        // signup bonus da'vosi: NULL bo'yicha atomik PATCH — bir marta o'tadi
+        if (query.includes('signup_bonus_at=is.null')) {
+          seq.push('signup-claim');
+          if (state.signupClaimUsed || !refRow || refRow.status === 'cancelled') return { data: [] };
+          state.signupClaimUsed = true;
+          return { data: [{ ...refRow }] };
+        }
         seq.push('patch');
         patches.push(body);
         return { data: null };
@@ -46,7 +54,7 @@ function loadService({ percent = 10, claimTaken = false, refRow = makeRef() } = 
       throw new Error(`kutilmagan so'rov: ${table} ${method}`);
     },
     async fetchSettings() {
-      return { referral_percent: percent };
+      return { referral_percent: percent, referral_fixed_bonus: fixedBonus };
     },
     async addWalletTransaction(_client, item) {
       seq.push('wallet');
@@ -137,4 +145,42 @@ test('oldingi hisob ustiga qo\'shiladi (ikkinchi xarid)', async () => {
   assert.strictEqual(patches[0].total_earned, 11499);
   assert.strictEqual(patches[0].purchase_count, 3);
   assert.strictEqual(patches[0].first_order_id, 'old', 'birinchi buyurtma o\'zgarmasligi kerak');
+});
+
+// --- Signup bonus: faqat raqam tasdiqlangach (2026-08-27 nakrutkasidan keyin) ---
+
+test('signup bonus: da\'vo bir marta o\'tadi, ikkinchi chaqiriq to\'lamaydi', async () => {
+  const { mod, wallet, patches, messages } = loadService();
+  const paid = await mod.payReferralSignupBonus(null, '200');
+  assert.strictEqual(paid, 5000);
+  assert.strictEqual(wallet.length, 1);
+  assert.strictEqual(wallet[0].user_telegram_id, '100', 'bonus referrerga tushishi kerak');
+  assert.strictEqual(wallet[0].amount, 5000);
+  assert.strictEqual(wallet[0].type, 'referral');
+  assert.strictEqual(wallet[0].notify, false);
+  assert.strictEqual(patches[0].total_earned, 5000);
+  assert.strictEqual(messages.length, 1);
+
+  // Poyga/takror: da'vo band — hech narsa to'lanmaydi
+  const second = await mod.payReferralSignupBonus(null, '200');
+  assert.strictEqual(second, null);
+  assert.strictEqual(wallet.length, 1);
+});
+
+test('signup bonus: sozlamada 0 bo\'lsa da\'vo ham yozilmaydi', async () => {
+  const { mod, seq, wallet } = loadService({ fixedBonus: 0 });
+  const paid = await mod.payReferralSignupBonus(null, '200');
+  assert.strictEqual(paid, null);
+  assert.deepStrictEqual(seq, []);
+  assert.strictEqual(wallet.length, 0);
+});
+
+test('signup bonus: bekor qilingan yoki mavjud bo\'lmagan referalga to\'lanmaydi', async () => {
+  const cancelled = loadService({ refRow: makeRef({ status: 'cancelled' }) });
+  assert.strictEqual(await cancelled.mod.payReferralSignupBonus(null, '200'), null);
+  assert.strictEqual(cancelled.wallet.length, 0);
+
+  const missing = loadService({ refRow: null });
+  assert.strictEqual(await missing.mod.payReferralSignupBonus(null, '200'), null);
+  assert.strictEqual(missing.wallet.length, 0);
 });

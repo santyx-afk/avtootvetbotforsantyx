@@ -85,4 +85,54 @@ async function processReferralPayout(supabase, order) {
   }
 }
 
-module.exports = { processReferralPayout };
+// Taklif qilingan foydalanuvchi raqamini TASDIQLAGANDA chaqiriladi
+// (telegram-webhook kontakt bo'limi; raqam avvaldan tasdiqlangan bo'lsa —
+// handleStart dagi ro'yxatga olishdan keyin darhol).
+//
+// 2026-08-27 nakrutkasi saboqlari: bonus akkaunt ochilgani uchun EMAS,
+// SIM tasdig'i uchun to'lanadi. signup_bonus_at ustunidagi NULL bo'yicha
+// atomik PATCH — poyga himoyasi: bitta referal uchun bonus faqat bir marta
+// (welcome_bonus_at bilan bir xil naqsh).
+async function payReferralSignupBonus(supabase, referredTelegramId) {
+  try {
+    const referredId = String(referredTelegramId);
+    const settings = await fetchSettings(supabase).catch(() => null);
+    const bonus = Math.round(Number(settings?.referral_fixed_bonus || 0));
+    if (!(bonus > 0)) return null;
+
+    // Da'vo: faqat bitta parallel chaqiruv qatorni oladi; bekor qilingan
+    // (cancelled) referalga bonus yo'q.
+    const { data } = await request(supabase, 'referrals', {
+      method: 'PATCH',
+      query: `referred_telegram_id=eq.${referredId}&signup_bonus_at=is.null&status=neq.cancelled`,
+      headers: { Prefer: 'return=representation' },
+      body: { signup_bonus_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+    });
+    const ref = data?.[0];
+    if (!ref) return null; // referal yo'q, bekor qilingan yoki bonus allaqachon to'langan
+
+    // notify: false — pastda o'zimizning aniqroq xabarimiz bor.
+    await addWalletTransaction(supabase, {
+      user_telegram_id: ref.referrer_telegram_id,
+      amount: bonus,
+      type: 'referral',
+      description: `Referal signup bonus (#${referredId})`,
+      notify: false,
+    });
+    await request(supabase, 'referrals', {
+      method: 'PATCH',
+      query: `referred_telegram_id=eq.${referredId}`,
+      body: { total_earned: Number(ref.total_earned || 0) + bonus, updated_at: new Date().toISOString() },
+    }).catch(() => {});
+    await sendMessage(
+      ref.referrer_telegram_id,
+      `🎉 Do'stingiz raqamini tasdiqladi! +${bonus.toLocaleString('uz-UZ')} UZS balansingizga qo'shildi.`,
+    ).catch(() => {});
+    return bonus;
+  } catch (err) {
+    console.warn('referral signup bonus warn:', err?.message);
+    return null;
+  }
+}
+
+module.exports = { processReferralPayout, payReferralSignupBonus };

@@ -158,7 +158,7 @@ function balanceText(wallet = {}) {
 function referralText({ telegramId, botUsername, fixedBonus = 0, percent = 0 }) {
   const username = String(botUsername || 'santyxnarxbot').replace('@', '');
   const perks = [];
-  if (Number(fixedBonus) > 0) perks.push(`har bir yangi do‘st uchun +${Number(fixedBonus).toLocaleString('uz-UZ')} UZS`);
+  if (Number(fixedBonus) > 0) perks.push(`raqamini tasdiqlagan har bir yangi do‘st uchun +${Number(fixedBonus).toLocaleString('uz-UZ')} UZS`);
   if (Number(percent) > 0) perks.push(`uning har bir xaridi uchun ${Number(percent)}% bonus`);
   return [
     '🤝 <b>Referral havolangiz</b>',

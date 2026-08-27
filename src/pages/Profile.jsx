@@ -11,7 +11,7 @@ import { useI18n } from '../i18n/I18nProvider.jsx';
 import { useTelegram } from '../telegram/TelegramProvider.jsx';
 import { apiCall } from '../lib/api.js';
 import { readCache, writeCache } from '../lib/cache.js';
-import { openTelegramLink, haptic } from '../telegram/webapp.js';
+import { openTelegramLink, haptic, requestContact } from '../telegram/webapp.js';
 import { formatPrice, formatDate } from '../utils/format.js';
 import styles from './Profile.module.css';
 
@@ -71,6 +71,23 @@ export default function Profile() {
   const openSupport = () => {
     haptic.impact('light');
     openTelegramLink(`https://t.me/${SUPPORT}`);
+  };
+
+  // Referal havola qulfdan chiqishi uchun raqam Telegram orqali tasdiqlanadi:
+  // requestContact kontaktni botga yuboradi (webhook uni saqlab, tasdiq belgisi
+  // qo'yadi), shundan keyin profil qayta yuklanadi.
+  const [unlocking, setUnlocking] = useState(false);
+  const unlockReferral = async () => {
+    haptic.impact('medium');
+    setUnlocking(true);
+    const res = await requestContact();
+    if (!res.ok) {
+      setUnlocking(false);
+      return;
+    }
+    setTimeout(() => {
+      load().finally(() => setUnlocking(false));
+    }, 1800);
   };
 
   return (
@@ -166,22 +183,39 @@ export default function Profile() {
             {/* Referal */}
             <div className={styles.sectionTitle}>{t('profile.referral')}</div>
             <section className={styles.refCard}>
-              <p className={styles.refHint}>{t('profile.referralHint')}</p>
-              <div className={styles.refStats}>
-                <div className={styles.refStat}>
-                  <span className={styles.refStatValue}>{data.referral.invited}</span>
-                  <span className={styles.refStatLabel}>{t('profile.invited')}</span>
-                </div>
-                <div className={styles.refStat}>
-                  <span className={styles.refStatValue}>{formatPrice(data.referral.bonus_earned, currency)}</span>
-                  <span className={styles.refStatLabel}>{t('profile.bonusEarned')}</span>
-                </div>
-              </div>
-              <CopyField label={t('profile.copyLink')} value={data.referral.link} />
-              <button type="button" className={styles.shareBtn} onClick={shareReferral}>
-                <Icon name="share" size={18} strokeWidth={2} />
-                {t('profile.shareLink')}
-              </button>
+              {data.referral.locked ? (
+                <>
+                  {/* Havola raqam Telegram orqali tasdiqlangach ochiladi (nakrutkaga qarshi) */}
+                  <p className={styles.refHint}>{t('profile.referralLocked')}</p>
+                  <button
+                    type="button"
+                    className={styles.shareBtn}
+                    onClick={unlockReferral}
+                    disabled={unlocking}
+                  >
+                    {unlocking ? '…' : t('profile.unlockReferral')}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <p className={styles.refHint}>{t('profile.referralHint')}</p>
+                  <div className={styles.refStats}>
+                    <div className={styles.refStat}>
+                      <span className={styles.refStatValue}>{data.referral.invited}</span>
+                      <span className={styles.refStatLabel}>{t('profile.invited')}</span>
+                    </div>
+                    <div className={styles.refStat}>
+                      <span className={styles.refStatValue}>{formatPrice(data.referral.bonus_earned, currency)}</span>
+                      <span className={styles.refStatLabel}>{t('profile.bonusEarned')}</span>
+                    </div>
+                  </div>
+                  <CopyField label={t('profile.copyLink')} value={data.referral.link} />
+                  <button type="button" className={styles.shareBtn} onClick={shareReferral}>
+                    <Icon name="share" size={18} strokeWidth={2} />
+                    {t('profile.shareLink')}
+                  </button>
+                </>
+              )}
             </section>
 
             {/* Tug'ilgan kun */}
