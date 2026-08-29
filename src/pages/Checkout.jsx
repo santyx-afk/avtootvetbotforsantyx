@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Icon from '../components/Icon.jsx';
-import CopyField, { copyText } from '../components/CopyField.jsx';
+import CopyField from '../components/CopyField.jsx';
+import PaymentSteps from '../components/PaymentSteps.jsx';
 import Toggle from '../components/Toggle.jsx';
 import Spinner from '../components/Spinner.jsx';
 import ErrorState from '../components/ErrorState.jsx';
@@ -14,13 +15,6 @@ import { haptic } from '../telegram/webapp.js';
 import ReviewModal from '../components/ReviewModal.jsx';
 import { readStorage, writeStorage } from '../utils/storage.js';
 import styles from './Checkout.module.css';
-
-// Karta raqamini o'qish oson bo'lishi uchun 4 talik guruhlarga ajratadi:
-// "4067070002820160" -> "4067 0700 0282 0160". Raqam bo'lmasa xom qiymat.
-function formatCardNumber(value) {
-  const digits = String(value || '').replace(/\D/g, '');
-  return digits ? digits.replace(/(.{4})/g, '$1 ').trim() : String(value || '');
-}
 
 export default function Checkout() {
   const { t } = useI18n();
@@ -38,9 +32,6 @@ export default function Checkout() {
   const [placing, setPlacing] = useState(false);
 
   const [phase, setPhase] = useState('form');
-  // To'lov qadamlaridagi "Nusxalash" tugmalari: qaysi biri hozirgina bosilgani
-  // ('amount' | 'card' | null) — 1.6 soniya "Nusxalandi ✓" ko'rsatiladi.
-  const [copiedStep, setCopiedStep] = useState(null);
   const [order, setOrder] = useState(null);
   const [statusData, setStatusData] = useState(null);
   const [showReview, setShowReview] = useState(false); // xariddan keyingi sharh modali
@@ -113,14 +104,6 @@ export default function Checkout() {
       haptic.notification('error');
       setPlacing(false);
     }
-  };
-
-  const copyStep = async (key, value) => {
-    haptic.impact('light');
-    const ok = await copyText(String(value));
-    if (!ok) return;
-    setCopiedStep(key);
-    setTimeout(() => setCopiedStep((cur) => (cur === key ? null : cur)), 1600);
   };
 
   const { mmss, expired } = useCountdown(phase !== 'form' ? order?.expires_at : null);
@@ -361,73 +344,14 @@ export default function Checkout() {
         </div>
 
         <div className={styles.body}>
-          <div className={styles.timerBox}>
-            <span className={styles.timerLabel}>{t('checkout.timeLeft')}</span>
-            <span className={styles.timer}>{mmss}</span>
-          </div>
-
-          {/* 1-qadam: summani nusxalash. copyValue — xom butun son (bank
-              ilovalari bo'shliqli/formatlangan qiymatni qabul qilmaydi). */}
-          <div className={styles.stepCard}>
-            <div className={styles.stepHead}>
-              <span className={styles.stepNum}>1</span>
-              <span className={styles.stepTitle}>📋 {t('checkout.step1Title')}</span>
-            </div>
-            <div className={styles.stepRow}>
-              <span className={`${styles.stepValue} ${styles.stepValueBig}`}>
-                {formatPrice(order.amount, currency)}
-              </span>
-              <button
-                type="button"
-                className={`${styles.copyBtn} ${copiedStep === 'amount' ? styles.copyBtnDone : ''}`}
-                onClick={() => copyStep('amount', Math.round(Number(order.amount)))}
-              >
-                {copiedStep === 'amount' ? `${t('checkout.copied')} ✓` : t('checkout.copy')}
-              </button>
-            </div>
-            <p className={styles.stepHint}>{t('checkout.step1Hint')}</p>
-          </div>
-
-          {/* 2-qadam: karta raqami (4 talik guruhlarda, clipboard'ga esa toza raqam) */}
-          <div className={styles.stepCard}>
-            <div className={styles.stepHead}>
-              <span className={styles.stepNum}>2</span>
-              <span className={styles.stepTitle}>💳 {t('checkout.step2Title')}</span>
-            </div>
-            <div className={styles.stepRow}>
-              <span className={styles.stepValue}>{formatCardNumber(order.card_number)}</span>
-              <button
-                type="button"
-                className={`${styles.copyBtn} ${copiedStep === 'card' ? styles.copyBtnDone : ''}`}
-                onClick={() => copyStep('card', String(order.card_number || '').replace(/\D/g, ''))}
-              >
-                {copiedStep === 'card' ? `${t('checkout.copied')} ✓` : t('checkout.copy')}
-              </button>
-            </div>
-          </div>
-
-          {/* 3-qadam: kutish — to'lovni tizim o'zi aniqlaydi (order-status polling) */}
-          <div className={styles.stepCard}>
-            <div className={styles.stepHead}>
-              <span className={styles.stepNum}>3</span>
-              <span className={styles.stepTitle}>⏳ {t('checkout.step3Title')}</span>
-            </div>
-            <div className={styles.stepWait}>
-              <Spinner size={18} stroke={2} />
-              <span>{t('checkout.step3Text')}</span>
-            </div>
-          </div>
-
-          {/* Eski qizil ogohlantirish o'rniga yumshoq eslatma — ma'no o'sha,
-              lekin cho'chitmaydi */}
-          <div className={styles.infoBox}>
-            <span className={styles.infoIcon}>ℹ️</span>
-            <p>{t('checkout.exactAmountInfo')}</p>
-          </div>
-
-          <p className={styles.supportHint}>
-            {t('checkout.supportHint', { support: order.support || '@santyx' })}
-          </p>
+          {/* 3 qadamli ko'rsatma TopUp bilan umumiy komponentda */}
+          <PaymentSteps
+            mmss={mmss}
+            amount={order.amount}
+            cardNumber={order.card_number}
+            support={order.support}
+            currency={currency}
+          />
         </div>
       </div>
     );

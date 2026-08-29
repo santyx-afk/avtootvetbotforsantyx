@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Icon from '../components/Icon.jsx';
-import CopyField from '../components/CopyField.jsx';
+import PaymentSteps from '../components/PaymentSteps.jsx';
 import Spinner from '../components/Spinner.jsx';
 import { useI18n } from '../i18n/I18nProvider.jsx';
 import { apiCall } from '../lib/api.js';
@@ -191,24 +191,14 @@ export default function TopUp() {
         </div>
 
         <div className={styles.body}>
-          <div className={styles.timerBox}>
-            <span className={styles.timerLabel}>{t('checkout.timeLeft')}</span>
-            <span className={styles.timer}>{mmss}</span>
-          </div>
-
-          <CopyField label={t('checkout.amountToPay')} value={formatPrice(order.amount, currency)} copyValue={String(order.amount)} big />
-          <div style={{ height: 10 }} />
-          <CopyField label={t('checkout.cardNumber')} value={order.card_number} />
-
-          <div className={styles.warning}>
-            <Icon name="alert" size={20} />
-            <p>{t('checkout.warning', { support: order.support || '@santyx' })}</p>
-          </div>
-
-          <div className={styles.waiting}>
-            <Spinner size={18} stroke={2} />
-            <span>{t('checkout.waitingPayment')}</span>
-          </div>
+          {/* 3 qadamli ko'rsatma Checkout bilan umumiy komponentda */}
+          <PaymentSteps
+            mmss={mmss}
+            amount={order.amount}
+            cardNumber={order.card_number}
+            support={order.support}
+            currency={currency}
+          />
         </div>
       </div>
     );
