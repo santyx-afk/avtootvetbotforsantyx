@@ -300,37 +300,118 @@
   letter-spacing: 0.02em;
 }
 
-.warning {
-  display: flex;
-  gap: 10px;
-  align-items: flex-start;
-  margin-top: 14px;
-  padding: 16px;
+/* 3 qadamli to'lov oqimi: har bir qadam alohida raqamlangan kartada */
+.stepCard {
+  background: var(--app-surface);
   border-radius: var(--app-radius);
-  background: #fee2e2;
-  border: 2px solid #ef4444;
-  color: #dc2626;
+  padding: 14px 16px;
 }
 
-.warning :global(svg) {
+.stepHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.stepNum {
   flex-shrink: 0;
-  color: #dc2626;
-}
-
-.warning p {
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 1.5;
-}
-
-.waiting {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--app-accent);
+  color: var(--app-accent-text);
+  font-size: 13px;
+  font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  margin-top: 22px;
-  color: var(--app-hint);
+}
+
+.stepTitle {
   font-size: 15px;
+  font-weight: 600;
+  color: var(--app-text);
+}
+
+.stepRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.stepValue {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--app-text);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  overflow-wrap: anywhere;
+}
+
+.stepValueBig {
+  font-size: 24px;
+}
+
+.copyBtn {
+  flex-shrink: 0;
+  height: 38px;
+  padding: 0 14px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--app-accent) 14%, transparent);
+  color: var(--app-accent);
+  font-size: 14px;
+  font-weight: 600;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.copyBtnDone {
+  background: color-mix(in srgb, #2ea24d 15%, transparent);
+  color: #2ea24d;
+}
+
+.stepHint {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--app-hint);
+}
+
+.stepWait {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--app-hint);
+  font-size: 14px;
+}
+
+/* Yumshoq eslatma — eski qizil ogohlantirish o'rnida: ma'no saqlanadi,
+   lekin xarid arafasidagi odamni cho'chitmaydi */
+.infoBox {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border-radius: var(--app-radius);
+  background: color-mix(in srgb, var(--app-accent) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--app-accent) 25%, transparent);
+}
+
+.infoBox p {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--app-text);
+}
+
+.infoIcon {
+  font-size: 16px;
+  line-height: 1.4;
+}
+
+.supportHint {
+  text-align: center;
+  font-size: 13px;
+  color: var(--app-hint);
 }
 
 /* Result */
