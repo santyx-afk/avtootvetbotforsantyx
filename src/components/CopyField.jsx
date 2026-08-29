@@ -4,7 +4,9 @@ import { useI18n } from '../i18n/I18nProvider.jsx';
 import { haptic } from '../telegram/webapp.js';
 import styles from './CopyField.module.css';
 
-async function copyText(text) {
+// Boshqa sahifalar (masalan Checkout qadam tugmalari) ham shu nusxalash
+// yo'lini ishlatadi — fallback bilan birga bitta joyda tursin.
+export async function copyText(text) {
   try {
     if (navigator.clipboard?.writeText) {
       await navigator.clipboard.writeText(text);
