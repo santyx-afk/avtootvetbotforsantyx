@@ -38,6 +38,9 @@ export default function ProductDetail() {
   const [qty, setQty] = useState(1);
   const [added, setAdded] = useState(false);
   const [adding, setAdding] = useState(false);
+  // Savatga qo'shilgandan keyin "Savatga o'tish" tugmasi paydo bo'ladi va
+  // sahifada qoladi (added esa 1.6 soniyalik "Qo'shildi" javobi uchun).
+  const [inCart, setInCart] = useState(false);
 
   const load = useCallback(async () => {
     setStatus('loading');
@@ -54,6 +57,9 @@ export default function ProductDetail() {
   useEffect(() => {
     load();
     pushRecentlyViewed(id);
+    // Boshqa mahsulotga o'tilganda tugma yana yashirinadi: u aynan shu
+    // sahifada qo'shilgandan keyin chiqishi kerak.
+    setInCart(false);
   }, [load, id]);
 
   const product = data?.product;
@@ -84,12 +90,18 @@ export default function ProductDetail() {
     try {
       await addToCart(id, qty);
       setAdded(true);
+      setInCart(true);
       setTimeout(() => setAdded(false), 1600);
     } catch {
       haptic.notification('error');
     } finally {
       setAdding(false);
     }
+  };
+
+  const goToCart = () => {
+    haptic.impact('light');
+    navigate('/cart');
   };
 
   if (status === 'loading') {
@@ -121,7 +133,7 @@ export default function ProductDetail() {
   const savings = off > 0 ? Number(product.old_price) - Number(product.price) : 0;
 
   return (
-    <div className={styles.page}>
+    <div className={`${styles.page} ${inCart ? styles.pageWithCart : ''}`}>
       {/* Hero rasm */}
       <div className={styles.hero}>
         {product.image_url ? (
@@ -196,61 +208,71 @@ export default function ProductDetail() {
 
       {/* Sticky pastki panel */}
       <div className={styles.actionBar}>
-        <button
-          type="button"
-          className={`${styles.wishBtn} ${wish ? styles.wishOn : ''}`}
-          onClick={doWishlist}
-          aria-label="wishlist"
-        >
-          <Icon name="wishlist" size={22} filled={wish} strokeWidth={2} />
-        </button>
+        <div className={styles.actionRow}>
+          <button
+            type="button"
+            className={`${styles.wishBtn} ${wish ? styles.wishOn : ''}`}
+            onClick={doWishlist}
+            aria-label="wishlist"
+          >
+            <Icon name="wishlist" size={22} filled={wish} strokeWidth={2} />
+          </button>
 
-        {product.in_stock && (
-          <div className={styles.stepper}>
-            <button
-              type="button"
-              onClick={() => {
-                haptic.selection();
-                setQty((q) => Math.max(1, q - 1));
-              }}
-              disabled={qty <= 1}
-            >
-              <Icon name="minus" size={18} strokeWidth={2.4} />
-            </button>
-            <span>{qty}</span>
-            <button
-              type="button"
-              onClick={() => {
-                haptic.selection();
-                setQty((q) => Math.min(5, q + 1));
-              }}
-              disabled={qty >= 5}
-            >
-              <Icon name="plus" size={18} strokeWidth={2.4} />
-            </button>
-          </div>
-        )}
-
-        <button
-          type="button"
-          className={`${styles.addBtn} ${added ? styles.addDone : ''}`}
-          onClick={doAddToCart}
-          disabled={!product.in_stock || adding}
-        >
-          {!product.in_stock ? (
-            t('product.outOfStock')
-          ) : adding ? (
-            <Spinner size={18} stroke={2} />
-          ) : added ? (
-            <>
-              <Icon name="check" size={18} strokeWidth={2.4} /> {t('catalog.added')}
-            </>
-          ) : (
-            <>
-              {t('product.addToCart')} · {formatPrice(product.price * qty, product.currency)}
-            </>
+          {product.in_stock && (
+            <div className={styles.stepper}>
+              <button
+                type="button"
+                onClick={() => {
+                  haptic.selection();
+                  setQty((q) => Math.max(1, q - 1));
+                }}
+                disabled={qty <= 1}
+              >
+                <Icon name="minus" size={18} strokeWidth={2.4} />
+              </button>
+              <span>{qty}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  haptic.selection();
+                  setQty((q) => Math.min(5, q + 1));
+                }}
+                disabled={qty >= 5}
+              >
+                <Icon name="plus" size={18} strokeWidth={2.4} />
+              </button>
+            </div>
           )}
-        </button>
+
+          <button
+            type="button"
+            className={`${styles.addBtn} ${added ? styles.addDone : ''}`}
+            onClick={doAddToCart}
+            disabled={!product.in_stock || adding}
+          >
+            {!product.in_stock ? (
+              t('product.outOfStock')
+            ) : adding ? (
+              <Spinner size={18} stroke={2} />
+            ) : added ? (
+              <>
+                <Icon name="check" size={18} strokeWidth={2.4} /> {t('catalog.added')}
+              </>
+            ) : (
+              <>
+                {t('product.addToCart')} · {formatPrice(product.price * qty, product.currency)}
+              </>
+            )}
+          </button>
+        </div>
+
+        {/* Faqat savatga qo'shilgandan keyin ko'rinadi */}
+        {inCart && (
+          <button type="button" className={`${styles.goCartBtn} pressable`} onClick={goToCart}>
+            <Icon name="cart" size={18} strokeWidth={2} />
+            {t('cart.goToCart')}
+          </button>
+        )}
       </div>
     </div>
   );

@@ -7,6 +7,7 @@ import Banner from '../components/Banner.jsx';
 import SearchBar from '../components/SearchBar.jsx';
 import ProductCard from '../components/ProductCard.jsx';
 import BottomSheet from '../components/BottomSheet.jsx';
+import GoToCartBar from '../components/GoToCartBar.jsx';
 import Icon from '../components/Icon.jsx';
 import { useI18n } from '../i18n/I18nProvider.jsx';
 import { apiCall } from '../lib/api.js';
@@ -268,6 +269,9 @@ export default function Catalog() {
           </button>
         ))}
       </BottomSheet>
+
+      {/* Savatga qo'shilgandan keyin ko'rinadigan suzuvchi tugma */}
+      <GoToCartBar />
     </>
   );
 }

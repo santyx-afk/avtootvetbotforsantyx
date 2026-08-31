@@ -13,6 +13,7 @@ import { useTelegram } from './telegram/TelegramProvider.jsx';
 // yuklab olardi va birinchi chizish shuncha kutardi.
 const NotFound = lazy(() => import('./pages/NotFound.jsx'));
 const Layout = lazy(() => import('./components/Layout.jsx'));
+const LanguageGate = lazy(() => import('./components/LanguageGate.jsx'));
 const Onboarding = lazy(() => import('./components/Onboarding.jsx'));
 const ContactGate = lazy(() => import('./components/ContactGate.jsx'));
 const Catalog = lazy(() => import('./pages/Catalog.jsx'));
@@ -41,7 +42,7 @@ const SUPPORT = `@${(import.meta.env.VITE_SUPPORT_USERNAME || 'santyx').replace(
 
 export default function App() {
   const { isTelegram } = useTelegram();
-  const { t } = useI18n();
+  const { t, langChosen } = useI18n();
 
   // Ilova (to'liq funksiya) faqat Telegram Mini App'da YOKI brauzerda JWT bo'lsa ishlaydi.
   const [authed, setAuthed] = useState(() => isTelegram || Boolean(getToken()));
@@ -146,6 +147,16 @@ export default function App() {
           hint={t('blocked.text', { support: SUPPORT })}
         />
       </div>
+    );
+  }
+
+  // Til — eng birinchi savol: onboarding matnlari ham tanlangan tilda chiqadi.
+  // Bloklangan foydalanuvchidan so'ralmaydi (yuqoridagi tekshiruv oldin ishlaydi).
+  if (!langChosen) {
+    return (
+      <Suspense fallback={<FullScreenLoader />}>
+        <LanguageGate />
+      </Suspense>
     );
   }
 

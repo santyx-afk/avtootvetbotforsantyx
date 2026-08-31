@@ -1,0 +1,57 @@
+.wrap {
+  position: fixed;
+  left: 0;
+  right: 0;
+  /* Tab bar ustida, ochiq bo'lsa cookie bildirishnomasidan ham yuqorida
+     (bildirishnoma brauzerda tab bar ustida turadi) */
+  bottom: calc(var(--tabbar-height) + var(--safe-bottom) + var(--cookie-banner-h, 0px) + 10px);
+  z-index: 90;
+  display: flex;
+  justify-content: center;
+  padding: 0 var(--app-pad);
+  /* Faqat tugmaning o'zi bosiladi — qolgan joy orqadagi ro'yxatga tegishli */
+  pointer-events: none;
+  animation: barIn 0.22s ease;
+}
+
+.btn {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  height: 46px;
+  max-width: 100%;
+  padding: 0 20px;
+  border-radius: 23px;
+  background: var(--app-accent);
+  color: var(--app-accent-text);
+  font-size: 15px;
+  font-weight: 600;
+  box-shadow: 0 6px 20px color-mix(in srgb, var(--app-accent) 35%, transparent);
+}
+
+.count {
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--app-accent-text) 22%, transparent);
+  font-size: 13px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@keyframes barIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wrap {
+    animation: none;
+  }
+}

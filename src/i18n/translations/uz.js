@@ -139,6 +139,7 @@ export default {
     total: 'Jami',
     checkout: 'Rasmiylashtirish',
     itemPrice: 'Narxi',
+    goToCart: 'Savatga o\'tish',
   },
   checkout: {
     title: 'Rasmiylashtirish',

@@ -4,6 +4,12 @@
   animation: fadeIn 0.2s ease;
 }
 
+/* "Savatga o'tish" tugmasi qo'shilganda pastki panel balandlashadi —
+   sharhlar uning ostida qolib ketmasin */
+.pageWithCart {
+  padding-bottom: calc(130px + var(--safe-bottom));
+}
+
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -192,7 +198,7 @@
   bottom: 0;
   z-index: 100;
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 10px;
   max-width: 560px;
   margin: 0 auto;
@@ -276,4 +282,40 @@
 
 .addDone {
   background: #34c759;
+}
+
+.actionRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+/* Savatga qo'shilgandan keyin chiqadigan ikkinchi darajali tugma */
+.goCartBtn {
+  width: 100%;
+  height: 46px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--app-accent) 14%, transparent);
+  color: var(--app-accent);
+  font-size: 15px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  animation: cartBtnIn 0.2s ease;
+}
+
+@keyframes cartBtnIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .goCartBtn {
+    animation: none;
+  }
 }

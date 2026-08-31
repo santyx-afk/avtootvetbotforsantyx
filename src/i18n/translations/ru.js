@@ -139,6 +139,7 @@ export default {
     total: 'Итого',
     checkout: 'Оформить',
     itemPrice: 'Цена',
+    goToCart: 'Перейти в корзину',
   },
   checkout: {
     title: 'Оформление',
