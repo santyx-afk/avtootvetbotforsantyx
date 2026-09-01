@@ -9,9 +9,16 @@ const {
   addWalletTransaction,
   getUserBalance,
   updateOrderStatus,
+  getOrderById,
 } = require('./db');
 const { sendMessage } = require('./telegram');
 const { processApprovedOrderDelivery } = require('./delivery-service');
+
+// Yetkazishni qancha kutamiz. Netlify funksiyasi ~10 soniyada uzilgani uchun
+// cheklov kerak, lekin kutish tugashi "yetkazilmadi" degani EMAS — pastdagi
+// deliveryOutcomeFromOrder izohiga qarang.
+const DELIVERY_WAIT_MS = Number(process.env.DELIVERY_WAIT_MS || 6000);
+const WAIT_TIMEOUT = 'WAIT_TIMEOUT';
 
 function parseHumoAmount(text = '') {
   const match = String(text).match(/➕\s*([\d\s.]+)(?:,\d{1,2})?\s*UZS/i);
@@ -41,6 +48,33 @@ async function findWaitingOrderByBasePrice(client, amount) {
 
 function formatUzs(value) {
   return `${new Intl.NumberFormat('uz-UZ').format(Number(value || 0))} UZS`;
+}
+
+// Kutish muddati tugagach buyurtmaning BAZADAGI holatiga qarab xulosa chiqaradi.
+//
+// Nega kerak: yetkazish odatda 5-8 soniya oladi (status yangilash, akkauntni
+// deshifrlash, zaxirani band qilish, mijozga xabar, referal, cashback — har
+// biri alohida so'rov). Ya'ni kutish tugashi ko'pincha "sekin bo'ldi" degani,
+// "yetkazilmadi" degani emas. Ilgari bu farqlanmagani uchun admin muvaffaqiyatli
+// buyurtmada ham "Delivery requires attention" xabarini olardi.
+function deliveryOutcomeFromOrder(order, waitSeconds) {
+  if (!order) {
+    return { ok: false, message: `Yetkazish ${waitSeconds} soniyada javob bermadi, buyurtma holati o'qilmadi.` };
+  }
+  const status = String(order.status || '');
+  const deliveryStatus = String(order.delivery_status || '');
+  if (status === 'completed' || deliveryStatus === 'delivered' || deliveryStatus === 'not_required') {
+    return { ok: true, slow: true, message: `yetkazish ${waitSeconds} soniyadan uzoq davom etdi` };
+  }
+  if (deliveryStatus === 'waiting_stock') {
+    return { ok: false, message: 'Zaxira tugagan — buyurtma istisno navbatiga tushdi, akkaunt qo\'shilishi kerak.' };
+  }
+  // Bu yerga tushgan buyurtmani tizim o'zi qayta uradi: maintenance cron har 5
+  // daqiqada 2 daqiqadan ortiq "delivering" da qolganlarni navbatga qaytaradi.
+  return {
+    ok: false,
+    message: `Yetkazish ${waitSeconds} soniyada tugamadi (holat: ${status || '—'} / ${deliveryStatus || '—'}). Tizim bir necha daqiqada avtomatik qayta uradi.`,
+  };
 }
 
 async function creditTopupOrder({ supabase, order, amount, messageKey }) {
@@ -114,22 +148,37 @@ async function handleHumoPaymentNotification({ supabase, message }) {
     }
   }
 
-  // MUAMMO HAL QILINDI: Qotib qolmasligi uchun 6 soniyalik taymer qo'yildi
+  // Funksiya qotib qolmasligi uchun yetkazishni cheklangan vaqt kutamiz
+  // (Netlify funksiyasining o'z limiti ~10 soniya).
+  const waitSeconds = Math.max(1, Math.round(DELIVERY_WAIT_MS / 1000));
   let delivery;
   try {
     const deliveryPromise = processApprovedOrderDelivery({ supabase, order: paidOrder, adminTelegramId: 'humo_card_bot' });
-    const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve({ ok: false, message: 'Akkaunt tarqatish tizimi 6 soniyada javob bermadi.' }), 6000));
-    
+    const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve({ ok: false, code: WAIT_TIMEOUT }), DELIVERY_WAIT_MS));
     delivery = await Promise.race([deliveryPromise, timeoutPromise]);
   } catch (err) {
     delivery = { ok: false, message: 'Tarqatishda xatolik: ' + err.message };
   }
 
+  // Kutish tugagan bo'lsa — trevoga ko'tarishdan oldin haqiqiy holatni o'qiymiz.
+  if (delivery?.code === WAIT_TIMEOUT) {
+    let fresh = null;
+    try {
+      fresh = await getOrderById(supabase, paidOrder.id);
+    } catch (err) {
+      console.warn('order recheck warn:', err?.message);
+    }
+    delivery = deliveryOutcomeFromOrder(fresh, waitSeconds);
+  }
+
+  const deliveryLine = delivery.ok
+    ? (delivery.slow ? `Accounts delivered successfully (${delivery.message}).` : 'Accounts delivered successfully.')
+    : `Delivery requires attention: ${delivery.message}`;
   const settings = await fetchSettings(supabase);
   for (const adminChatId of adminIds(settings)) {
-    await sendMessage(adminChatId, [`✅ Payment confirmed`, '', `User: <code>${order.user_telegram_id}</code>`, `Order: <code>${order.order_number}</code>`, `Amount: ${new Intl.NumberFormat('uz-UZ').format(amount)} UZS`, '', 'Payment detected automatically.', delivery.ok ? 'Accounts delivered successfully.' : `Delivery requires attention: ${delivery.message}`].join('\n'), null);
+    await sendMessage(adminChatId, [`✅ Payment confirmed`, '', `User: <code>${order.user_telegram_id}</code>`, `Order: <code>${order.order_number}</code>`, `Amount: ${new Intl.NumberFormat('uz-UZ').format(amount)} UZS`, '', 'Payment detected automatically.', deliveryLine].join('\n'), null);
   }
   return { handled: true, matched: true, order: paidOrder };
 }
 
-module.exports = { parseHumoAmount, isHumoNotification, handleHumoPaymentNotification };
+module.exports = { parseHumoAmount, isHumoNotification, handleHumoPaymentNotification, deliveryOutcomeFromOrder };
