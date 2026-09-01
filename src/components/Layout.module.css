@@ -8,10 +8,11 @@
 .content {
   flex: 1;
   padding-top: var(--safe-top);
-  /* Fixed tab bar (va ochiq bo'lsa cookie bildirishnomasi) orqasida kontent
-     yashirinmasligi uchun */
+  /* Fixed tab bar (va ochiq bo'lsa cookie bildirishnomasi hamda suzuvchi
+     "Savatga o'tish" tugmasi) orqasida kontent yashirinmasligi uchun */
   padding-bottom: calc(
-    var(--tabbar-height) + var(--safe-bottom) + var(--cookie-banner-h, 0px) + 12px
+    var(--tabbar-height) + var(--safe-bottom) + var(--cookie-banner-h, 0px) +
+      var(--gocart-h, 0px) + 12px
   );
 }
 

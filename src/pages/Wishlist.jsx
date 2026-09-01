@@ -5,6 +5,7 @@ import EmptyState from '../components/EmptyState.jsx';
 import ErrorState from '../components/ErrorState.jsx';
 import { SkeletonGrid } from '../components/Skeleton.jsx';
 import ProductCard from '../components/ProductCard.jsx';
+import GoToCartBar from '../components/GoToCartBar.jsx';
 import { useI18n } from '../i18n/I18nProvider.jsx';
 import { apiCall } from '../lib/api.js';
 import { useProductActions } from '../hooks/useProductActions.js';
@@ -103,6 +104,9 @@ export default function Wishlist() {
           ))}
         </div>
       </div>
+
+      {/* Savatga qo'shilgandan keyin ko'rinadigan suzuvchi tugma */}
+      <GoToCartBar />
     </>
   );
 }

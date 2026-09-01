@@ -19,11 +19,17 @@ function detectInitialLang() {
 
 export function I18nProvider({ children }) {
   const [lang, setLangState] = useState(detectInitialLang);
+  // Foydalanuvchi tilni o'zi tanlaganmi? detectInitialLang() Telegram tilini
+  // yoki default'ni ham qaytaradi, shuning uchun "til bor" bilan "til
+  // tanlangan" bir xil emas: ilova birinchi ochilganda til so'rash uchun
+  // aynan shu farq kerak.
+  const [langChosen, setLangChosen] = useState(() => Boolean(getStoredLang()));
 
   const setLang = (next) => {
     const normalized = normalizeLang(next);
     setLangState(normalized);
     setStoredLang(normalized);
+    setLangChosen(true);
   };
 
   useEffect(() => {
@@ -31,8 +37,8 @@ export function I18nProvider({ children }) {
   }, [lang]);
 
   const value = useMemo(
-    () => ({ lang, setLang, t: createTranslator(lang) }),
-    [lang],
+    () => ({ lang, langChosen, setLang, t: createTranslator(lang) }),
+    [lang, langChosen],
   );
 
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;

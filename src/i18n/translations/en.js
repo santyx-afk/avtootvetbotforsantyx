@@ -139,6 +139,7 @@ export default {
     total: 'Total',
     checkout: 'Checkout',
     itemPrice: 'Price',
+    goToCart: 'Go to cart',
   },
   checkout: {
     title: 'Checkout',
