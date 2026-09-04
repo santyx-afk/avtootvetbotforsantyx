@@ -385,17 +385,32 @@
                 <form id="messageForm" class="grid-form">
                   <label>Turi
                     <select id="messageType">
-                      <option value="individual">Individual</option>
-                      <option value="broadcast">Broadcast (hammaga)</option>
+                      <option value="individual">Bitta foydalanuvchiga</option>
+                      <option value="broadcast">Matnli broadcast (segment bo'yicha)</option>
+                      <option value="admin">📣 Admin xabari — bot orqali (rasm, video, fayl)</option>
                     </select>
                   </label>
                   <label id="messageTelegramIdLabel">Telegram ID<input id="messageTelegramId" /></label>
-                  <label class="full">Xabar matni<textarea id="messageText" rows="5" required></textarea></label>
+                  <label id="messageSegmentLabel" hidden>Kimga<select id="messageSegment"></select></label>
+                  <label class="full" id="messageTextLabel">Xabar matni<textarea id="messageText" rows="5" required></textarea></label>
+                  <p class="hint full" id="messageAdminHint" hidden>
+                    Tugmani bosganingizdan keyin bot sizga Telegram'da «Xabar kutilyapti» deb yozadi.
+                    Unga istalgan xabar yuboring: matn, rasm, video, fayl, emoji — formatlash saqlanadi.
+                    Bot xabarni ko'rsatib tasdiq so'raydi, tasdiqlagach tanlangan segmentga yuboriladi.
+                    Yuborish fon rejimida ketadi, jarayon pastdagi tarixda ko'rinadi.
+                  </p>
                   <div class="actions full">
-                    <button type="submit">Yuborish</button>
+                    <button type="submit" id="messageSubmit">Yuborish</button>
                   </div>
                 </form>
                 <p id="messageResult" class="success-text"></p>
+              </div>
+              <div class="card">
+                <div class="toolbar" style="margin:0 0 .5rem">
+                  <h3 style="margin:0">Yuborilganlar tarixi</h3>
+                  <button id="broadcastRefresh" class="ghost" type="button">Yangilash</button>
+                </div>
+                <div id="broadcastList" class="table-card"></div>
               </div>
             </section>
 

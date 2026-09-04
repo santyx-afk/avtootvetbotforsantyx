@@ -825,7 +825,7 @@ async function initApp() {
   document.body.classList.add('authed');
   document.getElementById('loginView').hidden = true;
   document.getElementById('appView').hidden = false;
-  await Promise.all([loadDashboard(), loadData(), loadSettings(), loadBanners(), loadPromos(), loadReviews(), loadFaq(), loadUsers(), loadLeads(), loadReferrals()]);
+  await Promise.all([loadDashboard(), loadData(), loadSettings(), loadBanners(), loadPromos(), loadReviews(), loadFaq(), loadUsers(), loadLeads(), loadReferrals(), loadBroadcasts()]);
 }
 
 // --- Image upload helper ---
@@ -1245,8 +1245,7 @@ document.getElementById('userModalMsg')?.addEventListener('click', () => {
   switchView('messages');
   document.getElementById('messageType').value = 'individual';
   document.getElementById('messageTelegramId').value = currentUserId;
-  document.getElementById('messageTelegramIdLabel').hidden = false;
-  document.getElementById('messageType').dispatchEvent(new Event('change'));
+  syncMessageForm();
 });
 
 // --- Hammaga pul qo'shish ---
@@ -1302,7 +1301,7 @@ document.getElementById('usersList')?.addEventListener('click', async (event) =>
     switchView('messages');
     document.getElementById('messageType').value = 'individual';
     document.getElementById('messageTelegramId').value = msgBtn.dataset.id;
-    document.getElementById('messageTelegramIdLabel').hidden = false;
+    syncMessageForm();
   }
 });
 
@@ -1574,24 +1573,113 @@ async function openOrderDetail(id) {
 }
 
 // --- Messages ---
-document.getElementById('messageType')?.addEventListener('change', (e) => {
-  document.getElementById('messageTelegramIdLabel').hidden = e.target.value === 'broadcast';
+const BC_STATUS = {
+  awaiting_message: '📣 Xabar kutilyapti (botda)',
+  awaiting_confirm: '👀 Tasdiq kutilyapti (botda)',
+  queued: '⏳ Navbatda',
+  sending: '📤 Yuborilmoqda',
+  done: '✅ Yakunlandi',
+  cancelled: '❌ Bekor qilingan',
+  failed: '⚠️ Xato',
+};
+const BC_ACTIVE = new Set(['awaiting_message', 'awaiting_confirm', 'queued', 'sending']);
+
+// Tur o'zgarganda kerakli maydonlar ko'rinadi: ID (individual), segment
+// (broadcast/admin), matn (individual/broadcast).
+function syncMessageForm() {
+  const type = document.getElementById('messageType')?.value || 'individual';
+  const set = (id, hidden) => { const el = document.getElementById(id); if (el) el.hidden = hidden; };
+  set('messageTelegramIdLabel', type !== 'individual');
+  set('messageSegmentLabel', type === 'individual');
+  set('messageTextLabel', type === 'admin');
+  set('messageAdminHint', type !== 'admin');
+  const text = document.getElementById('messageText');
+  if (text) text.required = type !== 'admin';
+  const btn = document.getElementById('messageSubmit');
+  if (btn) btn.textContent = type === 'admin' ? '📣 Botda xabar kutilsin' : 'Yuborish';
+}
+document.getElementById('messageType')?.addEventListener('change', syncMessageForm);
+
+function renderBroadcasts(jobs = []) {
+  const root = document.getElementById('broadcastList');
+  if (!root) return;
+  if (!jobs.length) {
+    root.innerHTML = '<p class="detail-empty">Hali broadcast yuborilmagan.</p>';
+    return;
+  }
+  const segName = (s) => (state.broadcastSegments && state.broadcastSegments[s]) || s;
+  root.innerHTML = `<table><thead><tr><th>Vaqt</th><th>Tur</th><th>Kimga</th><th>Holat</th><th>Yuborildi</th><th>Xato</th><th>Matn</th><th></th></tr></thead><tbody>${jobs.map((j) => `
+    <tr>
+      <td>${dt(j.created_at)}</td>
+      <td>${j.kind === 'copy' ? '📣 Admin xabari' : 'Matn'}</td>
+      <td>${esc(segName(j.segment))} (${esc(j.total)})</td>
+      <td><span class="badge">${esc(BC_STATUS[j.status] || j.status)}</span>${j.status === 'sending' ? ` <span class="hint">${esc(j.cursor)}/${esc(j.total)}</span>` : ''}</td>
+      <td>${esc(j.sent)}</td>
+      <td>${esc(j.failed)}</td>
+      <td>${j.text ? esc(String(j.text).slice(0, 60)) + (j.text.length > 60 ? '…' : '') : '—'}${j.error ? `<div class="hint">${esc(j.error)}</div>` : ''}</td>
+      <td>${BC_ACTIVE.has(j.status) ? `<button class="ghost danger bc-cancel" data-id="${esc(j.id)}">To'xtatish</button>` : ''}</td>
+    </tr>`).join('')}</tbody></table>`;
+}
+
+let broadcastPollTimer = null;
+async function loadBroadcasts() {
+  clearTimeout(broadcastPollTimer);
+  try {
+    const data = await api('admin-messages');
+    if (data.segments && !state.broadcastSegments) {
+      state.broadcastSegments = data.segments;
+      const select = document.getElementById('messageSegment');
+      if (select) select.innerHTML = Object.entries(data.segments).map(([k, v]) => `<option value="${esc(k)}">${esc(v)}</option>`).join('');
+    }
+    const jobs = data.jobs || [];
+    renderBroadcasts(jobs);
+    // Faol ish bo'lsa jarayonni 5 soniyada bir yangilab turamiz.
+    if (jobs.some((j) => BC_ACTIVE.has(j.status))) {
+      broadcastPollTimer = setTimeout(() => loadBroadcasts().catch(() => {}), 5000);
+    }
+  } catch (error) {
+    const root = document.getElementById('broadcastList');
+    if (root) root.innerHTML = `<p class="detail-empty">${esc(error.message || 'Yuklanmadi')}</p>`;
+  }
+}
+document.getElementById('broadcastRefresh')?.addEventListener('click', () => loadBroadcasts());
+document.getElementById('broadcastList')?.addEventListener('click', async (event) => {
+  const btn = event.target.closest('.bc-cancel');
+  if (!btn) return;
+  if (!confirm('Broadcast to\'xtatilsinmi? Ketib ulgurgan xabarlar qaytmaydi.')) return;
+  btn.disabled = true;
+  try {
+    await api('admin-messages', { method: 'POST', body: JSON.stringify({ type: 'cancel', job_id: btn.dataset.id }) });
+  } catch (error) {
+    alert(error.message);
+  }
+  await loadBroadcasts();
 });
+
 document.getElementById('messageForm')?.addEventListener('submit', async (event) => {
   event.preventDefault();
   const type = document.getElementById('messageType').value;
   const text = document.getElementById('messageText').value;
   const telegramId = document.getElementById('messageTelegramId').value;
+  const segment = document.getElementById('messageSegment')?.value || 'all';
   if (type === 'individual' && !telegramId) { alert('Telegram ID kiriting'); return; }
+  if (type !== 'admin' && !text.trim()) { alert('Xabar matnini yozing'); return; }
+  if (type === 'broadcast' && !confirm('Matn tanlangan segmentga yuborilsinmi?')) return;
   const result = document.getElementById('messageResult');
-  result.textContent = 'Yuborilmoqda...';
+  const btn = document.getElementById('messageSubmit');
+  result.style.color = '';
+  result.textContent = type === 'admin' ? 'Botga so\'rov yuborilmoqda...' : 'Yuborilmoqda...';
+  btn.disabled = true;
   try {
-    const res = await api('admin-messages', { method: 'POST', body: JSON.stringify({ type, text, telegram_id: telegramId }) });
+    const res = await api('admin-messages', { method: 'POST', body: JSON.stringify({ type, text, telegram_id: telegramId, segment }) });
     result.textContent = res.message || 'Yuborildi!';
-    document.getElementById('messageText').value = '';
+    if (type !== 'admin') document.getElementById('messageText').value = '';
+    await loadBroadcasts();
   } catch (err) {
     result.textContent = err.message;
     result.style.color = 'var(--danger)';
+  } finally {
+    btn.disabled = false;
   }
 });
 

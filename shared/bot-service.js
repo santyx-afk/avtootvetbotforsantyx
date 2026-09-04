@@ -272,10 +272,17 @@ async function handleCallback({ supabase, callbackQuery }) {
 
   // Admin amallar o'z natija matnini o'zi yuboradi; navigatsiya tugmalari uchun esa
   // "yuklanmoqda" belgisini zudlik bilan to'xtatamiz — tugma darhol javob bergandek bo'ladi.
-  const isAdminAction = data.startsWith('admin:');
+  const isAdminAction = data.startsWith('admin:') || data.startsWith('bc:');
   if (!isAdminAction) answerCallbackQuery(callbackQuery.id).catch(() => {});
 
   try {
+    // Broadcast tugmalari (tasdiqlash / bekor qilish) — broadcast-service'da.
+    if (data.startsWith('bc:')) {
+      const { handleBroadcastCallback } = require('./broadcast-service');
+      await handleBroadcastCallback({ supabase, callbackQuery });
+      return;
+    }
+
     // "To'lov keldi" — tizim aniqlamagan to'lovni admin qo'lda tasdiqlaydi
     // (faqat to'lov kutilayotgan va muddati o'tmagan buyurtma).
     if (data.startsWith('admin:paid:')) {

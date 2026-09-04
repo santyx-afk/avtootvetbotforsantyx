@@ -30,6 +30,7 @@ frontend murojaat qilib krash bo'lgani). Endi tartib quyidagicha.
 | [2026-08-24_plan-slugs.sql](2026-08-24_plan-slugs.sql) | 2026-08-24 | Rejalarga URL nomi (`slug`) — ochiq mahsulot sahifalari uchun |
 | [2026-09-04_perf-indexes.sql](2026-09-04_perf-indexes.sql) | 2026-09-04 | Mini App issiq yo'llari uchun indekslar (stok, savat, buyurtma) — xavfsiz, ma'lumot o'zgarmaydi |
 | [2026-09-05_users-admin-note-tags.sql](2026-09-05_users-admin-note-tags.sql) | 2026-09-05 | Foydalanuvchi kartochkasi: `admin_note`, `tags` |
+| [2026-09-05_broadcast-jobs.sql](2026-09-05_broadcast-jobs.sql) | 2026-09-05 | `broadcast_jobs` — admin xabari (bot orqali nusxa) va matnli broadcast navbati |
 
 ## BASELINE.md haqida
 

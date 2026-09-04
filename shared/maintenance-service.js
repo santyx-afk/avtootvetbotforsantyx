@@ -80,7 +80,14 @@ async function runMaintenance(supabase) {
   const retries = await processRetryQueue(supabase);
   await cleanupProcessedPaymentMessages(supabase, Number(process.env.PROCESSED_PAYMENT_RETENTION_DAYS || 14));
   await updateMonitoringSnapshot(supabase);
-  return { expired: expired.length, resumed, retries: retries.length };
+  // Uzilib qolgan broadcast'lar (background funksiya ishlamagan/uzilgan)
+  // cursor'dan davom ettiriladi — qisqa budjet bilan, cron 10 soniyaga sig'sin.
+  const { resumeStalledBroadcasts } = require('./broadcast-service');
+  const broadcasts = await resumeStalledBroadcasts(supabase, { budgetMs: 4000 }).catch((e) => {
+    console.warn('broadcast resume warn:', e?.message);
+    return [];
+  });
+  return { expired: expired.length, resumed, retries: retries.length, broadcasts: broadcasts.length };
 }
 
 module.exports = { runMaintenance, processRetryQueue, resumeStuckDeliveries };
