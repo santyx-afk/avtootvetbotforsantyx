@@ -506,6 +506,13 @@
                   <label>Referal foizi (%)<input id="settingsReferralPercent" type="number" /></label>
                   <label>Min topup (so'm)<input id="settingsMinTopup" type="number" /></label>
                   <label>Xush kelibsiz bonusi (so'm)<input id="settingsWelcomeBonus" type="number" min="0" /></label>
+                  <label>To'lov kutish vaqti (daqiqa)<input id="settingsPaymentTimeout" type="number" min="1" max="180" placeholder="10" />
+                    <small class="hint">Mini App'da buyurtma yaratilgach shuncha daqiqa ichida to'lov kutiladi, keyin muddati o'tadi.</small>
+                  </label>
+                  <label class="full" style="border:1px solid var(--warning);border-radius:var(--radius-sm);padding:10px">
+                    <input id="settingsMaintenanceMode" type="checkbox" /> 🛠 Texnik tanaffus rejimi (Mini App yopiladi; bot va to'lovlar ishlaydi; adminlar uchun ochiq)
+                    <textarea id="settingsMaintenanceText" rows="2" placeholder="Texnik ishlar olib borilmoqda. Tez orada qaytamiz!" style="margin-top:8px"></textarea>
+                  </label>
                   <label class="full">Welcome text<textarea id="welcomeText" rows="3"></textarea></label>
                   <label class="full">Contact text<textarea id="contactText" rows="3"></textarea></label>
                   <label class="full">Umumiy qoidalar<textarea id="settingsGeneralTerms" rows="4"></textarea></label>

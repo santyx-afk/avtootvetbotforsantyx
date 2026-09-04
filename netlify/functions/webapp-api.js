@@ -39,6 +39,13 @@ function cardNumber(settings) {
   return settings?.seller_card_number || process.env.PAYMENT_CARD_NUMBER || '';
 }
 
+// To'lov kutish vaqti (daqiqa): Sozlamalar → env → 10. 1 dan 180 gacha.
+function paymentTimeoutMinutes(settings) {
+  const fromSettings = Number(settings?.payment_timeout_minutes);
+  const value = fromSettings > 0 ? fromSettings : Number(process.env.WEBAPP_CHECKOUT_MINUTES || 10);
+  return Math.min(180, Math.max(1, Math.round(value || 10)));
+}
+
 // Admin Telegram chat ID larini sozlama va env dan yig'adi.
 function adminChatIds(settings) {
   return [
@@ -424,6 +431,12 @@ exports.handler = async (event) => {
         };
 
     if (body.action === 'init') {
+      // Texnik tanaffus: Mini App yopiq (adminlar uchun ochiq — sinab ko'rish
+      // uchun), bot va to'lovni aniqlash ishlayveradi.
+      const settings = await fetchSettings(supabase).catch(() => null);
+      if (settings?.maintenance_mode && !adminChatIds(settings).includes(telegramId)) {
+        return json(503, { ok: false, error: 'maintenance', text: settings.maintenance_text || '' });
+      }
       // Muddati o'tgan to'lovlar yuqorida (expireStalePendingOrders) tozalangan
       const hasPhone = Boolean(userRow?.phone);
       return json(200, {
@@ -789,6 +802,9 @@ exports.handler = async (event) => {
         listCartItems(supabase, telegramId),
         fetchSettings(supabase).catch(() => null),
       ]);
+      if (settings?.maintenance_mode && !adminChatIds(settings).includes(telegramId)) {
+        return json(503, { ok: false, error: 'maintenance', text: settings.maintenance_text || '' });
+      }
       const cartItems = (items || []).filter((i) => i.plan);
       if (!cartItems.length) return json(400, { ok: false, error: 'empty_cart' });
 
@@ -834,7 +850,8 @@ exports.handler = async (event) => {
         promo,
         balanceUsed,
         cashbackAmount: cashback,
-        expiresMinutes: Number(process.env.WEBAPP_CHECKOUT_MINUTES || 10),
+        // To'lov kutish vaqti — Sozlamalardan (bo'lmasa env, sukut 10 daqiqa)
+        expiresMinutes: paymentTimeoutMinutes(settings),
       });
 
       // Reserved inventory OLIB TASHLANDI — checkout inventarni band qilmaydi.
@@ -975,6 +992,9 @@ exports.handler = async (event) => {
 
     if (body.action === 'topup') {
       const settings = await fetchSettings(supabase).catch(() => null);
+      if (settings?.maintenance_mode && !adminChatIds(settings).includes(telegramId)) {
+        return json(503, { ok: false, error: 'maintenance', text: settings.maintenance_text || '' });
+      }
       const minTopup = Number(settings?.min_topup ?? 5000);
       const base = Math.round(Number(body.amount || 0));
       if (!(base >= minTopup)) return json(400, { ok: false, error: 'min_topup', min: minTopup });
@@ -984,9 +1004,7 @@ exports.handler = async (event) => {
       const cashbackPercent = Number(settings?.cashback_percent ?? 10);
       const cashback = cashbackEnabled ? Math.round((base * cashbackPercent) / 100) : 0;
       const credit = uniquePrice + cashback;
-      const expiresAt = new Date(
-        Date.now() + Number(process.env.WEBAPP_CHECKOUT_MINUTES || 10) * 60000,
-      ).toISOString();
+      const expiresAt = new Date(Date.now() + paymentTimeoutMinutes(settings) * 60000).toISOString();
 
       const order = await createOrder(supabase, {
         user_telegram_id: telegramId,

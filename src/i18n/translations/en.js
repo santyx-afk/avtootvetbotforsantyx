@@ -83,6 +83,10 @@ export default {
     title: 'Your account is blocked',
     text: 'Contact {support} for help',
   },
+  maintenance: {
+    title: 'Maintenance in progress',
+    text: 'We will be back soon. The bot and payments keep working.',
+  },
   pages: {
     catalog: {
       title: 'Catalog',

@@ -958,6 +958,9 @@ async function loadSettings() {
   document.getElementById('settingsReferralPercent').value = state.settings.referral_percent ?? '';
   document.getElementById('settingsMinTopup').value = state.settings.min_topup ?? '';
   document.getElementById('settingsWelcomeBonus').value = state.settings.welcome_bonus ?? 0;
+  document.getElementById('settingsPaymentTimeout').value = state.settings.payment_timeout_minutes ?? 10;
+  document.getElementById('settingsMaintenanceMode').checked = Boolean(state.settings.maintenance_mode);
+  document.getElementById('settingsMaintenanceText').value = state.settings.maintenance_text || '';
   document.getElementById('welcomeText').value = state.settings.welcome_text || '';
   document.getElementById('contactText').value = state.settings.contact_text || '';
   document.getElementById('settingsGeneralTerms').value = state.settings.general_terms || '';
@@ -1230,6 +1233,9 @@ onSubmit('settingsForm', async () => {
       referral_percent: document.getElementById('settingsReferralPercent').value ? Number(document.getElementById('settingsReferralPercent').value) : null,
       min_topup: document.getElementById('settingsMinTopup').value ? Number(document.getElementById('settingsMinTopup').value) : null,
       welcome_bonus: Number(document.getElementById('settingsWelcomeBonus').value || 0),
+      payment_timeout_minutes: Math.min(180, Math.max(1, Number(document.getElementById('settingsPaymentTimeout').value || 10))),
+      maintenance_mode: document.getElementById('settingsMaintenanceMode').checked,
+      maintenance_text: document.getElementById('settingsMaintenanceText').value || null,
       welcome_text: document.getElementById('welcomeText').value,
       contact_text: document.getElementById('contactText').value,
       general_terms: document.getElementById('settingsGeneralTerms').value,

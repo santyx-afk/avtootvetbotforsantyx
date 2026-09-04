@@ -31,6 +31,7 @@ frontend murojaat qilib krash bo'lgani). Endi tartib quyidagicha.
 | [2026-09-04_perf-indexes.sql](2026-09-04_perf-indexes.sql) | 2026-09-04 | Mini App issiq yo'llari uchun indekslar (stok, savat, buyurtma) — xavfsiz, ma'lumot o'zgarmaydi |
 | [2026-09-05_users-admin-note-tags.sql](2026-09-05_users-admin-note-tags.sql) | 2026-09-05 | Foydalanuvchi kartochkasi: `admin_note`, `tags` |
 | [2026-09-05_broadcast-jobs.sql](2026-09-05_broadcast-jobs.sql) | 2026-09-05 | `broadcast_jobs` — admin xabari (bot orqali nusxa) va matnli broadcast navbati |
+| [2026-09-05_settings-maintenance-timeout.sql](2026-09-05_settings-maintenance-timeout.sql) | 2026-09-05 | Sozlamalar: `maintenance_mode`, `maintenance_text`, `payment_timeout_minutes` |
 
 ## BASELINE.md haqida
 

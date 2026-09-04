@@ -83,6 +83,10 @@ export default {
     title: 'Hisobingiz bloklangan',
     text: 'Yordam uchun {support} ga murojaat qiling',
   },
+  maintenance: {
+    title: 'Texnik ishlar olib borilmoqda',
+    text: 'Tez orada qaytamiz. Bot va to‘lovlar ishlayveradi.',
+  },
   pages: {
     catalog: {
       title: 'Katalog',
