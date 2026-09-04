@@ -543,15 +543,22 @@ async function createCheckoutOrder(client, { user_telegram_id, items, expiresMin
   const uniquePrice = payableBase > 0 ? await generateUniquePrice(client, payableBase) : 0;
   const expiresAt = new Date(Date.now() + expiresMinutes * 60 * 1000).toISOString();
   const order = await createOrder(client, { user_telegram_id, plan_id: items[0]?.plan_id || items[0]?.plan?.id || null, amount: uniquePrice, base_price: basePrice, unique_price: uniquePrice, expires_at: expiresAt, status: uniquePrice > 0 ? 'waiting_payment' : 'payment_detected', delivery_status: 'waiting_approval', payment_method: 'humo_card_bot', payment_source: uniquePrice > 0 ? 'humo_card_bot' : 'balance', promo_code: promo?.code || null, discount_amount: discount, balance_used: Number(balanceUsed || 0), cashback_amount: Number(cashbackAmount || 0) });
-  if (promo?.id) {
-    await request(client, 'promo_codes', { method: 'PATCH', query: toQuery({ id: `eq.${promo.id}` }), body: { used_count: Number(promo.used_count || 0) + 1 } });
-  }
+  // Buyurtma elementlari BITTA so'rovda yoziladi (PostgREST massivni qabul
+  // qiladi). Ilgari har bir dona uchun alohida, ketma-ket so'rov ketardi —
+  // 3 ta tovar 3 ta bosqich edi. Promokod hisoblagichi ham shu bilan parallel.
+  const orderItems = [];
   for (const item of items) {
     const unit = Number(item.plan?.price || item.price || 0);
     for (let i = 0; i < Number(item.quantity || 1); i += 1) {
-      await request(client, 'order_items', { method: 'POST', body: { order_id: order.id, user_telegram_id: String(user_telegram_id), plan_id: item.plan_id || item.plan?.id, quantity: 1, unit_price: unit, total_price: unit, delivery_status: 'pending' } });
+      orderItems.push({ order_id: order.id, user_telegram_id: String(user_telegram_id), plan_id: item.plan_id || item.plan?.id, quantity: 1, unit_price: unit, total_price: unit, delivery_status: 'pending' });
     }
   }
+  await Promise.all([
+    promo?.id
+      ? request(client, 'promo_codes', { method: 'PATCH', query: toQuery({ id: `eq.${promo.id}` }), body: { used_count: Number(promo.used_count || 0) + 1 } })
+      : Promise.resolve(),
+    orderItems.length ? request(client, 'order_items', { method: 'POST', body: orderItems }) : Promise.resolve(),
+  ]);
   return order;
 }
 

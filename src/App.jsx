@@ -31,6 +31,7 @@ const Privacy = lazy(() => import('./pages/Privacy.jsx'));
 const Terms = lazy(() => import('./pages/Terms.jsx'));
 import { useI18n } from './i18n/I18nProvider.jsx';
 import { apiCall, getToken, clearToken } from './lib/api.js';
+import { prefetchCatalog } from './lib/prefetch.js';
 import {
   isOnboarded,
   setOnboarded,
@@ -59,6 +60,8 @@ export default function App() {
     let active = true;
     setBooting(true);
     const timer = setTimeout(() => active && setBooting(false), 6000);
+    // Katalog so'rovi va sahifa kodi init bilan parallel — init tugashini kutmaydi.
+    prefetchCatalog();
     (async () => {
       try {
         const res = await apiCall('init');
