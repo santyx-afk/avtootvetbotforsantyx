@@ -1,4 +1,4 @@
-const { requireAdmin } = require('../../shared/auth');
+const { requireAdmin, requireOwner } = require('../../shared/auth');
 const { getAdminClient, request, createInventoryItem, listInventoryByPlan, getInventoryCountsByPlan, getInventoryItemById, updateRow } = require('../../shared/db');
 const { encryptText, decryptText } = require('../../shared/encryption');
 
@@ -152,6 +152,7 @@ exports.handler = async (event) => {
       // shu action haqiqiy qiymatlarni qaytaradi (sessiya cookie bilan himoyalangan).
       // Bitta maydon ochilmasa qolganlari baribir ko'rsatiladi (delivery-service
       // dagi tryDecrypt bilan bir xil yondashuv).
+      if (payload.action === 'reveal' && !requireOwner(event.headers)) return json(403, { ok: false, error: 'Kredensiallarni faqat egasi ochadi' });
       if (payload.action === 'reveal') {
         const item = await getInventoryItemById(supabase, payload.id);
         if (!item) return json(404, { ok: false, error: 'Topilmadi' });
@@ -191,6 +192,13 @@ exports.handler = async (event) => {
         notes: payload.notes || null,
         status: 'available',
       });
+      // Zaxira kelganini kutayotganlarga xabar (waitlist) — best-effort
+      try {
+        const { notifyWaitlist } = require('../../shared/stock-waitlist');
+        await notifyWaitlist(supabase, payload.plan_id);
+      } catch {
+        /* xabar ketmasa ham akkaunt qo'shilgan */
+      }
       return json(200, { ok: true, item: row ? { ...row, password_encrypted: row.password_encrypted ? '***' : null, license_key_encrypted: row.license_key_encrypted ? '***' : null } : null });
     }
     return json(405, { ok: false, error: 'Method not allowed' });

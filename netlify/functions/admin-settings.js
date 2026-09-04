@@ -1,4 +1,4 @@
-const { requireAdmin } = require('../../shared/auth');
+const { requireAdmin, requireOwner } = require('../../shared/auth');
 const { getAdminClient, fetchSettings, insertRow, updateRow } = require('../../shared/db');
 
 exports.handler = async (event) => {
@@ -10,6 +10,9 @@ exports.handler = async (event) => {
     if (event.httpMethod === 'GET') {
       const settings = await fetchSettings(supabase);
       return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ok: true, settings }) };
+    }
+    if (event.httpMethod === 'PUT' && !requireOwner(event.headers)) {
+      return { statusCode: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ok: false, error: 'Faqat egasi uchun' }) };
     }
     if (event.httpMethod === 'PUT') {
       const payload = JSON.parse(event.body || '{}');

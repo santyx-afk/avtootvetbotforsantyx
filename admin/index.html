@@ -16,22 +16,22 @@
         <div class="sidebar-brand">⚡ Admin Panel</div>
         <nav class="nav">
           <button data-view="dashboard" class="nav-link active"><span class="nav-ico">📊</span> Dashboard <span id="attentionBadge" class="nav-badge" hidden></span></button>
-          <button data-view="categories" class="nav-link"><span class="nav-ico">🗂️</span> Kategoriyalar</button>
-          <button data-view="plans" class="nav-link"><span class="nav-ico">📦</span> Rejalar</button>
+          <button data-view="categories" class="nav-link owner-only"><span class="nav-ico">🗂️</span> Kategoriyalar</button>
+          <button data-view="plans" class="nav-link owner-only"><span class="nav-ico">📦</span> Rejalar</button>
           <button data-view="inventory" class="nav-link"><span class="nav-ico">🔑</span> Inventory</button>
-          <button data-view="banners" class="nav-link"><span class="nav-ico">🖼️</span> Bannerlar</button>
-          <button data-view="faq" class="nav-link"><span class="nav-ico">❓</span> FAQ</button>
-          <button data-view="promos" class="nav-link"><span class="nav-ico">🎟️</span> Promokodlar</button>
+          <button data-view="banners" class="nav-link owner-only"><span class="nav-ico">🖼️</span> Bannerlar</button>
+          <button data-view="faq" class="nav-link owner-only"><span class="nav-ico">❓</span> FAQ</button>
+          <button data-view="promos" class="nav-link owner-only"><span class="nav-ico">🎟️</span> Promokodlar</button>
           <button data-view="reviews" class="nav-link"><span class="nav-ico">⭐</span> Sharhlar</button>
           <button data-view="users" class="nav-link"><span class="nav-ico">👥</span> Foydalanuvchilar</button>
           <button data-view="orders" class="nav-link"><span class="nav-ico">🛒</span> Buyurtmalar</button>
           <button data-view="subscriptions" class="nav-link"><span class="nav-ico">📅</span> Obunalar</button>
-          <button data-view="wallet" class="nav-link"><span class="nav-ico">👛</span> Balans harakatlari</button>
+          <button data-view="wallet" class="nav-link owner-only"><span class="nav-ico">👛</span> Balans harakatlari</button>
           <button data-view="audit" class="nav-link"><span class="nav-ico">📜</span> Jurnal</button>
           <button data-view="leads" class="nav-link"><span class="nav-ico">📥</span> Leadlar <span id="leadsNewBadge" class="nav-badge" hidden></span></button>
-          <button data-view="referrals" class="nav-link"><span class="nav-ico">🤝</span> Referallar</button>
+          <button data-view="referrals" class="nav-link owner-only"><span class="nav-ico">🤝</span> Referallar</button>
           <button data-view="messages" class="nav-link"><span class="nav-ico">✉️</span> Xabar yuborish</button>
-          <button data-view="settings" class="nav-link"><span class="nav-ico">⚙️</span> Sozlamalar</button>
+          <button data-view="settings" class="nav-link owner-only"><span class="nav-ico">⚙️</span> Sozlamalar</button>
           <button data-view="help" class="nav-link"><span class="nav-ico">🆘</span> Yordam</button>
         </nav>
         <button id="logoutButton" class="nav-logout">Chiqish</button>
@@ -41,6 +41,7 @@
         <header class="topbar">
           <button id="menuToggle" class="icon-btn" aria-label="Menyu">☰</button>
           <span class="topbar-title" id="topbarTitle">Dashboard</span>
+          <span class="role-chip" id="roleChip"></span>
         </header>
 
         <main class="content">
@@ -48,8 +49,11 @@
             <h2>Kirish</h2>
             <p>Admin parolni kiriting.</p>
             <form id="loginForm">
+              <label>Login
+                <input type="text" id="loginUsername" placeholder="Egasi uchun bo'sh qoldiring" autocomplete="username" />
+              </label>
               <label>Parol
-                <input type="password" id="password" placeholder="••••••••" required />
+                <input type="password" id="password" placeholder="••••••••" required autocomplete="current-password" />
               </label>
               <button type="submit">Kirish</button>
             </form>
@@ -378,7 +382,7 @@
                   <input type="checkbox" id="userShowNoPhone" /> Raqamsizlarni ham ko'rsatish
                 </label>
                 <button id="reloadUsersButton">Yangilash</button>
-                <button id="creditAllButton" class="ghost">💸 Hammaga pul qo'shish</button>
+                <button id="creditAllButton" class="ghost owner-only">💸 Hammaga pul qo'shish</button>
               </div>
               <div id="usersCount" class="hint"></div>
               <div id="usersList" class="table-card"></div>
@@ -521,6 +525,18 @@
                   </div>
                 </form>
               </div>
+              <div class="card form-card">
+                <h3>👤 Operatorlar (yordamchi adminlar)</h3>
+                <p class="hint">Operator: buyurtmalarni tasdiqlash/rad etish, qo'lda yetkazish, inventar qo'shish, leadlar, sharhlar, mijozga xabar. Pul, sozlamalar, promokod, rejalar, kredensiallarni ochish, broadcast — faqat egasi. Egasi avvalgidek asosiy parol bilan (login bo'sh) kiradi.</p>
+                <div id="adminsList" class="table-card"></div>
+                <form id="adminForm" class="grid-form">
+                  <label>Login<input id="adminUsername" placeholder="masalan: ali" autocomplete="off" /></label>
+                  <label>Parol<input id="adminPassword" type="text" placeholder="kamida 6 belgi" autocomplete="off" /></label>
+                  <label>Telegram ID (ixtiyoriy)<input id="adminTelegramId" placeholder="123456789" /></label>
+                  <div class="actions full"><button type="submit">Operator qo'shish</button></div>
+                </form>
+                <p id="adminFormMsg" class="success-text"></p>
+              </div>
             </section>
 
             <section id="helpView" class="view" hidden>
@@ -536,7 +552,7 @@
                   <h3 id="userModalTitle">Foydalanuvchi</h3>
                   <button type="button" id="userModalClose" class="ghost">✕</button>
                 </div>
-                <div class="user-balance-box">
+                <div class="user-balance-box owner-only">
                   <div class="balance-now">Joriy balans: <strong id="userBalance">0</strong> UZS</div>
                   <div class="balance-controls">
                     <input id="balanceAmount" type="number" placeholder="Summa (UZS)" />

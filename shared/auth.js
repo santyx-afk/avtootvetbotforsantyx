@@ -16,28 +16,64 @@ function sign(value) {
   return crypto.createHmac('sha256', sessionSecret()).update(value).digest('hex');
 }
 
-function createSession() {
-  const payload = `${Date.now()}`;
+function b64url(value) {
+  return Buffer.from(value).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function b64urlDecode(value) {
+  return Buffer.from(String(value).replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString();
+}
+
+// Rollar: owner — hamma narsa; operator — faqat operatsion ishlar
+// (buyurtma tasdiqlash/rad etish, qo'lda yetkazish, inventar qo'shish,
+// leadlar, sharhlar, mijozga xabar). Pul, sozlamalar, promokod, kredensial
+// ochish, broadcast — faqat owner.
+const ROLES = ['owner', 'operator'];
+
+// Sessiya: base64url(JSON{t,r,u}).imzo. Eski format (faqat vaqt tamg'asi)
+// ham qabul qilinadi — egasi sifatida (deploy paytida hech kim chiqib ketmasin).
+function createSession({ role = 'owner', username = 'owner' } = {}) {
+  const payload = b64url(JSON.stringify({ t: Date.now(), r: ROLES.includes(role) ? role : 'operator', u: String(username || '') }));
   return `${payload}.${sign(payload)}`;
 }
 
-function isValidSession(token) {
-  if (!token || !token.includes('.')) return false;
+function parseSession(token) {
+  if (!token || !token.includes('.')) return null;
   const [payload, signature] = token.split('.');
-  const ttlMs = Number(process.env.ADMIN_SESSION_TTL_MS || 1000 * 60 * 60 * 12);
-  const ts = Number(payload);
-  if (!Number.isFinite(ts) || Date.now() - ts > ttlMs) return false;
   let expected;
   try {
     expected = sign(payload);
   } catch (error) {
     // Kalit sozlanmagan — hech kimni admin deb tan olmaymiz.
     console.error('admin sessiya tekshirilmadi:', error.message);
-    return false;
+    return null;
   }
   const a = Buffer.from(expected);
   const b = Buffer.from(signature || '');
-  return a.length === b.length && crypto.timingSafeEqual(a, b);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+
+  const ttlMs = Number(process.env.ADMIN_SESSION_TTL_MS || 1000 * 60 * 60 * 12);
+  let ts;
+  let role = 'owner';
+  let username = 'owner';
+  if (/^\d+$/.test(payload)) {
+    ts = Number(payload); // eski format
+  } else {
+    try {
+      const data = JSON.parse(b64urlDecode(payload));
+      ts = Number(data.t);
+      role = ROLES.includes(data.r) ? data.r : 'operator';
+      username = String(data.u || '');
+    } catch {
+      return null;
+    }
+  }
+  if (!Number.isFinite(ts) || Date.now() - ts > ttlMs) return null;
+  return { role, username, issuedAt: ts };
+}
+
+function isValidSession(token) {
+  return Boolean(parseSession(token));
 }
 
 function parseCookies(headers = {}) {
@@ -50,9 +86,19 @@ function parseCookies(headers = {}) {
   }, {});
 }
 
-function requireAdmin(headers = {}) {
+// Joriy sessiya (rol bilan) yoki null.
+function getSession(headers = {}) {
   const cookies = parseCookies(headers);
-  return isValidSession(cookies.admin_session);
+  return parseSession(cookies.admin_session);
+}
+
+function requireAdmin(headers = {}) {
+  return Boolean(getSession(headers));
+}
+
+// Faqat egasi uchun amallar.
+function requireOwner(headers = {}) {
+  return getSession(headers)?.role === 'owner';
 }
 
 function verifyPassword(password) {
@@ -66,9 +112,32 @@ function verifyPassword(password) {
   return crypto.timingSafeEqual(a, b);
 }
 
+// Operator parollari: scrypt (Node ichida, qo'shimcha paketsiz).
+// Format: scrypt$<salt hex>$<hash hex>
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.scryptSync(String(password), salt, 64).toString('hex');
+  return `scrypt$${salt}$${hash}`;
+}
+
+function verifyPasswordHash(password, stored) {
+  const parts = String(stored || '').split('$');
+  if (parts.length !== 3 || parts[0] !== 'scrypt') return false;
+  const hash = crypto.scryptSync(String(password || ''), parts[1], 64);
+  const expected = Buffer.from(parts[2], 'hex');
+  return hash.length === expected.length && crypto.timingSafeEqual(hash, expected);
+}
+
 module.exports = {
   createSession,
+  parseSession,
+  isValidSession,
+  getSession,
   requireAdmin,
+  requireOwner,
   verifyPassword,
+  hashPassword,
+  verifyPasswordHash,
   parseCookies,
+  ROLES,
 };

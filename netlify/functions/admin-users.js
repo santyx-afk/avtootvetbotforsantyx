@@ -1,4 +1,4 @@
-const { requireAdmin } = require('../../shared/auth');
+const { requireAdmin, requireOwner } = require('../../shared/auth');
 const { getAdminClient, request, toQuery, addWalletTransaction, rpcRequest } = require('../../shared/db');
 const { sendMessage } = require('../../shared/telegram');
 
@@ -140,6 +140,8 @@ exports.handler = async (event) => {
 
       // Hammaga birdan pul qo'shish — bitta foydalanuvchiga emas, shuning
       // uchun telegram_id tekshiruvidan OLDIN turadi.
+      // Pul amallari — faqat egasi
+      if (['credit-all', 'adjust-balance'].includes(action) && !requireOwner(event.headers)) return json(403, { ok: false, error: 'Faqat egasi uchun' });
       if (action === 'credit-all') return creditAll(db, body);
 
       if (!telegram_id) return json(400, { ok: false, error: 'telegram_id talab qilinadi' });

@@ -1,4 +1,4 @@
-const { requireAdmin } = require('../../shared/auth');
+const { requireAdmin, requireOwner } = require('../../shared/auth');
 const { getAdminClient, request, fetchSettings, addWalletTransaction } = require('../../shared/db');
 const { sendMessage } = require('../../shared/telegram');
 
@@ -207,6 +207,8 @@ exports.handler = async (event) => {
   try {
     if (event.httpMethod === 'GET') return await listReferrals(db);
 
+    // Yozish amallari — faqat egasi (operator faqat ko'radi)
+    if (event.httpMethod !== 'GET' && !requireOwner(event.headers)) return { statusCode: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ok: false, error: 'Faqat egasi uchun' }) };
     if (event.httpMethod === 'POST') {
       const body = JSON.parse(event.body || '{}');
       if (body.action === 'pay-pending') return await payPending(db, body);

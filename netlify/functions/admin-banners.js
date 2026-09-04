@@ -1,4 +1,4 @@
-const { requireAdmin } = require('../../shared/auth');
+const { requireAdmin, requireOwner } = require('../../shared/auth');
 const { getAdminClient, request, insertRow, updateRow, deleteRow } = require('../../shared/db');
 
 function json(sc, body) { return { statusCode: sc, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }; }
@@ -11,6 +11,8 @@ exports.handler = async (event) => {
       const { data } = await request(db, 'banners', { query: 'select=*&order=sort_order.asc.nullslast,created_at.asc' });
       return json(200, { ok: true, banners: data || [] });
     }
+    // Yozish amallari — faqat egasi (operator faqat ko'radi)
+    if (event.httpMethod !== 'GET' && !requireOwner(event.headers)) return { statusCode: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ok: false, error: 'Faqat egasi uchun' }) };
     if (event.httpMethod === 'POST') {
       const payload = JSON.parse(event.body || '{}');
       const item = await insertRow(db, 'banners', payload);

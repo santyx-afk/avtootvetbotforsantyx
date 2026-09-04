@@ -544,7 +544,7 @@ exports.handler = async (event) => {
       // Hammasi bitta paketda: reja, sharhlar, wishlist, sozlamalar va shu
       // rejaning stoki — birortasi boshqasining natijasiga bog'liq emas.
       // Ilgari bu 3 ta ketma-ket bosqich edi.
-      const [planRes, reviewsRes, wishRes, settings, stockRes] = await Promise.all([
+      const [planRes, reviewsRes, wishRes, settings, stockRes, waitRes] = await Promise.all([
         request(supabase, 'plans', {
           query: `select=*&id=eq.${productId}&limit=1`,
         }),
@@ -561,6 +561,9 @@ exports.handler = async (event) => {
         fetchSettings(supabase).catch(() => null),
         request(supabase, 'inventory_items', {
           query: `select=id&plan_id=eq.${productId}&status=eq.available`,
+        }).catch(() => ({ data: [] })),
+        request(supabase, 'stock_waitlist', {
+          query: `select=id&user_telegram_id=eq.${telegramId}&plan_id=eq.${productId}&notified=eq.false&limit=1`,
         }).catch(() => ({ data: [] })),
       ]);
       const p = planRes.data?.[0];
@@ -596,7 +599,17 @@ exports.handler = async (event) => {
         general_terms: settings?.general_terms || '',
         reviews,
         in_wishlist: Boolean(wishRes.data?.length),
+        in_waitlist: Boolean(waitRes.data?.length),
       });
+    }
+
+    // "Kelganda xabar ber": tugagan mahsulot uchun navbat
+    if (body.action === 'waitlist-toggle') {
+      const productId = body.productId;
+      if (!productId) return json(400, { ok: false, error: 'no_product_id' });
+      const { toggleWaitlist } = require('../../shared/stock-waitlist');
+      const result = await toggleWaitlist(supabase, telegramId, productId);
+      return json(200, { ok: true, ...result });
     }
 
     if (body.action === 'wishlist-toggle') {

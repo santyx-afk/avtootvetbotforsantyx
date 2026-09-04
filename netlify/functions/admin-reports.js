@@ -1,4 +1,4 @@
-const { requireAdmin } = require('../../shared/auth');
+const { requireAdmin, requireOwner } = require('../../shared/auth');
 const { getAdminClient, request, toQuery } = require('../../shared/db');
 
 function json(statusCode, body) {
@@ -116,6 +116,7 @@ exports.handler = async (event) => {
   const db = getAdminClient();
   const params = event.queryStringParameters || {};
   try {
+    if (params.report === 'wallet' && !requireOwner(event.headers)) return json(403, { ok: false, error: 'Faqat egasi uchun' });
     if (params.report === 'wallet') return json(200, { ok: true, ...(await walletReport(db, params)) });
     if (params.report === 'audit') return json(200, { ok: true, ...(await auditReport(db, params)) });
     return json(400, { ok: false, error: 'report=wallet|audit' });

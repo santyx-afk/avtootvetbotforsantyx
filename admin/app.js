@@ -791,7 +791,7 @@ function renderInventory() {
   <td>${dt(i.created_at)}</td>
   <td>
     <button class="ghost inv-detail" data-id="${esc(i.id)}">Batafsil</button>
-    <button class="ghost inv-reveal" data-id="${esc(i.id)}">Ko'rish</button>
+    <button class="ghost inv-reveal owner-only" data-id="${esc(i.id)}">Ko'rish</button>
     <button class="ghost danger inv-disable" data-id="${esc(i.id)}">Disable</button>
   </td></tr>`;
   }).join('')}</tbody></table>`;
@@ -974,6 +974,24 @@ async function deleteItem(type, id) {
   await loadData();
 }
 
+// Rol: owner — hamma narsa; operator — faqat operatsion bo'limlar. Server
+// baribir tekshiradi, bu yerda faqat ko'rinish moslanadi.
+function applyRole(role, username) {
+  state.role = role || 'owner';
+  document.body.dataset.role = state.role;
+  const chip = document.getElementById('roleChip');
+  if (chip) chip.textContent = state.role === 'owner' ? '👑 Egasi' : `👤 ${username || 'operator'}`;
+  // Operator ommaviy xabar yubora olmaydi
+  const typeSel = document.getElementById('messageType');
+  if (typeSel) {
+    [...typeSel.options].forEach((o) => { if (o.value !== 'individual') o.hidden = state.role !== 'owner'; });
+    if (state.role !== 'owner') typeSel.value = 'individual';
+  }
+  // Operator ochib qo'ygan egasi bo'limida qolib ketmasin
+  const active = document.querySelector('.nav-link.active');
+  if (state.role !== 'owner' && active?.classList.contains('owner-only')) switchView('dashboard');
+}
+
 async function initApp() {
   document.getElementById('loginError').textContent = '';
   const session = await fetch('/api/admin-session');
@@ -983,11 +1001,85 @@ async function initApp() {
     document.getElementById('appView').hidden = true;
     return;
   }
+  let info = {};
+  try { info = await session.json(); } catch { /* eski javob */ }
+  applyRole(info.role, info.username);
   document.body.classList.add('authed');
   document.getElementById('loginView').hidden = true;
   document.getElementById('appView').hidden = false;
-  await Promise.all([loadDashboard(), loadData(), loadSettings(), loadBanners(), loadPromos(), loadReviews(), loadFaq(), loadUsers(), loadLeads(), loadReferrals(), loadBroadcasts(), loadSubscriptions()]);
+  const loaders = [loadDashboard(), loadData(), loadReviews(), loadUsers(), loadLeads(), loadBroadcasts(), loadSubscriptions()];
+  if (state.role === 'owner') loaders.push(loadSettings(), loadBanners(), loadPromos(), loadFaq(), loadReferrals(), loadAdmins());
+  await Promise.all(loaders);
 }
+
+// --- Operatorlar (faqat egasi) ---
+function renderAdmins(list = []) {
+  const root = document.getElementById('adminsList');
+  if (!root) return;
+  if (!list.length) {
+    root.innerHTML = '<p class="detail-empty">Operator yo\'q. Pastdagi forma orqali qo\'shing.</p>';
+    return;
+  }
+  root.innerHTML = `<table><thead><tr><th>Login</th><th>Rol</th><th>Holat</th><th>Oxirgi kirish</th><th></th></tr></thead><tbody>${list.map((a) => `
+    <tr>
+      <td><strong>${esc(a.username)}</strong>${a.telegram_id ? ` <span class="hint">(${esc(a.telegram_id)})</span>` : ''}</td>
+      <td>${esc(a.role)}</td>
+      <td><span class="badge">${a.is_active ? 'Faol' : 'O\'chirilgan'}</span></td>
+      <td>${dt(a.last_login_at)}</td>
+      <td>
+        <button class="ghost admin-act" data-action="set-password" data-id="${esc(a.id)}">Parol</button>
+        <button class="ghost admin-act" data-action="set-active" data-id="${esc(a.id)}" data-active="${a.is_active ? '0' : '1'}">${a.is_active ? 'O\'chirish' : 'Yoqish'}</button>
+        <button class="ghost danger admin-act" data-action="delete" data-id="${esc(a.id)}">Del</button>
+      </td>
+    </tr>`).join('')}</tbody></table>`;
+}
+async function loadAdmins() {
+  try {
+    const data = await api('admin-admins');
+    renderAdmins(data.admins || []);
+  } catch (error) {
+    const root = document.getElementById('adminsList');
+    if (root) root.innerHTML = `<p class="detail-empty">${esc(error.message || 'Yuklanmadi')}</p>`;
+  }
+}
+onSubmit('adminForm', async () => {
+  const msg = document.getElementById('adminFormMsg');
+  const res = await api('admin-admins', {
+    method: 'POST',
+    body: JSON.stringify({
+      action: 'create',
+      username: document.getElementById('adminUsername').value,
+      password: document.getElementById('adminPassword').value,
+      telegram_id: document.getElementById('adminTelegramId').value || null,
+    }),
+  });
+  msg.textContent = `Operator qo'shildi: ${res.admin?.username || ''}. Login va parolni unga bering.`;
+  document.getElementById('adminUsername').value = '';
+  document.getElementById('adminPassword').value = '';
+  document.getElementById('adminTelegramId').value = '';
+  await loadAdmins();
+});
+document.getElementById('adminsList')?.addEventListener('click', async (event) => {
+  const btn = event.target.closest('.admin-act');
+  if (!btn) return;
+  const action = btn.dataset.action;
+  const body = { action, id: btn.dataset.id };
+  if (action === 'set-password') {
+    const pwd = prompt('Yangi parol (kamida 6 belgi):');
+    if (!pwd) return;
+    body.password = pwd;
+  } else if (action === 'set-active') {
+    body.is_active = btn.dataset.active === '1';
+  } else if (action === 'delete' && !confirm('Operator o\'chirilsinmi?')) {
+    return;
+  }
+  try {
+    await api('admin-admins', { method: 'POST', body: JSON.stringify(body) });
+    await loadAdmins();
+  } catch (error) {
+    alert(error.message);
+  }
+});
 
 // --- Image upload helper ---
 function setupImageUpload(fileInputId, urlInputId, previewId, uploadBtnId) {
@@ -1060,7 +1152,13 @@ function onSubmit(formId, handler) {
 document.getElementById('loginForm').addEventListener('submit', async (event) => {
   event.preventDefault();
   try {
-    await api('admin-login', { method: 'POST', body: JSON.stringify({ password: document.getElementById('password').value }) });
+    await api('admin-login', {
+      method: 'POST',
+      body: JSON.stringify({
+        username: document.getElementById('loginUsername')?.value.trim() || '',
+        password: document.getElementById('password').value,
+      }),
+    });
     document.getElementById('password').value = '';
     await initApp();
   } catch (error) {
@@ -2098,10 +2196,10 @@ function renderSubscriptions(items = [], summary = {}) {
       <td>${subStatusBadge(s)}</td>
       <td class="hint">${s.reminder_3d_sent ? '3k ✓ ' : ''}${s.reminder_1d_sent ? '1k ✓ ' : ''}${s.expired_notified ? 'tugadi ✓' : ''}</td>
       <td>
-        <button class="ghost sub-extend" data-id="${esc(s.id)}" data-days="30">+30 kun</button>
-        <button class="ghost sub-extend" data-id="${esc(s.id)}" data-days="">+N kun</button>
-        <button class="ghost sub-remind" data-id="${esc(s.id)}">Eslatma</button>
-        ${s.status === 'active' ? `<button class="ghost danger sub-cancel" data-id="${esc(s.id)}">Bekor</button>` : ''}
+        <button class="ghost sub-extend owner-only" data-id="${esc(s.id)}" data-days="30">+30 kun</button>
+        <button class="ghost sub-extend owner-only" data-id="${esc(s.id)}" data-days="">+N kun</button>
+        <button class="ghost sub-remind owner-only" data-id="${esc(s.id)}">Eslatma</button>
+        ${s.status === 'active' ? `<button class="ghost danger sub-cancel owner-only" data-id="${esc(s.id)}">Bekor</button>` : ''}
       </td>
     </tr>`).join('')}</tbody></table>`;
 }
@@ -2194,8 +2292,14 @@ const HELP_ITEMS = [
   { icon: '👥', title: 'Foydalanuvchilar', body: 'Ro’yxatdan o’tgan barcha foydalanuvchilar. Qidiruv, bloklash/blokdan chiqarish mumkin. Bloklangan foydalanuvchi botni ham, Mini App’ni ham ishlata olmaydi.' },
   { icon: '🛒', title: 'Buyurtmalar', body: 'Barcha xaridlar. Statuslar: kutilmoqda, tasdiqlangan, rad etilgan, tugallangan. Admin approve/reject qiladi. "Batafsil" tugmasi qaysi akkaunt kimga va qachon ketganini, promokod va chegirmani ko’rsatadi. Qidiruv buyurtma raqami yoki Telegram ID bo’yicha. CSV export mumkin.' },
   { icon: '📥', title: 'Leadlar', body: 'Saytdagi "Izlagan obunangiz yo’qmi?" formasidan kelgan so’rovlar. Har biri adminga Telegram xabari sifatida ham keladi. Bajarilganini belgilash yoki o’chirish mumkin.' },
-  { icon: '✉️', title: 'Xabar yuborish', body: 'Foydalanuvchilarga Telegram orqali xabar. Individual (bitta Telegram ID ga) yoki Broadcast (hammaga). Broadcast 25 talab parallel yuboriladi.' },
-  { icon: '⚙️', title: 'Sozlamalar', body: 'Karta raqami, cashback foizi, referal bonus, min topup, welcome text, contact text, umumiy qoidalar. Bu yerda o’zgartirilgan narsa butun botga ta’sir qiladi.' },
+  { icon: '✉️', title: 'Xabar yuborish', body: 'Bitta foydalanuvchiga, matnli broadcast (segment bo’yicha) yoki «Admin xabari»: tugmani bossangiz bot sizga Telegram’da «xabar kutilyapti» deb yozadi, unga rasm/video/fayl/matn yuborasiz, bot ko’rsatib tasdiq so’raydi, tasdiqlagach hammaga ketadi. Yuborish fon rejimida, jarayon tarixda ko’rinadi, istalgan payt to’xtatish mumkin.' },
+  { icon: '📅', title: 'Obunalar', body: 'Faol, 7 kun ichida tugaydigan va tugagan obunalar. Qo’lda uzaytirish (+30 yoki +N kun, mijozga xabar ketadi), eslatmani hozir yuborish, bekor qilish. Avtomatik eslatmalar har kuni 09:00 da.' },
+  { icon: '👛', title: 'Balans harakatlari', body: 'Barcha balans o’zgarishlari: to’ldirish, xarid, cashback, referal, admin qo’shgan/yechgan. Oraliq, tur va mijoz bo’yicha filtr; tur bo’yicha jamlanma.' },
+  { icon: '📜', title: 'Jurnal', body: 'Tizimdagi barcha muhim amallar: to’lov aniqlandi, qo’lda tasdiqlandi, yetkazildi, muddat o’tdi, obuna uzaytirildi va h.k. Buyurtma raqami yoki Telegram ID bo’yicha qidiruv.' },
+  { icon: '⚠️', title: 'E’tibor talab qiladi (Dashboard)', body: 'Qo’lda ulash kerak bo’lgan, zaxira kutayotgan, yetkazishda xato bo’lgan, chek tekshirilayotgan buyurtmalar bitta joyda. «Yetkazish» tugmasi — login/parolni yozasiz, mijozga bot orqali ketadi va buyurtma yakunlanadi.' },
+  { icon: '💵', title: 'To’lov keldi (qo’lda tasdiqlash)', body: 'Tizim to’lovni aniqlamagan bo’lsa-yu pul kelgan bo’lsa, 10 daqiqa ichida panelda yoki botdagi «To’lov keldi» tugmasi bilan tasdiqlaysiz — buyurtma oddiy to’lov kabi yetkaziladi. Muddati o’tgan buyurtmani tasdiqlab bo’lmaydi.' },
+  { icon: '⚙️', title: 'Sozlamalar', body: 'Karta raqami, cashback foizi, referal bonus, min topup, to’lov kutish vaqti, texnik tanaffus rejimi (Mini App yopiladi, bot ishlaydi), welcome text, umumiy qoidalar, operatorlar. Bu yerda o’zgartirilgan narsa butun botga ta’sir qiladi.' },
+  { icon: '👤', title: 'Operatorlar (rollar)', body: 'Egasi asosiy parol bilan (login bo’sh) kiradi va hamma narsani ko’radi. Operator login+parol bilan kiradi: buyurtmalarni tasdiqlaydi/rad etadi, qo’lda yetkazadi, inventar qo’shadi, leadlar va sharhlarni ko’radi, mijozga yozadi. Pul, sozlamalar, promokod, rejalar, kredensiallarni ochish, broadcast — faqat egasi.' },
 ];
 function renderHelp() {
   const root = document.getElementById('helpAccordion');

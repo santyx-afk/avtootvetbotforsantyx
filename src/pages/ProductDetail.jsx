@@ -41,6 +41,9 @@ export default function ProductDetail() {
   // Savatga qo'shilgandan keyin "Savatga o'tish" tugmasi paydo bo'ladi va
   // sahifada qoladi (added esa 1.6 soniyalik "Qo'shildi" javobi uchun).
   const [inCart, setInCart] = useState(false);
+  // Tugagan mahsulot: "Kelganda xabar ber" navbati
+  const [waiting, setWaiting] = useState(false);
+  const [waitBusy, setWaitBusy] = useState(false);
 
   const load = useCallback(async () => {
     setStatus('loading');
@@ -48,6 +51,7 @@ export default function ProductDetail() {
       const res = await apiCall('product', { productId: id });
       setData(res);
       setWish(Boolean(res.in_wishlist));
+      setWaiting(Boolean(res.in_waitlist));
       setStatus('ready');
     } catch {
       setStatus('error');
@@ -265,6 +269,30 @@ export default function ProductDetail() {
             )}
           </button>
         </div>
+
+        {/* Tugagan mahsulot: zaxira kelganda bot orqali xabar */}
+        {!product.in_stock && (
+          <button
+            type="button"
+            className={`${styles.goCartBtn} pressable`}
+            disabled={waitBusy}
+            onClick={async () => {
+              haptic.impact('light');
+              setWaitBusy(true);
+              try {
+                const res = await apiCall('waitlist-toggle', { productId: id });
+                setWaiting(Boolean(res?.waiting));
+              } catch {
+                /* keyingi bosishda qayta uriniladi */
+              } finally {
+                setWaitBusy(false);
+              }
+            }}
+            title={t('product.notifyHint')}
+          >
+            {waiting ? t('product.notifyOn') : `🔔 ${t('product.notifyWhenBack')}`}
+          </button>
+        )}
 
         {/* Faqat savatga qo'shilgandan keyin ko'rinadi */}
         {inCart && (

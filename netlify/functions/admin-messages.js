@@ -1,4 +1,4 @@
-const { requireAdmin } = require('../../shared/auth');
+const { requireAdmin, requireOwner } = require('../../shared/auth');
 const { getAdminClient } = require('../../shared/db');
 const { sendMessage } = require('../../shared/telegram');
 const {
@@ -35,6 +35,8 @@ exports.handler = async (event) => {
 
     const body = JSON.parse(event.body || '{}');
     const { type, text, telegram_id } = body;
+    // Ommaviy xabarlar — faqat egasi; bitta mijozga yozish operatorga ham mumkin
+    if (type !== 'individual' && !requireOwner(event.headers)) return json(403, { ok: false, error: 'Faqat egasi uchun' });
 
     if (type === 'cancel') {
       const jobId = String(body.job_id || '');

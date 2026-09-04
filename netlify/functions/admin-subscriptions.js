@@ -1,4 +1,4 @@
-const { requireAdmin } = require('../../shared/auth');
+const { requireAdmin, requireOwner } = require('../../shared/auth');
 const { getAdminClient, request, toQuery, createAuditLog } = require('../../shared/db');
 const { sendMessage } = require('../../shared/telegram');
 const { escapeHtml } = require('../../shared/messages');
@@ -168,6 +168,7 @@ exports.handler = async (event) => {
       const result = await listSubscriptions(db, filter);
       return json(200, { ok: true, ...result });
     }
+    if (event.httpMethod === 'POST' && !requireOwner(event.headers)) return json(403, { ok: false, error: 'Faqat egasi uchun' });
     if (event.httpMethod === 'POST') {
       const body = JSON.parse(event.body || '{}');
       const id = String(body.id || '').replace(/[^0-9a-zA-Z-]/g, '');
