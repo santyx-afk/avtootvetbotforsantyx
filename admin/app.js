@@ -106,7 +106,8 @@ function switchView(name) {
 
 function renderStats(stats) {
   const cards = [
-    ['Jami foydalanuvchi', stats.totalUsers],
+    ['Foydalanuvchilar (raqam bergan)', stats.totalUsers],
+    ['Raqam bermaganlar', stats.usersWithoutPhone ?? 0],
     ['Jami kliklar', stats.totalClicks],
     ['To\'lov sahifasi ochilishi', stats.totalPaymentOpens],
     ['Bugungi tushum', Number(stats.revenueToday || 0).toLocaleString('uz-UZ')],
@@ -395,11 +396,19 @@ const USER_SORTS = {
 
 function renderUsers(filter = '') {
   const q = filter.toLowerCase();
-  let filtered = q ? state.users.filter((u) =>
+  const qDigits = q.replace(/\D/g, '');
+  // Raqam bermaganlar "foydalanuvchi safida" emas: sukut bo'yicha yashirin,
+  // faqat belgi qo'yilsa ko'rinadi.
+  const showNoPhone = Boolean(document.getElementById('userShowNoPhone')?.checked);
+  const base = showNoPhone ? state.users : state.users.filter((u) => u.phone);
+  let filtered = q ? base.filter((u) =>
     String(u.telegram_id).includes(q) ||
     (u.username || '').toLowerCase().includes(q) ||
-    (u.full_name || '').toLowerCase().includes(q)
-  ) : state.users;
+    (u.full_name || '').toLowerCase().includes(q) ||
+    (qDigits && String(u.phone || '').replace(/\D/g, '').includes(qDigits)) ||
+    (u.tags || []).some((t) => String(t).toLowerCase().includes(q)) ||
+    (u.admin_note || '').toLowerCase().includes(q)
+  ) : base;
 
   const mode = document.getElementById('userFilter')?.value || '';
   if (USER_FILTERS[mode]) filtered = filtered.filter(USER_FILTERS[mode]);
@@ -411,14 +420,16 @@ function renderUsers(filter = '') {
   // Ilgari qat'iy 100 ta ko'rsatilib "+N ta yana..." deb yozilardi va qolganiga
   // yetib bo'lmasdi. Endi "Yana ko'rsatish" tugmasi bilan ochiladi.
   const shown = filtered.slice(0, state.usersShown);
-  root.innerHTML = `<table><thead><tr><th>Telegram ID</th><th>Username</th><th>Ism</th><th>Balans</th><th>Xaridlar</th><th>Faollik</th><th>Blocked</th><th></th></tr></thead><tbody>${shown.map((u) => `
+  root.innerHTML = `<table><thead><tr><th>Telegram ID</th><th>Username</th><th>Ism</th><th>Telefon</th><th>Balans</th><th>Xaridlar</th><th>Faollik</th><th>Teglar</th><th>Blocked</th><th></th></tr></thead><tbody>${shown.map((u) => `
     <tr>
-      <td>${esc(u.telegram_id)}</td>
+      <td>${userLinkHtml(u.telegram_id)}</td>
       <td>${u.username ? `@${esc(u.username)}` : '-'}</td>
-      <td>${esc(u.full_name || '-')}</td>
+      <td>${esc(u.full_name || '-')}${u.admin_note ? ` <span title="${esc(u.admin_note)}">📝</span>` : ''}</td>
+      <td>${u.phone ? `${esc(u.phone)}${u.phone_verified_at ? ' <span title="Telegram orqali tasdiqlangan">✅</span>' : ''}` : '<span class="hint">yo\'q</span>'}</td>
       <td>${money(u.balance)}</td>
       <td>${esc(u.purchases || 0)}</td>
       <td>${u.last_activity ? esc(new Date(u.last_activity).toLocaleDateString('uz-UZ')) : '-'}</td>
+      <td>${(u.tags || []).map((t) => `<span class="badge">${esc(t)}</span>`).join(' ') || '-'}</td>
       <td>${u.is_blocked ? '🚫' : '-'}</td>
       <td>
         <button class="ghost user-detail" data-id="${esc(u.telegram_id)}">Batafsil</button>
@@ -429,9 +440,11 @@ function renderUsers(filter = '') {
 
   const countEl = document.getElementById('usersCount');
   if (countEl) {
+    const withPhone = state.users.filter((u) => u.phone).length;
+    const noPhone = state.users.length - withPhone;
     countEl.textContent = filtered.length
-      ? `${shown.length} / ${filtered.length} ta ko'rsatilmoqda (jami ${state.users.length})`
-      : 'Foydalanuvchi topilmadi';
+      ? `${shown.length} / ${filtered.length} ta ko'rsatilmoqda (raqam bergan: ${withPhone}, raqamsiz: ${noPhone}${showNoPhone ? '' : ' — yashirin'})`
+      : `Foydalanuvchi topilmadi (raqam bergan: ${withPhone}, raqamsiz: ${noPhone}${showNoPhone ? '' : ' — yashirin'})`;
   }
   const moreBtn = document.getElementById('usersLoadMore');
   if (moreBtn) moreBtn.hidden = filtered.length <= shown.length;
@@ -1190,11 +1203,50 @@ document.getElementById('usersLoadMore')?.addEventListener('click', () => {
   state.usersShown += 100;
   renderUsers(document.getElementById('userSearch')?.value || '');
 });
-['userFilter', 'userSort'].forEach((id) => {
+['userFilter', 'userSort', 'userShowNoPhone'].forEach((id) => {
   document.getElementById(id)?.addEventListener('change', () => {
     state.usersShown = 100;
     renderUsers(document.getElementById('userSearch')?.value || '');
   });
+});
+
+// Foydalanuvchi kartochkasi: admin izohi va teglar
+document.getElementById('userNoteSave')?.addEventListener('click', async () => {
+  if (!currentUserId) return;
+  const msg = document.getElementById('userNoteMsg');
+  const btn = document.getElementById('userNoteSave');
+  btn.disabled = true;
+  try {
+    const res = await api('admin-users', {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'update-note',
+        telegram_id: currentUserId,
+        admin_note: document.getElementById('userNote').value,
+        tags: document.getElementById('userTags').value,
+      }),
+    });
+    document.getElementById('userTags').value = (res.tags || []).join(', ');
+    msg.style.color = 'var(--success, #16a34a)';
+    msg.textContent = 'Saqlandi';
+    const u = state.users.find((x) => String(x.telegram_id) === String(currentUserId));
+    if (u) { u.admin_note = res.admin_note; u.tags = res.tags || []; }
+    renderUsers(document.getElementById('userSearch')?.value || '');
+  } catch (error) {
+    msg.style.color = 'var(--danger)';
+    msg.textContent = error.message || 'Xatolik';
+  } finally {
+    btn.disabled = false;
+  }
+});
+document.getElementById('userModalMsg')?.addEventListener('click', () => {
+  if (!currentUserId) return;
+  document.getElementById('userModal').hidden = true;
+  switchView('messages');
+  document.getElementById('messageType').value = 'individual';
+  document.getElementById('messageTelegramId').value = currentUserId;
+  document.getElementById('messageTelegramIdLabel').hidden = false;
+  document.getElementById('messageType').dispatchEvent(new Event('change'));
 });
 
 // --- Hammaga pul qo'shish ---
@@ -1285,8 +1337,13 @@ async function openUserModal(userId) {
   document.getElementById('userPurchases').innerHTML = '';
   document.getElementById('userBalanceHistory').innerHTML = '';
   document.getElementById('userModal').hidden = false;
+  document.getElementById('userNote').value = '';
+  document.getElementById('userTags').value = '';
+  document.getElementById('userNoteMsg').textContent = '';
   const data = await api(`admin-users?user_id=${encodeURIComponent(userId)}`);
   const u = data.user || { telegram_id: userId };
+  document.getElementById('userNote').value = u.admin_note || '';
+  document.getElementById('userTags').value = (u.tags || []).join(', ');
   document.getElementById('userModalTitle').textContent = [
     userLabel(u),
     u.full_name && u.username ? u.full_name : null,

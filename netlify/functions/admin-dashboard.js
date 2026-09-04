@@ -18,8 +18,10 @@ exports.handler = async (event) => {
 
   const supabase = getAdminClient();
   try {
-    const [totalUsers, totalClicks, totalPaymentOpens, categoryRows, planRows, paymentRows, eventLogs, categories, plans, ordersResp, inventoryResp, referralsResp] = await Promise.all([
-      countRows(supabase, 'users'),
+    const [totalUsers, usersWithoutPhone, totalClicks, totalPaymentOpens, categoryRows, planRows, paymentRows, eventLogs, categories, plans, ordersResp, inventoryResp, referralsResp] = await Promise.all([
+      // Raqam berganlar — haqiqiy foydalanuvchilar; raqamsizlar alohida sanaladi
+      countRows(supabase, 'users', 'phone=not.is.null'),
+      countRows(supabase, 'users', 'phone=is.null'),
       countRows(supabase, 'analytics_events'),
       countRows(supabase, 'analytics_events', 'event_type=eq.payment_opened'),
       listEventsByType(supabase, 'category_opened', 'category_id'),
@@ -77,6 +79,7 @@ exports.handler = async (event) => {
         ok: true,
         stats: {
           totalUsers,
+          usersWithoutPhone,
           totalClicks,
           totalPaymentOpens,
           totalReferrals,

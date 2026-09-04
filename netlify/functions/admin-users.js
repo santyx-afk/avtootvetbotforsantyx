@@ -74,7 +74,8 @@ exports.handler = async (event) => {
       const uid = String(event.queryStringParameters.user_id).replace(/\D/g, '');
       if (!uid) return json(400, { ok: false, error: 'user_id noto‘g‘ri' });
       const [userRes, walletRes, ordersRes, txRes, plansRes] = await Promise.all([
-        request(db, 'users', { query: `select=telegram_id,username,full_name,phone,phone_verified_at,is_blocked,language_code,created_at,updated_at&telegram_id=eq.${uid}&limit=1` }).catch(() => ({ data: [] })),
+        request(db, 'users', { query: `select=telegram_id,username,full_name,phone,phone_verified_at,is_blocked,language_code,created_at,updated_at,admin_note,tags&telegram_id=eq.${uid}&limit=1` })
+          .catch(() => request(db, 'users', { query: `select=telegram_id,username,full_name,phone,phone_verified_at,is_blocked,language_code,created_at,updated_at&telegram_id=eq.${uid}&limit=1` }).catch(() => ({ data: [] }))),
         request(db, 'user_wallets', { query: `select=balance&user_telegram_id=eq.${uid}&limit=1` }).catch(() => ({ data: [] })),
         request(db, 'orders', { query: `select=order_number,created_at,unique_price,amount,status,order_type,promo_code,payment_method,plan_id&user_telegram_id=eq.${uid}&order=created_at.desc&limit=100` }).catch(() => ({ data: [] })),
         request(db, 'wallet_transactions', { query: `select=amount,type,description,created_at&user_telegram_id=eq.${uid}&order=created_at.desc&limit=100` }).catch(() => ({ data: [] })),
@@ -107,7 +108,7 @@ exports.handler = async (event) => {
       // umuman ko'rinmasdi (qidiruv ham faqat yuklanganlar ichida ishlardi).
       // Endi standart 5000: butun baza bir marta keladi, qidiruv to'liq ishlaydi.
       const limit = Math.min(Math.max(Number(event.queryStringParameters?.limit || 5000), 1), 10000);
-      const cols = 'telegram_id,username,full_name,phone,language_code,is_blocked,created_at,updated_at';
+      const cols = 'telegram_id,username,full_name,phone,phone_verified_at,language_code,is_blocked,created_at,updated_at,admin_note,tags';
       const [usersRes, walletsRes, ordersRes] = await Promise.all([
         request(db, 'users', { query: `select=${cols}&order=created_at.desc&limit=${limit}` })
           .catch(() => request(db, 'users', { query: `select=telegram_id,username,full_name,phone,language_code,created_at&order=created_at.desc&limit=${limit}` })),
@@ -125,9 +126,12 @@ exports.handler = async (event) => {
       }
       const users = (usersRes.data || []).map((u) => {
         const id = String(u.telegram_id);
-        return { ...u, balance: balanceMap[id] || 0, purchases: purchaseMap[id] || 0, last_activity: lastMap[id] || u.updated_at || u.created_at };
+        return { ...u, tags: Array.isArray(u.tags) ? u.tags : [], balance: balanceMap[id] || 0, purchases: purchaseMap[id] || 0, last_activity: lastMap[id] || u.updated_at || u.created_at };
       });
-      return json(200, { ok: true, users });
+      // Raqam bermaganlar "foydalanuvchi safida" emas — panel ularni sukut
+      // bo'yicha yashiradi; sonlar alohida ko'rsatiladi.
+      const withPhone = users.filter((u) => u.phone).length;
+      return json(200, { ok: true, users, counts: { with_phone: withPhone, without_phone: users.length - withPhone } });
     }
 
     if (event.httpMethod === 'POST') {
@@ -140,6 +144,24 @@ exports.handler = async (event) => {
 
       if (!telegram_id) return json(400, { ok: false, error: 'telegram_id talab qilinadi' });
 
+      // Admin izohi va teglar (faqat panel ko'radi)
+      if (action === 'update-note') {
+        if (!telegram_id) return json(400, { ok: false, error: 'telegram_id talab qilinadi' });
+        const adminNote = String(body.admin_note || '').trim().slice(0, 1000) || null;
+        const tags = [...new Set(
+          (Array.isArray(body.tags) ? body.tags : String(body.tags || '').split(','))
+            .map((t) => String(t || '').trim().toLowerCase().slice(0, 30))
+            .filter(Boolean),
+        )].slice(0, 10);
+        const { data } = await request(db, 'users', {
+          method: 'PATCH',
+          query: `telegram_id=eq.${encodeURIComponent(String(telegram_id))}`,
+          headers: { Prefer: 'return=representation' },
+          body: { admin_note: adminNote, tags, updated_at: new Date().toISOString() },
+        });
+        if (!data?.[0]) return json(404, { ok: false, error: 'Foydalanuvchi topilmadi' });
+        return json(200, { ok: true, admin_note: adminNote, tags });
+      }
       if (action === 'block' || action === 'unblock') {
         await request(db, 'users', {
           method: 'PATCH',

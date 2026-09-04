@@ -560,3 +560,14 @@ input[type="checkbox"] { width: 20px; height: 20px; min-height: auto; flex: 0 0 
   cursor: pointer;
 }
 .user-link:hover { color: var(--primary); }
+
+/* Toolbar ichidagi checkbox yorlig'i */
+.inline-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.inline-check input { margin: 0; }

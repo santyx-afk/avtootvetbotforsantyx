@@ -338,6 +338,9 @@
                   <option value="purchases">Xaridlar (ko'pdan)</option>
                   <option value="activity">Oxirgi faollik</option>
                 </select>
+                <label class="inline-check" title="Raqam bermaganlar foydalanuvchi safida emas — sukut bo'yicha yashirin">
+                  <input type="checkbox" id="userShowNoPhone" /> Raqamsizlarni ham ko'rsatish
+                </label>
                 <button id="reloadUsersButton">Yangilash</button>
                 <button id="creditAllButton" class="ghost">💸 Hammaga pul qo'shish</button>
               </div>
@@ -445,6 +448,16 @@
                   </div>
                   <p id="balanceMsg" class="success-text"></p>
                 </div>
+                <h4>Admin izohi va teglar</h4>
+                <div class="grid-form">
+                  <label class="full">Izoh (faqat admin ko'radi)<textarea id="userNote" rows="2" placeholder="Masalan: VIP mijoz, doim vaqtida to'laydi"></textarea></label>
+                  <label class="full">Teglar (vergul bilan)<input id="userTags" placeholder="vip, shubhali, optom" /></label>
+                  <div class="actions full">
+                    <button type="button" id="userNoteSave">Saqlash</button>
+                    <button type="button" id="userModalMsg" class="ghost">✉️ Xabar yozish</button>
+                  </div>
+                </div>
+                <p id="userNoteMsg" class="success-text"></p>
                 <h4>Xaridlar tarixi</h4>
                 <div id="userPurchases" class="table-card"></div>
                 <h4>Balans tarixi</h4>
