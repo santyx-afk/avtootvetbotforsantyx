@@ -12,6 +12,7 @@ import Icon from '../components/Icon.jsx';
 import { useI18n } from '../i18n/I18nProvider.jsx';
 import { apiCall } from '../lib/api.js';
 import { readCache, writeCache } from '../lib/cache.js';
+import { takeCatalogPrefetch } from '../lib/prefetch.js';
 import { useProductActions } from '../hooks/useProductActions.js';
 import { getRecentlyViewed } from '../utils/storage.js';
 import { haptic } from '../telegram/webapp.js';
@@ -72,7 +73,8 @@ export default function Catalog() {
       setStatus('loading');
     }
     try {
-      const res = await apiCall('catalog');
+      // Ilova ochilishida boshlangan so'rov bo'lsa — o'shani kutamiz, yangisini yubormaymiz.
+      const res = await (takeCatalogPrefetch() || apiCall('catalog'));
       setData(res);
       setWishlist(new Set(res.wishlist || []));
       setStatus('ready');

@@ -387,10 +387,13 @@ exports.handler = async (event) => {
   const telegramId = String(tgUser.id);
 
   try {
-    // Telegram manbadan kelganda foydalanuvchini yangilaymiz (JWT'da profil ma'lumoti yo'q).
-    // Blok holati + profil ma'lumotini o'qishni parallel bajaramiz.
+    // Profilni yangilash (upsert) va eskirgan buyurtmalarni tozalash FAQAT
+    // init'da bajariladi — ilgari upsert har bir so'rovda ketardi va bazaga
+    // eng ko'p yuk beradigan so'rov edi. Ikkalasi ham foydalanuvchi qatorini
+    // o'qish bilan parallel ketadi: init bitta baza bosqichidan iborat.
+    const isInit = body.action === 'init';
     const [, userRowRes] = await Promise.all([
-      isTelegramSource
+      isInit && isTelegramSource
         ? upsertUser(supabase, tgUser).catch((e) => console.warn('upsertUser warn:', e?.message))
         : Promise.resolve(),
       request(supabase, 'users', {
@@ -399,6 +402,7 @@ exports.handler = async (event) => {
         console.warn('user row read warn:', e?.message);
         return { data: [] };
       }),
+      isInit ? expireStalePendingOrders(supabase, telegramId) : Promise.resolve(),
     ]);
     const userRow = userRowRes?.data?.[0] || null;
     if (userRow?.is_blocked) {
@@ -419,8 +423,7 @@ exports.handler = async (event) => {
         };
 
     if (body.action === 'init') {
-      // Muddati o'tgan tugallanmagan to'lovlarni avtomatik rad etamiz
-      await expireStalePendingOrders(supabase, telegramId);
+      // Muddati o'tgan to'lovlar yuqorida (expireStalePendingOrders) tozalangan
       const hasPhone = Boolean(userRow?.phone);
       return json(200, {
         ok: true,
@@ -459,7 +462,9 @@ exports.handler = async (event) => {
     if (body.action === 'catalog') {
       const now = Date.now();
 
-      const [bannersRes, categoriesRes, plansRes, reviewsRes, wishlistRes] = await Promise.all([
+      // Stok ham shu paketda — u boshqa so'rovlarga bog'liq emas, ilgari
+      // alohida, ketma-ket bosqich bo'lib kelardi.
+      const [bannersRes, categoriesRes, plansRes, reviewsRes, wishlistRes, stockMap] = await Promise.all([
         request(supabase, 'banners', {
           query: 'select=id,title,subtitle,btn_text,image_url,link,gradient,expires_at&is_active=eq.true&order=sort_order.asc',
         }).catch(() =>
@@ -478,6 +483,7 @@ exports.handler = async (event) => {
         request(supabase, 'wishlist', {
           query: `select=plan_id&user_telegram_id=eq.${telegramId}`,
         }).catch(() => ({ data: [] })),
+        availableStockByPlan(supabase).catch(() => ({})),
       ]);
 
       const banners = (bannersRes.data || []).filter(
@@ -485,7 +491,6 @@ exports.handler = async (event) => {
       );
       const plans = plansRes.data || [];
       const ratingMap = aggregateRatings(reviewsRes.data || []);
-      const stockMap = await availableStockByPlan(supabase).catch(() => ({}));
       const wishlistIds = (wishlistRes.data || []).map((w) => w.plan_id);
 
       // Faqat "yaproq" rejalar (variantlari bo'lmagan) mahsulot sifatida ko'rsatiladi
@@ -522,13 +527,13 @@ exports.handler = async (event) => {
       const productId = body.productId;
       if (!productId) return json(400, { ok: false, error: 'no_product_id' });
 
-      const { data: planRows } = await request(supabase, 'plans', {
-        query: `select=*&id=eq.${productId}&limit=1`,
-      });
-      const p = planRows?.[0];
-      if (!p) return json(404, { ok: false, error: 'not_found' });
-
-      const [reviewsRes, wishRes, settings] = await Promise.all([
+      // Hammasi bitta paketda: reja, sharhlar, wishlist, sozlamalar va shu
+      // rejaning stoki — birortasi boshqasining natijasiga bog'liq emas.
+      // Ilgari bu 3 ta ketma-ket bosqich edi.
+      const [planRes, reviewsRes, wishRes, settings, stockRes] = await Promise.all([
+        request(supabase, 'plans', {
+          query: `select=*&id=eq.${productId}&limit=1`,
+        }),
         request(supabase, 'reviews', {
           query: `select=id,rating,text,admin_reply,user_name,created_at&plan_id=eq.${productId}&is_hidden=eq.false&status=neq.rejected&order=created_at.desc`,
         }).catch(() =>
@@ -540,7 +545,12 @@ exports.handler = async (event) => {
           query: `select=id&user_telegram_id=eq.${telegramId}&plan_id=eq.${productId}&limit=1`,
         }).catch(() => ({ data: [] })),
         fetchSettings(supabase).catch(() => null),
+        request(supabase, 'inventory_items', {
+          query: `select=id&plan_id=eq.${productId}&status=eq.available`,
+        }).catch(() => ({ data: [] })),
       ]);
+      const p = planRes.data?.[0];
+      if (!p) return json(404, { ok: false, error: 'not_found' });
 
       const reviews = (reviewsRes.data || []).map(reviewShape);
       const rating = reviews.length
@@ -557,8 +567,7 @@ exports.handler = async (event) => {
       let stock = null;
       let inStock = true;
       if (auto) {
-        const stockMap = await availableStockByPlan(supabase).catch(() => ({}));
-        stock = stockMap[p.id] || 0;
+        stock = (stockRes.data || []).length;
         inStock = stock > 0;
       }
 
@@ -668,15 +677,16 @@ exports.handler = async (event) => {
       const qty = Math.min(5, Math.max(1, Math.round(Number(body.quantity || 1))));
       if (!productId) return json(400, { ok: false, error: 'no_product_id' });
 
-      let current = 0;
+      // Savat BIR marta o'qiladi: undan ham shu rejaning joriy miqdori, ham
+      // yozuvdan keyingi umumiy son chiqadi (ilgari 3 ta ketma-ket so'rov edi).
+      let items = [];
       try {
-        const { data } = await request(supabase, 'cart_items', {
-          query: `select=quantity&user_telegram_id=eq.${telegramId}&plan_id=eq.${productId}&limit=1`,
-        });
-        current = Number(data?.[0]?.quantity || 0);
+        items = await listCartItems(supabase, telegramId);
       } catch {
-        /* yangi element */
+        /* bo'sh savat deb qaraymiz */
       }
+      const sameId = (i) => String(i.plan_id) === String(productId);
+      const current = Number(items.find(sameId)?.quantity || 0);
       const newQty = Math.min(5, current + qty);
       await createCartItem(supabase, {
         user_telegram_id: telegramId,
@@ -684,13 +694,8 @@ exports.handler = async (event) => {
         quantity: newQty,
       });
 
-      let cartCount = 0;
-      try {
-        const items = await listCartItems(supabase, telegramId);
-        cartCount = items.reduce((s, i) => s + Number(i.quantity || 0), 0);
-      } catch {
-        /* ignore */
-      }
+      const cartCount =
+        items.reduce((s, i) => s + (sameId(i) ? 0 : Number(i.quantity || 0)), 0) + newQty;
       return json(200, { ok: true, cartCount, quantity: newQty });
     }
 
@@ -773,7 +778,11 @@ exports.handler = async (event) => {
     }
 
     if (body.action === 'checkout') {
-      const items = await listCartItems(supabase, telegramId);
+      // Sozlamalar faqat javob uchun kerak — savat bilan parallel o'qiladi.
+      const [items, settings] = await Promise.all([
+        listCartItems(supabase, telegramId),
+        fetchSettings(supabase).catch(() => null),
+      ]);
       const cartItems = (items || []).filter((i) => i.plan);
       if (!cartItems.length) return json(400, { ok: false, error: 'empty_cart' });
 
@@ -782,28 +791,33 @@ exports.handler = async (event) => {
         0,
       );
 
-      // Promo tekshirish
+      // Promo va balans bir-biriga bog'liq emas — parallel o'qiladi.
+      const [promoRes, wallet] = await Promise.all([
+        body.promoCode
+          ? validatePromoCode(
+              supabase,
+              String(body.promoCode).trim(),
+              basePrice,
+              cartItems.map((i) => i.plan.id).filter(Boolean),
+            )
+          : Promise.resolve(null),
+        body.useBalance
+          ? getUserBalance(supabase, telegramId).catch(() => ({ balance: 0 }))
+          : Promise.resolve(null),
+      ]);
+
       let promo = null;
       let discount = 0;
       let cashback = 0;
-      if (body.promoCode) {
-        const res = await validatePromoCode(
-          supabase,
-          String(body.promoCode).trim(),
-          basePrice,
-          cartItems.map((i) => i.plan.id).filter(Boolean),
-        );
-        if (res.ok) {
-          promo = res.promo;
-          discount = res.discount;
-          cashback = res.cashback || 0;
-        }
+      if (promoRes?.ok) {
+        promo = promoRes.promo;
+        discount = promoRes.discount;
+        cashback = promoRes.cashback || 0;
       }
 
       // Balans (server hisoblaydi)
       let balanceUsed = 0;
       if (body.useBalance) {
-        const wallet = await getUserBalance(supabase, telegramId).catch(() => ({ balance: 0 }));
         const payableAfterPromo = Math.max(0, basePrice - discount);
         balanceUsed = Math.min(Number(wallet?.balance || 0), payableAfterPromo);
       }
@@ -819,10 +833,10 @@ exports.handler = async (event) => {
 
       // Reserved inventory OLIB TASHLANDI — checkout inventarni band qilmaydi.
       // Stock faqat to'lov tasdiqlangach tekshiriladi (processApprovedOrderDelivery).
-      await setUserAwaitingReceipt(supabase, telegramId, { current_order_id: order.id }).catch(
-        () => {},
-      );
-      await clearCart(supabase, telegramId).catch(() => {});
+      await Promise.all([
+        setUserAwaitingReceipt(supabase, telegramId, { current_order_id: order.id }).catch(() => {}),
+        clearCart(supabase, telegramId).catch(() => {}),
+      ]);
 
       const fullyCovered = Number(order.unique_price || 0) <= 0;
 
@@ -842,7 +856,6 @@ exports.handler = async (event) => {
         }).catch((e) => console.warn('deliver warn:', e?.message));
       }
 
-      const settings = await fetchSettings(supabase).catch(() => null);
       return json(200, {
         ok: true,
         order_id: order.id,
