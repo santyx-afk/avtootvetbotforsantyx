@@ -66,6 +66,8 @@ const views = {
   leads: document.getElementById('leadsView'),
   referrals: document.getElementById('referralsView'),
   subscriptions: document.getElementById('subscriptionsView'),
+  wallet: document.getElementById('walletView'),
+  audit: document.getElementById('auditView'),
   messages: document.getElementById('messagesView'),
   settings: document.getElementById('settingsView'),
   help: document.getElementById('helpView'),
@@ -107,17 +109,52 @@ function switchView(name) {
 
 function renderStats(stats) {
   const cards = [
+    ['Sotuv (tovar qiymati)', `${money(stats.sales)} UZS`],
+    ['Kartaga tushgan', `${money(stats.cardIncome)} UZS`],
+    ['Balansdan to\'langan', `${money(stats.balancePaid)} UZS`],
+    ['O\'rtacha chek', `${money(stats.avgCheck)} UZS`],
+    ['To\'langan buyurtmalar', stats.funnel?.orders_paid ?? 0],
+    ['Xaridorlar / takroriy', `${stats.uniqueBuyers ?? 0} / ${stats.repeatBuyers ?? 0}`],
+    ['Konversiya (yaratilgan → to\'langan)', `${stats.conversion ?? 0}%`],
+    ['Yangi foydalanuvchilar (raqamli)', `${stats.newUsers ?? 0} (${stats.newUsersWithPhone ?? 0})`],
     ['Foydalanuvchilar (raqam bergan)', stats.totalUsers],
     ['Raqam bermaganlar', stats.usersWithoutPhone ?? 0],
-    ['Jami kliklar', stats.totalClicks],
-    ['To\'lov sahifasi ochilishi', stats.totalPaymentOpens],
-    ['Bugungi tushum', Number(stats.revenueToday || 0).toLocaleString('uz-UZ')],
-    ['Haftalik tushum', Number(stats.revenueWeek || 0).toLocaleString('uz-UZ')],
-    ['Oylik tushum', Number(stats.revenueMonth || 0).toLocaleString('uz-UZ')],
     ['Referallar', stats.totalReferrals || 0],
-    ['Referal bonuslari', Number(stats.referralBonusTotal || 0).toLocaleString('uz-UZ')],
+    ['Referal bonuslari', `${money(stats.referralBonusTotal)} UZS`],
   ];
   document.getElementById('statsCards').innerHTML = cards.map(([label, value]) => `<div class="card"><h3>${esc(label)}</h3><strong>${esc(value ?? 0)}</strong></div>`).join('');
+  const label = document.getElementById('dashRangeLabel');
+  if (label && stats.range) label.textContent = `${stats.range.from} — ${stats.range.to} (Toshkent)`;
+
+  // Hozir kutib turganlar (oraliqqa bog'liq emas)
+  const pending = document.getElementById('pendingCards');
+  if (pending) {
+    pending.innerHTML = [
+      ['⏳ To\'lov kutilmoqda', stats.waitingPaymentCount],
+      ['🧾 Chek tekshirilmoqda', stats.paymentUploadedCount],
+      ['🖐 Qo\'lda ulash kerak', stats.manualRequiredCount],
+      ['📭 Zaxira kutilmoqda', stats.waitingStockCount],
+    ].map(([l, v]) => `<div class="card"><h3>${esc(l)}</h3><strong>${esc(v ?? 0)}</strong></div>`).join('');
+  }
+
+  // Voronka: yaratilgan → to'langan → yetkazilgan (kenglik ulushga qarab)
+  const f = stats.funnel || {};
+  const funnelRoot = document.getElementById('funnel');
+  if (funnelRoot) {
+    const steps = [
+      ['Yangi foydalanuvchi', f.new_users || 0],
+      ['Raqam bergan', f.new_users_phone || 0],
+      ['Buyurtma yaratdi', f.orders_created || 0],
+      ['To\'ladi', f.orders_paid || 0],
+      ['Yetkazildi', f.orders_delivered || 0],
+    ];
+    const max = Math.max(1, ...steps.map((s) => s[1]));
+    funnelRoot.innerHTML = steps.map(([l, v], i) => {
+      const prev = i > 0 ? steps[i - 1][1] : 0;
+      const pct = i > 0 && prev ? Math.round((v / prev) * 100) : null;
+      return `<div class="funnel-row"><span class="funnel-label">${esc(l)}</span><div class="funnel-bar" style="width:${Math.max(4, Math.round((v / max) * 100))}%"></div><span class="funnel-val">${esc(v)}${pct !== null ? ` <small>(${pct}%)</small>` : ''}</span></div>`;
+    }).join('') + `<p class="hint">Muddati o'tgan: ${esc(f.orders_expired || 0)} · Rad/bekor: ${esc(f.orders_rejected || 0)} · Hali kutilmoqda: ${esc(f.orders_waiting || 0)} · Balans to'ldirish: ${esc(f.topups_paid || 0)}</p>`;
+  }
   // API qisman javob qaytarsa ham dashboard qulamasin — har bir ro'yxat guard bilan.
   const list = (rows, fn) => (Array.isArray(rows) ? rows : []).map(fn).join('') || '<li>Ma\'lumot yo\'q</li>';
   document.getElementById('topCategories').innerHTML = list(stats.mostViewedCategories, (item) => `<li>${esc(item.name)}: ${esc(item.total)}</li>`);
@@ -497,10 +534,128 @@ async function loadAttention() {
   }
 }
 
-async function loadDashboard() {
-  const [dash] = await Promise.all([api('admin-dashboard'), loadAttention()]);
-  renderStats(dash.stats);
+function dashboardParams() {
+  const params = new URLSearchParams();
+  const from = document.getElementById('dashFrom')?.value;
+  const to = document.getElementById('dashTo')?.value;
+  if (from) params.set('from', from);
+  if (to) params.set('to', to);
+  const q = params.toString();
+  return q ? `?${q}` : '';
 }
+
+async function loadDashboard() {
+  const [dash] = await Promise.all([api(`admin-dashboard${dashboardParams()}`), loadAttention()]);
+  renderStats(dash.stats);
+  // Serverning tanlagan oralig'ini maydonlarga qaytaramiz (birinchi yuklashda bo'sh edi)
+  if (dash.stats?.range) {
+    const f = document.getElementById('dashFrom');
+    const t = document.getElementById('dashTo');
+    if (f && !f.value) f.value = dash.stats.range.from;
+    if (t && !t.value) t.value = dash.stats.range.to;
+  }
+}
+document.getElementById('dashApply')?.addEventListener('click', () => loadDashboard().catch((e) => alert(e.message)));
+document.querySelectorAll('.dash-quick').forEach((btn) => btn.addEventListener('click', () => {
+  const days = Number(btn.dataset.days || 30);
+  const tz = (d) => d.toLocaleDateString('en-CA', { timeZone: 'Asia/Tashkent' });
+  const now = new Date();
+  document.getElementById('dashTo').value = tz(now);
+  document.getElementById('dashFrom').value = tz(new Date(now.getTime() - (days - 1) * 86400000));
+  loadDashboard().catch((e) => alert(e.message));
+}));
+
+// --- Balans harakatlari ---
+const WALLET_LABEL = { credit: 'To\'ldirish', debit: 'Xarid', refund: 'Qaytarish', bonus: 'Bonus', admin_credit: 'Admin qo\'shdi', admin_debit: 'Admin yechdi', cashback: 'Cashback', referral: 'Referal' };
+async function loadWallet() {
+  const params = new URLSearchParams({ report: 'wallet' });
+  const type = document.getElementById('walletType')?.value;
+  const user = document.getElementById('walletUser')?.value.trim();
+  const from = document.getElementById('walletFrom')?.value;
+  const to = document.getElementById('walletTo')?.value;
+  if (type) params.set('type', type);
+  if (user) params.set('user', user);
+  if (from) params.set('from', from);
+  if (to) params.set('to', to);
+  const root = document.getElementById('walletList');
+  try {
+    const data = await api(`admin-reports?${params.toString()}`);
+    const sel = document.getElementById('walletType');
+    if (sel && sel.options.length <= 1) {
+      sel.innerHTML = '<option value="">Barcha turlar</option>' + (data.types || []).map((t) => `<option value="${esc(t)}">${esc(WALLET_LABEL[t] || t)}</option>`).join('');
+    }
+    const s = data.summary || {};
+    const byType = s.by_type || {};
+    document.getElementById('walletStats').innerHTML = [
+      ['Kirim (jami)', `${money(s.total_in)} UZS`],
+      ['Chiqim (jami)', `${money(s.total_out)} UZS`],
+      ...Object.entries(byType).filter(([, v]) => v.count > 0).map(([t, v]) => [`${WALLET_LABEL[t] || t} (${v.count})`, `${money(v.sum)} UZS`]),
+    ].map(([l, v]) => `<div class="card"><h3>${esc(l)}</h3><strong>${esc(v)}</strong></div>`).join('');
+    const items = data.items || [];
+    root.innerHTML = items.length
+      ? `<table><thead><tr><th>Vaqt</th><th>Mijoz</th><th>Tur</th><th>Summa</th><th>Izoh</th><th>Admin</th></tr></thead><tbody>${items.map((r) => `
+        <tr>
+          <td>${dt(r.created_at)}</td>
+          <td>${userLinkHtml(r.user_telegram_id, userLabel(r.user))}</td>
+          <td><span class="badge">${esc(WALLET_LABEL[r.type] || r.type)}</span></td>
+          <td>${['debit', 'admin_debit'].includes(r.type) ? '−' : '+'}${money(Math.abs(r.amount))}</td>
+          <td>${esc(r.description || '-')}</td>
+          <td>${esc(r.admin_id || '-')}</td>
+        </tr>`).join('')}</tbody></table>${s.truncated ? '<p class="hint">Faqat oxirgi yozuvlar ko\'rsatildi — oraliqni toraytiring.</p>' : ''}`
+      : '<p class="detail-empty">Bu filtr bo\'yicha harakat yo\'q.</p>';
+  } catch (error) {
+    root.innerHTML = `<p class="detail-empty">${esc(error.message || 'Yuklanmadi')}</p>`;
+  }
+}
+document.getElementById('walletApply')?.addEventListener('click', () => loadWallet());
+
+// --- Jurnal (audit) ---
+async function loadAudit() {
+  const params = new URLSearchParams({ report: 'audit' });
+  const action = document.getElementById('auditAction')?.value;
+  const search = document.getElementById('auditSearch')?.value.trim();
+  const from = document.getElementById('auditFrom')?.value;
+  const to = document.getElementById('auditTo')?.value;
+  if (action) params.set('action', action);
+  if (search) params.set('search', search);
+  if (from) params.set('from', from);
+  if (to) params.set('to', to);
+  const root = document.getElementById('auditList');
+  try {
+    const data = await api(`admin-reports?${params.toString()}`);
+    const sel = document.getElementById('auditAction');
+    if (sel && data.actions?.length) {
+      const current = sel.value;
+      const known = new Set([...sel.options].map((o) => o.value));
+      for (const a of data.actions) if (!known.has(a)) sel.insertAdjacentHTML('beforeend', `<option value="${esc(a)}">${esc(a)}</option>`);
+      sel.value = current;
+    }
+    const items = data.items || [];
+    const meta = (m) => {
+      if (!m || typeof m !== 'object' || !Object.keys(m).length) return '-';
+      const s = JSON.stringify(m);
+      return s.length > 140 ? `${s.slice(0, 140)}…` : s;
+    };
+    root.innerHTML = items.length
+      ? `<table><thead><tr><th>Vaqt</th><th>Amal</th><th>Holat</th><th>Buyurtma</th><th>Mijoz</th><th>Tafsilot</th></tr></thead><tbody>${items.map((r) => `
+        <tr>
+          <td>${dt(r.created_at)}</td>
+          <td><strong>${esc(r.action)}</strong></td>
+          <td>${esc(r.status || '-')}</td>
+          <td>${r.order_number ? `<button class="ghost order-detail" data-id="${esc(r.order_id)}">#${esc(r.order_number)}</button>` : '-'}</td>
+          <td>${r.user_telegram_id ? userLinkHtml(r.user_telegram_id, userLabel(r.user)) : '-'}</td>
+          <td class="hint" title="${esc(JSON.stringify(r.metadata || {}))}">${esc(meta(r.metadata))}</td>
+        </tr>`).join('')}</tbody></table>`
+      : '<p class="detail-empty">Yozuv topilmadi.</p>';
+  } catch (error) {
+    root.innerHTML = `<p class="detail-empty">${esc(error.message || 'Yuklanmadi')}</p>`;
+  }
+}
+document.getElementById('auditApply')?.addEventListener('click', () => loadAudit());
+document.getElementById('auditList')?.addEventListener('click', (event) => {
+  const btn = event.target.closest('.order-detail');
+  if (btn) openOrderDetail(btn.dataset.id).catch((e) => alert(e.message));
+});
 
 async function loadData() {
   const data = await api('admin-data');
@@ -920,6 +1075,9 @@ document.querySelectorAll('.nav-link').forEach((button) => button.addEventListen
   const title = document.getElementById('topbarTitle');
   if (title) title.textContent = button.textContent.trim();
   closeSidebar();
+  // Og'ir hisobotlar faqat bo'lim ochilganda yuklanadi
+  if (button.dataset.view === 'wallet') loadWallet();
+  if (button.dataset.view === 'audit') loadAudit();
 }));
 document.getElementById('newCategoryButton').addEventListener('click', () => fillCategoryForm());
 document.getElementById('newPlanButton').addEventListener('click', () => fillPlanForm());

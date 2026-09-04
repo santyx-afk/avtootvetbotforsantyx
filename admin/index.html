@@ -26,6 +26,8 @@
           <button data-view="users" class="nav-link"><span class="nav-ico">👥</span> Foydalanuvchilar</button>
           <button data-view="orders" class="nav-link"><span class="nav-ico">🛒</span> Buyurtmalar</button>
           <button data-view="subscriptions" class="nav-link"><span class="nav-ico">📅</span> Obunalar</button>
+          <button data-view="wallet" class="nav-link"><span class="nav-ico">👛</span> Balans harakatlari</button>
+          <button data-view="audit" class="nav-link"><span class="nav-ico">📜</span> Jurnal</button>
           <button data-view="leads" class="nav-link"><span class="nav-ico">📥</span> Leadlar <span id="leadsNewBadge" class="nav-badge" hidden></span></button>
           <button data-view="referrals" class="nav-link"><span class="nav-ico">🤝</span> Referallar</button>
           <button data-view="messages" class="nav-link"><span class="nav-ico">✉️</span> Xabar yuborish</button>
@@ -64,11 +66,29 @@
                 </div>
                 <div id="attentionList" class="table-card"></div>
               </div>
-              <div class="cards" id="statsCards"></div>
-              <div class="card" style="margin-bottom:1rem">
-                <h3>Haftalik tushum grafigi</h3>
-                <div class="chart-wrap"><canvas id="revenueChart"></canvas></div>
+              <!-- Sana oralig'i (Toshkent kunlari): tushum, voronka, grafik shu oraliq bo'yicha -->
+              <div class="toolbar" id="dashRange">
+                <input id="dashFrom" type="date" title="Dan" />
+                <input id="dashTo" type="date" title="Gacha" />
+                <button id="dashApply">Ko'rsatish</button>
+                <button class="ghost dash-quick" data-days="1">Bugun</button>
+                <button class="ghost dash-quick" data-days="7">7 kun</button>
+                <button class="ghost dash-quick" data-days="30">30 kun</button>
+                <button class="ghost dash-quick" data-days="90">90 kun</button>
+                <span class="hint" id="dashRangeLabel"></span>
               </div>
+              <div class="cards" id="statsCards"></div>
+              <div class="two-col">
+                <div class="card" style="margin-bottom:1rem">
+                  <h3>Tushum grafigi (kunlik)</h3>
+                  <div class="chart-wrap"><canvas id="revenueChart"></canvas></div>
+                </div>
+                <div class="card" style="margin-bottom:1rem">
+                  <h3>Voronka (tanlangan oraliq)</h3>
+                  <div id="funnel" class="funnel"></div>
+                </div>
+              </div>
+              <div class="cards" id="pendingCards"></div>
               <div class="card" style="margin-bottom:1rem">
                 <h3>So'nggi buyurtmalar</h3>
                 <div id="recentOrders" class="table-card"></div>
@@ -409,6 +429,32 @@
               <div class="cards" id="subStats"></div>
               <p class="hint">Eslatmalar har kuni soat 09:00 da avtomatik ketadi (3 kun va 1 kun qolganda, tugaganda). Bu yerdan qo'lda uzaytirish, eslatma yuborish yoki bekor qilish mumkin.</p>
               <div id="subList" class="table-card"></div>
+            </section>
+
+            <section id="walletView" class="view" hidden>
+              <div class="toolbar">
+                <h2>Balans harakatlari</h2>
+                <select id="walletType"><option value="">Barcha turlar</option></select>
+                <input id="walletUser" placeholder="Telegram ID" />
+                <input id="walletFrom" type="date" title="Dan" />
+                <input id="walletTo" type="date" title="Gacha" />
+                <button id="walletApply">Ko'rsatish</button>
+              </div>
+              <div class="cards" id="walletStats"></div>
+              <div id="walletList" class="table-card"></div>
+            </section>
+
+            <section id="auditView" class="view" hidden>
+              <div class="toolbar">
+                <h2>Jurnal (audit)</h2>
+                <select id="auditAction"><option value="">Barcha amallar</option></select>
+                <input id="auditSearch" placeholder="Buyurtma № yoki Telegram ID" />
+                <input id="auditFrom" type="date" title="Dan" />
+                <input id="auditTo" type="date" title="Gacha" />
+                <button id="auditApply">Ko'rsatish</button>
+              </div>
+              <p class="hint">Tizimdagi barcha muhim amallar: to'lov aniqlandi, yetkazildi, qo'lda tasdiqlandi, muddat o'tdi, balans o'zgardi, obuna uzaytirildi va h.k.</p>
+              <div id="auditList" class="table-card"></div>
             </section>
 
             <section id="messagesView" class="view" hidden>
