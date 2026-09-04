@@ -72,7 +72,7 @@ exports.handler = async (event) => {
         status: 'queued',
       });
       if (!job) return json(500, { ok: false, error: 'Navbatga qo\'yib bo\'lmadi' });
-      await queueJob(db, job.id);
+      await queueJob(db, job.id, { fromStatus: 'queued' });
       return json(200, { ok: true, job, message: `Navbatga qo'yildi: ${job.total} kishi. Jarayon pastdagi tarixda ko'rinadi.` });
     }
 

@@ -37,13 +37,15 @@ async function toggleWaitlist(supabase, telegramId, planId) {
   return { waiting: true };
 }
 
-// Reja uchun zaxira paydo bo'lgach navbatdagilarga xabar (inventar
-// qo'shilganda chaqiriladi). Zaxira hali yo'q bo'lsa hech narsa qilmaydi.
-async function notifyWaitlist(supabase, planId) {
+// Reja uchun zaxira paydo bo'lgach navbatdagilarga xabar. Inventar
+// qo'shilganda qisqa partiya (limit) yuboriladi — funksiya 10 soniyaga
+// sig'sin; qolganlarini maintenance cron (notifyPendingWaitlists) yuboradi.
+// Zaxira hali yo'q bo'lsa hech narsa qilmaydi.
+async function notifyWaitlist(supabase, planId, { limit = 30 } = {}) {
   if (!planId) return 0;
   const [{ data: stock }, { data: waiting }, plan] = await Promise.all([
     request(supabase, 'inventory_items', { query: toQuery({ select: 'id', plan_id: `eq.${planId}`, status: 'eq.available', limit: 1 }) }).catch(() => ({ data: [] })),
-    request(supabase, 'stock_waitlist', { query: toQuery({ select: 'id,user_telegram_id', plan_id: `eq.${planId}`, notified: 'eq.false', order: 'created_at.asc', limit: 500 }) }).catch(() => ({ data: [] })),
+    request(supabase, 'stock_waitlist', { query: toQuery({ select: 'id,user_telegram_id', plan_id: `eq.${planId}`, notified: 'eq.false', order: 'created_at.asc', limit: Math.max(1, Math.min(500, limit)) }) }).catch(() => ({ data: [] })),
     fetchPlan(supabase, planId).catch(() => null),
   ]);
   if (!stock?.length || !waiting?.length) return 0;
@@ -65,4 +67,20 @@ async function notifyWaitlist(supabase, planId) {
   return sent;
 }
 
-module.exports = { isWaiting, toggleWaitlist, notifyWaitlist };
+// Cron: navbatda kutayotganlar bor va zaxirasi bo'lgan rejalar bo'yicha
+// qolgan xabarlarni yuborish (vaqt budjeti ichida).
+async function notifyPendingWaitlists(supabase, { budgetMs = 4000 } = {}) {
+  const deadline = Date.now() + budgetMs;
+  const { data } = await request(supabase, 'stock_waitlist', {
+    query: toQuery({ select: 'plan_id', notified: 'eq.false', limit: 1000 }),
+  }).catch(() => ({ data: [] }));
+  const planIds = [...new Set((data || []).map((r) => r.plan_id).filter(Boolean))];
+  let sent = 0;
+  for (const planId of planIds) {
+    if (Date.now() > deadline) break;
+    sent += await notifyWaitlist(supabase, planId, { limit: 25 }).catch(() => 0);
+  }
+  return sent;
+}
+
+module.exports = { isWaiting, toggleWaitlist, notifyWaitlist, notifyPendingWaitlists };

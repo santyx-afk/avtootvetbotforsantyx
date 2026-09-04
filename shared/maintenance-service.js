@@ -93,7 +93,10 @@ async function runMaintenance(supabase) {
     console.warn('low stock check warn:', e?.message);
     return 0;
   });
-  return { expired: expired.length, resumed, retries: retries.length, broadcasts: broadcasts.length, lowStock };
+  // "Kelganda xabar ber" navbati — inventar kelgan rejalar bo'yicha qolgan xabarlar.
+  const { notifyPendingWaitlists } = require('./stock-waitlist');
+  const waitlist = await notifyPendingWaitlists(supabase, { budgetMs: 3000 }).catch(() => 0);
+  return { expired: expired.length, resumed, retries: retries.length, broadcasts: broadcasts.length, lowStock, waitlist };
 }
 
 module.exports = { runMaintenance, processRetryQueue, resumeStuckDeliveries };

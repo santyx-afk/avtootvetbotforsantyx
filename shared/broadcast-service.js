@@ -103,14 +103,23 @@ async function getJob(supabase, jobId) {
   return data?.[0] || null;
 }
 
-async function patchJob(supabase, jobId, patch) {
+async function patchJob(supabase, jobId, patch, conditions = {}) {
   const { data } = await request(supabase, 'broadcast_jobs', {
     method: 'PATCH',
-    query: toQuery({ id: `eq.${jobId}` }),
+    // conditions — atomik o'tish: shart bajarilmasa 0 qator qaytadi (null).
+    query: toQuery({ id: `eq.${jobId}`, ...conditions }),
     headers: { Prefer: 'return=representation' },
     body: { ...patch, updated_at: new Date().toISOString() },
   });
   return data?.[0] || null;
+}
+
+// Sozlamalar (admin ID) qisqa muddat xotirada — har xabarda bazaga bormaslik uchun.
+let settingsCache = { at: 0, value: null };
+async function cachedSettings(supabase) {
+  if (Date.now() - settingsCache.at < 60000) return settingsCache.value;
+  settingsCache = { at: Date.now(), value: await fetchSettings(supabase).catch(() => null) };
+  return settingsCache.value;
 }
 
 async function createJob(supabase, { kind, segment, adminTelegramId, text = null, status }) {
@@ -148,7 +157,7 @@ async function primaryAdminId(supabase) {
 
 async function isAdmin(supabase, telegramId) {
   if (isAdminTelegramId(telegramId)) return true;
-  const settings = await fetchSettings(supabase).catch(() => null);
+  const settings = await cachedSettings(supabase);
   return adminChatIds(settings).includes(String(telegramId));
 }
 
@@ -186,6 +195,9 @@ async function startAdminBroadcast(supabase, { segment }) {
 async function handleAdminBroadcastMessage({ supabase, message }) {
   const fromId = String(message?.from?.id || '');
   if (!fromId) return false;
+  // Faqat adminlar uchun — oddiy foydalanuvchi xabarida bazaga borilmaydi
+  // (webhook eng issiq yo'l; sozlamalar 60 soniya xotirada).
+  if (!(await isAdmin(supabase, fromId))) return false;
   const state = await fetchUserState(supabase, fromId).catch(() => ({}));
   const jobId = state?.[STATE_KEY];
   if (!jobId) return false;
@@ -197,13 +209,17 @@ async function handleAdminBroadcastMessage({ supabase, message }) {
     await clearState();
     return false;
   }
-  if (!(await isAdmin(supabase, fromId))) {
-    await clearState();
-    return false;
-  }
 
-  await patchJob(supabase, jobId, { from_chat_id: String(message.chat.id), message_id: message.message_id, status: 'awaiting_confirm' });
+  // Atomik: faqat 'awaiting_message' holatidan o'tadi (ikki xabar ketma-ket
+  // kelsa ikkinchisi bu ishga biriktirilmaydi).
+  const attached = await patchJob(
+    supabase,
+    jobId,
+    { from_chat_id: String(message.chat.id), message_id: message.message_id, status: 'awaiting_confirm' },
+    { status: 'eq.awaiting_message' },
+  );
   await clearState();
+  if (!attached) return false;
 
   // Eski "kutilyapti" xabaridan tugmani olib tashlaymiz.
   if (job.prompt_chat_id && job.prompt_message_id) {
@@ -262,9 +278,17 @@ async function notifyAdminProgress(supabase, job, text, keyboard = null) {
   if (to) await sendMessage(to, text, keyboard).catch(() => {});
 }
 
-// Tasdiqlangan ishni navbatga qo'yish va yuborishni boshlash.
-async function queueJob(supabase, jobId) {
-  const job = await patchJob(supabase, jobId, { status: 'queued', started_at: new Date().toISOString(), error: null });
+// Tasdiqlangan ishni navbatga qo'yish va yuborishni boshlash. Atomik:
+// faqat kutilayotgan holatdan o'tadi — tugma ikki marta bosilsa (yoki
+// Telegram callback'ni qayta yuborsa) ikkinchi chaqiruv null oladi va
+// ikkinchi yuboruvchi ishga tushmaydi.
+async function queueJob(supabase, jobId, { fromStatus = 'awaiting_confirm' } = {}) {
+  const job = await patchJob(
+    supabase,
+    jobId,
+    { status: 'queued', started_at: new Date().toISOString(), error: null },
+    { status: `eq.${fromStatus}` },
+  );
   if (!job) return null;
   await notifyAdminProgress(supabase, job, `⏳ Yuborilmoqda… 0/${job.total}`);
   const triggered = await triggerBackground(jobId);
@@ -304,13 +328,12 @@ async function handleBroadcastCallback({ supabase, callbackQuery }) {
     return true;
   }
   if (action === 'send') {
-    const job = await getJob(supabase, jobId);
-    if (!job || job.status !== 'awaiting_confirm') {
-      await answerCallbackQuery(callbackQuery.id, job ? `Holat: ${job.status}` : 'Ish topilmadi').catch(() => {});
-      return true;
-    }
     await answerCallbackQuery(callbackQuery.id, 'Yuborish boshlandi').catch(() => {});
-    await queueJob(supabase, jobId);
+    const queued = await queueJob(supabase, jobId);
+    if (!queued) {
+      const job = await getJob(supabase, jobId).catch(() => null);
+      await answerCallbackQuery(callbackQuery.id, job ? `Allaqachon: ${job.status}` : 'Ish topilmadi').catch(() => {});
+    }
     return true;
   }
   return true;
@@ -327,7 +350,11 @@ async function processJob(supabase, jobInput, { budgetMs = 13 * 60 * 1000 } = {}
   }
   const recipients = Array.isArray(job.recipients) ? job.recipients : [];
   let { cursor = 0, sent = 0, failed = 0 } = job;
-  job = (await patchJob(supabase, job.id, { status: 'sending' })) || job;
+  // Qulf: faqat queued/sending holatidan; parallel chaqiruv (cron + background)
+  // bir xil cursor'dan boshlamasin — ikkinchisi bu yerda to'xtaydi.
+  const locked = await patchJob(supabase, job.id, { status: 'sending' }, { status: 'in.(queued,sending)' });
+  if (!locked) return getJob(supabase, job.id);
+  job = locked;
   const deadline = Date.now() + budgetMs;
   let lastProgressAt = Date.now();
 
