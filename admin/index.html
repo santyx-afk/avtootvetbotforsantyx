@@ -15,7 +15,7 @@
       <aside class="sidebar" id="sidebar">
         <div class="sidebar-brand">⚡ Admin Panel</div>
         <nav class="nav">
-          <button data-view="dashboard" class="nav-link active"><span class="nav-ico">📊</span> Dashboard</button>
+          <button data-view="dashboard" class="nav-link active"><span class="nav-ico">📊</span> Dashboard <span id="attentionBadge" class="nav-badge" hidden></span></button>
           <button data-view="categories" class="nav-link"><span class="nav-ico">🗂️</span> Kategoriyalar</button>
           <button data-view="plans" class="nav-link"><span class="nav-ico">📦</span> Rejalar</button>
           <button data-view="inventory" class="nav-link"><span class="nav-ico">🔑</span> Inventory</button>
@@ -55,6 +55,14 @@
 
           <div id="appView" hidden>
             <section id="dashboardView" class="view">
+              <!-- Muammoli buyurtmalar: qo'lda ulash, zaxira yo'q, yetkazish xato, chek, istisno navbati -->
+              <div class="card attention-card" id="attentionCard" style="margin-bottom:1rem">
+                <div class="toolbar" style="margin:0 0 .5rem">
+                  <h3 style="margin:0">⚠️ E'tibor talab qiladi <span id="attentionCount" class="badge">0</span></h3>
+                  <button id="attentionRefresh" class="ghost" type="button">Yangilash</button>
+                </div>
+                <div id="attentionList" class="table-card"></div>
+              </div>
               <div class="cards" id="statsCards"></div>
               <div class="card" style="margin-bottom:1rem">
                 <h3>Haftalik tushum grafigi</h3>
@@ -346,13 +354,20 @@
                 <input id="orderSearch" type="search" placeholder="№ yoki Telegram ID" />
                 <select id="orderStatusFilter">
                   <option value="">Barchasi</option>
-                  <option>pending_payment</option><option>payment_uploaded</option><option>checking</option>
+                  <option>waiting_payment</option><option>pending_payment</option><option>payment_uploaded</option><option>checking</option>
                   <option>payment_detected</option><option>approved</option><option>delivering</option>
                   <option>waiting_stock</option><option>completed</option><option>rejected</option>
                   <option>cancelled</option><option>expired</option><option>failed</option>
                 </select>
+                <select id="orderType" title="Buyurtma turi">
+                  <option value="">Xarid + to'ldirish</option>
+                  <option value="purchase">Faqat xarid</option>
+                  <option value="topup">Faqat balans to'ldirish</option>
+                </select>
+                <input id="orderFrom" type="date" title="Sanadan (Toshkent)" />
+                <input id="orderTo" type="date" title="Sanagacha (Toshkent)" />
                 <button id="reloadOrdersButton">Yangilash</button>
-                <button id="exportOrdersCsv" class="ghost">CSV Export</button>
+                <button id="exportOrdersCsv" class="ghost" title="Filtr bo'yicha barcha buyurtmalar">CSV Export</button>
               </div>
               <div id="ordersCount" class="hint"></div>
               <div id="ordersList" class="table-card"></div>

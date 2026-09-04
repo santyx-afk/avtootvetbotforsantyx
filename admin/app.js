@@ -437,8 +437,53 @@ function renderUsers(filter = '') {
   if (moreBtn) moreBtn.hidden = filtered.length <= shown.length;
 }
 
+// --- E'tibor talab qiladigan buyurtmalar (Dashboard bloki) ---
+const ATTENTION_ICON = { manual: '🖐', stock: '📭', failed: '⚠️', receipt: '🧾', exception: '🚨', retry: '🔁' };
+
+function renderAttention(items = []) {
+  const root = document.getElementById('attentionList');
+  const count = document.getElementById('attentionCount');
+  const badge = document.getElementById('attentionBadge');
+  if (count) count.textContent = String(items.length);
+  if (badge) {
+    badge.textContent = String(items.length);
+    badge.hidden = items.length === 0;
+  }
+  if (!root) return;
+  if (!items.length) {
+    root.innerHTML = '<p class="detail-empty">Hammasi joyida — muammoli buyurtma yo\'q.</p>';
+    return;
+  }
+  root.innerHTML = `<table><thead><tr><th>№</th><th>Mijoz</th><th>Obuna</th><th>Summa</th><th>Muammo</th><th>Vaqt</th><th>Amal</th></tr></thead><tbody>${items.map((it) => `
+    <tr>
+      <td>${esc(it.order_number)}</td>
+      <td>${userLinkHtml(it.user_telegram_id, userLabel(it.user))}</td>
+      <td>${esc(it.plan_name)}</td>
+      <td>${money(it.amount)}</td>
+      <td>${it.kinds.map((k, i) => `<span class="badge">${ATTENTION_ICON[k] || ''} ${esc(it.reasons[i])}</span>`).join(' ')}${it.note ? `<div class="hint">${esc(it.note)}</div>` : ''}</td>
+      <td>${dt(it.created_at)}</td>
+      <td>
+        <button class="ghost order-detail" data-id="${esc(it.id)}">${it.kinds.includes('manual') ? '📦 Yetkazish' : 'Batafsil'}</button>
+        ${it.kinds.includes('stock') ? `<button class="ghost attention-stock" data-plan="${esc(it.plan_id || '')}">🔑 Inventar</button>` : ''}
+        ${it.kinds.includes('failed') || it.kinds.includes('stock') || it.kinds.includes('exception') ? `<button class="ghost order-action" data-action="retry_delivery" data-id="${esc(it.id)}">Retry</button>` : ''}
+        ${it.kinds.includes('receipt') ? `<button class="ghost order-action" data-action="approve" data-id="${esc(it.id)}">Approve</button>` : ''}
+      </td>
+    </tr>`).join('')}</tbody></table>`;
+}
+
+async function loadAttention() {
+  try {
+    const data = await api('admin-orders?attention=1');
+    renderAttention(data.items || []);
+  } catch (error) {
+    const root = document.getElementById('attentionList');
+    if (root) root.innerHTML = `<p class="detail-empty">${esc(error.message || 'Yuklanmadi')}</p>`;
+  }
+}
+
 async function loadDashboard() {
-  renderStats((await api('admin-dashboard')).stats);
+  const [dash] = await Promise.all([api('admin-dashboard'), loadAttention()]);
+  renderStats(dash.stats);
 }
 
 async function loadData() {
@@ -456,14 +501,27 @@ const ORDERS_PAGE = 100;
 // Buyurtmalar. Ilgari server qat'iy 50 ta qaytarardi va frontend uni oshirmasdi
 // — 500+ buyurtmadan faqat oxirgi 50 tasi ko'rinardi. Endi qidiruv (№ yoki
 // Telegram ID) va "Yana yuklash" (offset) bor.
-async function loadOrders({ append = false } = {}) {
+// Joriy filtrlar (holat, tur, sana oralig'i, qidiruv) — ro'yxat va CSV uchun bir xil.
+function orderFilterParams() {
+  const params = new URLSearchParams();
   const status = document.getElementById('orderStatusFilter')?.value || '';
   const search = document.getElementById('orderSearch')?.value.trim() || '';
-  const offset = append ? state.orders.length : 0;
-
-  const params = new URLSearchParams({ limit: String(ORDERS_PAGE), offset: String(offset) });
+  const type = document.getElementById('orderType')?.value || '';
+  const from = document.getElementById('orderFrom')?.value || '';
+  const to = document.getElementById('orderTo')?.value || '';
   if (status) params.set('status', status);
   if (search) params.set('search', search);
+  if (type) params.set('type', type);
+  if (from) params.set('from', from);
+  if (to) params.set('to', to);
+  return params;
+}
+
+async function loadOrders({ append = false } = {}) {
+  const offset = append ? state.orders.length : 0;
+  const params = orderFilterParams();
+  params.set('limit', String(ORDERS_PAGE));
+  params.set('offset', String(offset));
 
   const data = await api(`admin-orders?${params.toString()}`);
   const batch = data.orders || [];
@@ -1385,6 +1443,14 @@ async function openInvDetail(id) {
   }
 }
 
+// Qo'lda yetkazish formasi qachon ko'rinadi: to'lov qabul qilingan, lekin
+// hali yetkazilmagan (qo'lda ulanadigan reja, zaxira yo'q, yetkazish xato).
+function canDeliverManually(d) {
+  if (!d || d.order_type === 'topup') return false;
+  if (['rejected', 'cancelled', 'expired', 'waiting_payment', 'pending_payment', 'payment_uploaded', 'checking'].includes(d.status)) return false;
+  return d.delivery.status !== 'delivered' && d.status !== 'completed';
+}
+
 // --- Buyurtma batafsil: pul taqsimoti, yetkazilgan akkaunt, vaqt chizig'i ---
 async function openOrderDetail(id) {
   const modal = document.getElementById('orderDetailModal');
@@ -1428,6 +1494,13 @@ async function openOrderDetail(id) {
       <h4>Yetkazilgan akkaunt</h4>
       ${delivered}
       ${d.delivery.error ? `<p class="detail-empty">Yetkazishda xato: ${esc(d.delivery.error)} (${esc(d.delivery.attempts)} urinish)</p>` : ''}
+      ${canDeliverManually(d) ? `
+      <h4>📦 Qo'lda yetkazish</h4>
+      <p class="hint">${d.delivery.status === 'manual_required'
+        ? 'Bu reja qo\'lda ulanadi. Login/parol, kalit yoki yo\'riqnomani yozing — mijozga bot orqali ketadi, buyurtma yakunlanadi.'
+        : 'Avtomatik yetkazish o\'tmagan bo\'lsa, ma\'lumotni o\'zingiz yuborishingiz mumkin — mijozga bot orqali ketadi, buyurtma yakunlanadi.'}</p>
+      <textarea id="manualDeliverText" rows="4" style="width:100%" placeholder="Login: ...&#10;Parol: ...&#10;Yo'riqnoma: ..."></textarea>
+      <div class="actions"><button type="button" id="manualDeliverBtn" data-id="${esc(d.id)}">Mijozga yuborish va yakunlash</button></div>` : ''}
       <h4>Vaqt chizig'i</h4>
       <div class="detail-grid">
         ${cell('Yaratilgan', dt(d.timeline.created_at))}
@@ -1476,18 +1549,72 @@ document.getElementById('orderSearch')?.addEventListener('input', () => {
   clearTimeout(orderSearchTimer);
   orderSearchTimer = setTimeout(() => loadOrders().catch((e) => alert(e.message)), 350);
 });
-document.getElementById('exportOrdersCsv')?.addEventListener('click', () => {
-  const header = ['№', 'User', 'Reja', 'Summa', 'Promo', 'Chegirma', 'Balansdan', 'Cashback', 'Status', 'Delivery', 'Vaqt'];
-  const rows = [header, ...state.orders.map((o) => [
-    o.order_number, o.user_telegram_id, o.plan_name || '-',
-    o.unique_price ?? o.amount, o.promo_code || '', o.discount_amount || 0,
-    o.balance_used || 0, o.cashback_amount || 0,
-    o.status, o.delivery_status || '-',
-    new Date(o.created_at).toLocaleString('uz-UZ'),
-  ])];
-  exportCsv('orders.csv', rows);
+['orderType', 'orderFrom', 'orderTo'].forEach((id) => {
+  document.getElementById(id)?.addEventListener('change', () => loadOrders().catch((e) => alert(e.message)));
 });
-document.getElementById('ordersList')?.addEventListener('click', async (event) => {
+// CSV: faqat yuklangan sahifa emas — joriy filtr bo'yicha BARCHA buyurtmalar
+// (sahifalab yig'iladi).
+document.getElementById('exportOrdersCsv')?.addEventListener('click', async (event) => {
+  const btn = event.currentTarget;
+  btn.disabled = true;
+  try {
+    const all = [];
+    let total = Infinity;
+    while (all.length < total && all.length < 20000) {
+      const params = orderFilterParams();
+      params.set('limit', '500');
+      params.set('offset', String(all.length));
+      const data = await api(`admin-orders?${params.toString()}`);
+      const batch = data.orders || [];
+      total = Number(data.total ?? batch.length);
+      all.push(...batch);
+      if (!batch.length) break;
+    }
+    const header = ['№', 'User', 'Tur', 'Reja', 'Summa', 'Promo', 'Chegirma', 'Balansdan', 'Cashback', 'Status', 'Delivery', 'Vaqt'];
+    const rows = [header, ...all.map((o) => [
+      o.order_number, o.user_telegram_id, o.order_type || 'purchase', o.plan_name || '-',
+      o.unique_price ?? o.amount, o.promo_code || '', o.discount_amount || 0,
+      o.balance_used || 0, o.cashback_amount || 0,
+      o.status, o.delivery_status || '-',
+      new Date(o.created_at).toLocaleString('uz-UZ'),
+    ])];
+    exportCsv('orders.csv', rows);
+  } catch (error) {
+    alert(error.message || 'Eksport xatosi');
+  } finally {
+    btn.disabled = false;
+  }
+});
+// Dashboard'dagi muammoli buyurtmalar: "Inventar" tugmasi rejani tanlab
+// Inventory bo'limiga o'tadi; qolgan tugmalar buyurtmalar ro'yxati bilan bir xil.
+document.getElementById('attentionRefresh')?.addEventListener('click', () => loadAttention());
+document.getElementById('attentionList')?.addEventListener('click', (event) => {
+  const stockBtn = event.target.closest('.attention-stock');
+  if (!stockBtn) return;
+  const select = document.getElementById('inventoryPlanId');
+  if (select && stockBtn.dataset.plan) select.value = stockBtn.dataset.plan;
+  switchView('inventory');
+  loadInventory().catch(() => {});
+});
+// Buyurtma tafsilotidagi "Qo'lda yetkazish" formasi
+document.getElementById('orderDetailBody')?.addEventListener('click', async (event) => {
+  const btn = event.target.closest('#manualDeliverBtn');
+  if (!btn) return;
+  const text = document.getElementById('manualDeliverText')?.value.trim() || '';
+  if (!text) { alert('Mijozga yuboriladigan matnni yozing (login/parol, kalit yoki yo\'riqnoma).'); return; }
+  if (!confirm('Matn mijozga bot orqali yuboriladi va buyurtma "yetkazildi" deb yakunlanadi. Davom etilsinmi?')) return;
+  btn.disabled = true;
+  try {
+    await api('admin-orders', { method: 'POST', body: JSON.stringify({ action: 'deliver_manual', orderId: btn.dataset.id, text }) });
+    alert('Yuborildi va buyurtma yakunlandi.');
+    await openOrderDetail(btn.dataset.id);
+    await Promise.all([loadOrders(), loadDashboard()]);
+  } catch (error) {
+    alert(error.message || 'Xatolik');
+    btn.disabled = false;
+  }
+});
+function handleOrderListClick(event) {
   const detailBtn = event.target.closest('.order-detail');
   if (detailBtn) {
     openOrderDetail(detailBtn.dataset.id).catch((e) => alert(e.message));
@@ -1495,6 +1622,11 @@ document.getElementById('ordersList')?.addEventListener('click', async (event) =
   }
   const btn = event.target.closest('.order-action');
   if (!btn) return;
+  runOrderAction(btn).catch((e) => alert(e.message));
+}
+document.getElementById('attentionList')?.addEventListener('click', handleOrderListClick);
+document.getElementById('ordersList')?.addEventListener('click', handleOrderListClick);
+async function runOrderAction(btn) {
   if (btn.dataset.action === 'mark_paid'
     && !confirm('To\'lov haqiqatan keldimi? Buyurtma to\'langan deb belgilanadi va mijozga yetkaziladi.')) return;
   btn.disabled = true;
@@ -1517,7 +1649,7 @@ document.getElementById('ordersList')?.addEventListener('click', async (event) =
   }
   await loadOrders();
   await loadDashboard();
-});
+}
 
 // --- Inventory ---
 document.getElementById('inventoryFilterForm')?.addEventListener('submit', async (event) => {

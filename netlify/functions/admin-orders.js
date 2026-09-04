@@ -12,11 +12,123 @@ const {
   fetchPlan,
   creditOrderCashback,
   markOrderPaidManually,
+  createDeliveryLog,
+  createSubscriptionFromOrder,
+  createAuditLog,
 } = require('../../shared/db');
 const { processApprovedDelivery } = require('../../shared/delivery-service');
 const { settlePaidOrder } = require('../../shared/humo-payment-service');
 const { processReferralPayout } = require('../../shared/referral-service');
 const { sendMessage } = require('../../shared/telegram');
+const { escapeHtml } = require('../../shared/messages');
+const { markOrderNotification } = require('../../shared/admin-notify');
+
+// Sana filtri faqat YYYY-MM-DD ko'rinishida qabul qilinadi.
+function safeDate(value) {
+  const v = String(value || '').trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : '';
+}
+
+// Buyurtmalar ro'yxati uchun PostgREST filtrlari. Bir nechta shart (sana
+// oralig'i, tur, qidiruv) bitta `and=(...)` guruhiga yig'iladi — bir xil
+// ustunga ikki filtr (gte + lte) oddiy query obyektida sig'maydi.
+function buildOrderFilters({ status, from, to, type, search }) {
+  const query = {};
+  const parts = [];
+  if (status) query.status = `eq.${status}`;
+  // Toshkent vaqti (UTC+5) bo'yicha kun chegaralari
+  if (from) parts.push(`created_at.gte.${from}T00:00:00+05:00`);
+  if (to) parts.push(`created_at.lte.${to}T23:59:59.999+05:00`);
+  if (type === 'topup') query.order_type = 'eq.topup';
+  else if (type === 'purchase') parts.push('or(order_type.eq.purchase,order_type.is.null)');
+  if (search) parts.push(`or(order_number.ilike.*${search}*,user_telegram_id.ilike.*${search}*)`);
+  if (parts.length) query.and = `(${parts.join(',')})`;
+  return query;
+}
+
+const ATTENTION_COLS = 'id,order_number,user_telegram_id,plan_id,unique_price,amount,status,delivery_status,delivery_error,delivery_attempts,created_at,order_type';
+
+// E'tibor talab qiladigan buyurtmalar: qo'lda ulash kerak, zaxira kutilmoqda,
+// yetkazish xato, chek tekshirilmoqda, istisno navbati. Har biri sababi bilan.
+async function attentionList(supabase) {
+  const [manualRes, stockRes, failedRes, receiptRes, exqRes, retryRes, plans] = await Promise.all([
+    request(supabase, 'orders', { query: toQuery({ select: ATTENTION_COLS, status: 'eq.approved', delivery_status: 'eq.manual_required', order: 'created_at.desc', limit: 50 }) }).catch(() => ({ data: [] })),
+    request(supabase, 'orders', { query: toQuery({ select: ATTENTION_COLS, delivery_status: 'eq.waiting_stock', status: 'not.in.(completed,rejected,cancelled,expired)', order: 'created_at.desc', limit: 50 }) }).catch(() => ({ data: [] })),
+    request(supabase, 'orders', { query: toQuery({ select: ATTENTION_COLS, delivery_status: 'eq.failed', status: 'in.(delivering,payment_detected,approved)', order: 'created_at.desc', limit: 50 }) }).catch(() => ({ data: [] })),
+    request(supabase, 'orders', { query: toQuery({ select: ATTENTION_COLS, status: 'in.(payment_uploaded,checking)', order: 'created_at.desc', limit: 50 }) }).catch(() => ({ data: [] })),
+    request(supabase, 'exception_queue', { query: toQuery({ select: 'order_id,reason,created_at', status: 'eq.open', order: 'created_at.desc', limit: 50 }) }).catch(() => ({ data: [] })),
+    request(supabase, 'delivery_retry_queue', { query: toQuery({ select: 'order_id,retry_count,next_retry_at,reason', status: 'eq.pending', limit: 50 }) }).catch(() => ({ data: [] })),
+    listTable(supabase, 'plans').catch(() => []),
+  ]);
+
+  const REASONS = {
+    manual: 'Qo‘lda ulash kerak',
+    stock: 'Zaxirada akkaunt yo‘q',
+    failed: 'Yetkazish xato',
+    receipt: 'Chek tekshirilmoqda',
+    exception: 'Istisno navbati',
+    retry: 'Qayta urinilmoqda',
+  };
+  const byId = new Map();
+  const add = (order, kind, extra = '') => {
+    if (!order?.id) return;
+    const entry = byId.get(order.id) || { order, kinds: [], notes: [] };
+    if (!entry.kinds.includes(kind)) entry.kinds.push(kind);
+    if (extra) entry.notes.push(extra);
+    byId.set(order.id, entry);
+  };
+  for (const o of manualRes.data || []) add(o, 'manual');
+  for (const o of stockRes.data || []) add(o, 'stock');
+  for (const o of failedRes.data || []) add(o, 'failed', o.delivery_error || '');
+  for (const o of receiptRes.data || []) add(o, 'receipt');
+
+  // Istisno va retry navbatlaridagi buyurtmalar alohida o'qiladi (yuqoridagi
+  // ro'yxatlarda bo'lmasligi mumkin). Yakunlanganlari ko'rsatilmaydi.
+  const extraIds = [...new Set([...(exqRes.data || []), ...(retryRes.data || [])].map((r) => r.order_id).filter((id) => id && !byId.has(id)))];
+  let extraOrders = [];
+  if (extraIds.length) {
+    ({ data: extraOrders } = await request(supabase, 'orders', {
+      query: toQuery({ select: ATTENTION_COLS, id: `in.(${extraIds.join(',')})` }),
+    }).catch(() => ({ data: [] })));
+  }
+  const extraMap = new Map((extraOrders || []).map((o) => [o.id, o]));
+  const closed = new Set(['completed', 'rejected', 'cancelled', 'expired']);
+  for (const r of exqRes.data || []) {
+    const o = byId.get(r.order_id)?.order || extraMap.get(r.order_id);
+    if (o && !closed.has(o.status)) add(o, 'exception', r.reason || '');
+  }
+  for (const r of retryRes.data || []) {
+    const o = byId.get(r.order_id)?.order || extraMap.get(r.order_id);
+    if (o && !closed.has(o.status)) add(o, 'retry', `${Number(r.retry_count || 0)}-urinish`);
+  }
+
+  const userIds = [...new Set([...byId.values()].map((e) => String(e.order.user_telegram_id)).filter((id) => /^\d{1,20}$/.test(id)))];
+  let users = [];
+  if (userIds.length) {
+    ({ data: users } = await request(supabase, 'users', {
+      query: `select=telegram_id,username,full_name&telegram_id=in.(${userIds.join(',')})&limit=500`,
+    }).catch(() => ({ data: [] })));
+  }
+  const userMap = new Map((users || []).map((u) => [String(u.telegram_id), u]));
+
+  return [...byId.values()]
+    .sort((a, b) => new Date(b.order.created_at) - new Date(a.order.created_at))
+    .map(({ order, kinds, notes }) => ({
+      id: order.id,
+      order_number: order.order_number,
+      user_telegram_id: order.user_telegram_id,
+      user: userMap.get(String(order.user_telegram_id)) || { telegram_id: order.user_telegram_id },
+      plan_id: order.plan_id,
+      plan_name: plans.find((p) => p.id === order.plan_id)?.name || '-',
+      amount: Number(order.unique_price ?? order.amount ?? 0),
+      status: order.status,
+      delivery_status: order.delivery_status,
+      kinds,
+      reasons: kinds.map((k) => REASONS[k] || k),
+      note: [...new Set(notes)].join('; '),
+      created_at: order.created_at,
+    }));
+}
 
 function json(statusCode, body) {
   return { statusCode, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
@@ -131,6 +243,8 @@ async function orderDetail(supabase, orderId) {
 
 // Testlar uchun ochiladi.
 exports._sanitizeSearch = sanitizeSearch;
+exports._buildOrderFilters = buildOrderFilters;
+exports._safeDate = safeDate;
 
 exports.handler = async (event) => {
   if (!requireAdmin(event.headers)) return json(401, { ok: false, error: 'Unauthorized' });
@@ -143,21 +257,32 @@ exports.handler = async (event) => {
       return json(200, { ok: true, detail });
     }
 
+    // E'tibor talab qiladigan buyurtmalar (Dashboard bloki)
+    if (event.httpMethod === 'GET' && event.queryStringParameters?.attention) {
+      return json(200, { ok: true, items: await attentionList(supabase) });
+    }
+
     if (event.httpMethod === 'GET') {
       const params = event.queryStringParameters || {};
-      const status = params.status;
       // Ilgari limit qat'iy 50 edi va frontend uni oshirmasdi — 500+ buyurtmadan
       // faqat oxirgi 50 tasi ko'rinardi. Endi sahifalash bor (limit + offset).
       const limit = Math.min(Math.max(Number(params.limit || 50), 1), 500);
       const offset = Math.max(Number(params.offset || 0), 0);
-      const query = { select: '*', order: 'created_at.desc', limit, offset };
-      if (status) query.status = `eq.${status}`;
-
-      // Qidiruv: buyurtma raqami yoki Telegram ID bo'yicha.
-      const search = sanitizeSearch(params.search);
-      if (search) {
-        query.or = `(order_number.ilike.*${search}*,user_telegram_id.ilike.*${search}*)`;
-      }
+      const query = {
+        select: '*',
+        order: 'created_at.desc',
+        limit,
+        offset,
+        // Holat, sana oralig'i (Toshkent kuni), tur (xarid/to'ldirish) va
+        // qidiruv (buyurtma raqami yoki Telegram ID).
+        ...buildOrderFilters({
+          status: params.status,
+          from: safeDate(params.from),
+          to: safeDate(params.to),
+          type: ['purchase', 'topup'].includes(params.type) ? params.type : '',
+          search: sanitizeSearch(params.search),
+        }),
+      };
 
       const [{ data: orders, count }, plans] = await Promise.all([
         request(supabase, 'orders', { query: toQuery(query), headers: { Prefer: 'count=exact' } }),
@@ -168,7 +293,8 @@ exports.handler = async (event) => {
     }
 
     if (event.httpMethod === 'POST') {
-      const { action, orderId } = JSON.parse(event.body || '{}');
+      const body = JSON.parse(event.body || '{}');
+      const { action, orderId } = body;
       if (!orderId || !action) return json(400, { ok: false, error: 'orderId va action talab qilinadi' });
       // "To'lov keldi" — tizim aniqlamagan to'lovni admin qo'lda tasdiqlaydi.
       // Faqat to'lov kutilayotgan va muddati o'tmagan buyurtma (bot tugmasi
@@ -230,6 +356,59 @@ exports.handler = async (event) => {
         }
         await notifyCustomer(rejected.order.user_telegram_id, `❌ Buyurtmangiz #${rejected.order.order_number} rad etildi. Savollar bo'lsa adminga murojaat qiling.`);
         return json(200, rejected);
+      }
+      // Qo'lda yetkazish: admin login/parol yoki yo'riqnomani yozadi, u mijozga
+      // bot orqali ketadi va buyurtma yakunlanadi. Matn bazada saqlanmaydi
+      // (kredensiallar audit jurnaliga tushmasin) — faqat yetkazilgani qayd etiladi.
+      if (action === 'deliver_manual') {
+        const text = String(body.text || '').trim().slice(0, 3000);
+        if (!text) return json(400, { ok: false, error: 'Mijozga yuboriladigan matn bo‘sh' });
+        const order = await getOrderById(supabase, orderId);
+        if (!order) return json(404, { ok: false, error: 'Buyurtma topilmadi' });
+        if (['rejected', 'cancelled', 'expired'].includes(order.status)) {
+          return json(400, { ok: false, error: 'Bekor qilingan yoki muddati o‘tgan buyurtmani yetkazib bo‘lmaydi' });
+        }
+        if (order.status === 'completed' && order.delivery_status === 'delivered') {
+          return json(400, { ok: false, error: 'Buyurtma allaqachon yetkazilgan' });
+        }
+        const plan = order.plan_id ? await fetchPlan(supabase, order.plan_id).catch(() => null) : null;
+        const message = [
+          `✅ <b>Buyurtmangiz #${escapeHtml(order.order_number)} tayyor!</b>`,
+          plan ? `📦 ${escapeHtml(plan.name)}` : null,
+          '',
+          escapeHtml(text),
+          '',
+          '⚠️ Ma’lumotlarni hech kimga bermang.',
+        ].filter((line) => line !== null).join('\n');
+        try {
+          await sendMessage(String(order.user_telegram_id), message, null);
+        } catch (error) {
+          // Yuborilmagan bo'lsa buyurtma "yetkazilgan" deb belgilanmaydi.
+          return json(502, { ok: false, error: `Mijozga yuborib bo‘lmadi: ${error.message}` });
+        }
+        const now = new Date().toISOString();
+        const completed = await updateOrderStatus(supabase, orderId, 'completed', {
+          delivery_status: 'delivered', delivered_at: now, completed_at: now, delivery_error: null,
+        });
+        const done = completed || order;
+        await request(supabase, 'order_items', {
+          method: 'PATCH',
+          query: `order_id=eq.${encodeURIComponent(orderId)}&delivery_status=neq.delivered`,
+          body: { delivery_status: 'delivered', delivered_at: now, updated_at: now },
+        }).catch(() => {});
+        await createDeliveryLog(supabase, {
+          order_id: orderId, user_telegram_id: order.user_telegram_id, plan_id: plan?.id || null,
+          delivery_type: 'manual', admin_telegram_id: 'web_admin', status: 'delivered', delivered_at: now,
+        }).catch(() => {});
+        await createAuditLog(supabase, { order_id: orderId, user_telegram_id: order.user_telegram_id, action: 'manual_delivered', status: 'completed', metadata: { chars: text.length } });
+        if (plan) await createSubscriptionFromOrder(supabase, done, plan);
+        // Navbatlardagi yozuvlar yopiladi — Dashboard'da qayta chiqmasin.
+        await request(supabase, 'exception_queue', { method: 'PATCH', query: `order_id=eq.${encodeURIComponent(orderId)}&status=eq.open`, body: { status: 'resolved', resolved_at: now } }).catch(() => {});
+        await request(supabase, 'delivery_retry_queue', { method: 'PATCH', query: `order_id=eq.${encodeURIComponent(orderId)}&status=eq.pending`, body: { status: 'completed', completed_at: now, updated_at: now } }).catch(() => {});
+        await processReferralPayout(supabase, done).catch((e) => console.warn('referral payout warn:', e?.message));
+        await creditOrderCashback(supabase, done).catch((e) => console.warn('cashback warn:', e?.message));
+        await markOrderNotification(supabase, orderId, '📦 Qo‘lda yetkazildi (admin panel)').catch(() => {});
+        return json(200, { ok: true, order: done });
       }
       if (action === 'retry_delivery') {
         const order = await retryDeliveryForOrder(supabase, orderId);

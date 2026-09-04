@@ -375,7 +375,14 @@ async function processApprovedDelivery({ supabase, order, adminTelegramId = 'web
 
 async function processOrderItemDelivery({ supabase, order, item, plan, adminTelegramId }) {
   const result = await processApprovedDelivery({ supabase, order: { ...order, plan_id: plan.id, inventory_item_id: item.inventory_item_id || null, delivery_status: 'waiting_approval' }, adminTelegramId });
-  await updateOrderItem(supabase, item.id, { delivery_status: result.ok ? 'delivered' : result.code === 'NO_STOCK' ? 'waiting_stock' : 'failed', delivered_at: result.ok ? new Date().toISOString() : null, delivery_error: result.ok ? null : result.message });
+  // Qo'lda ulanadigan reja: element hali yetkazilmagan — admin panelda
+  // "Yetkazish" qilinganda 'delivered' bo'ladi.
+  const manual = result.ok && result.code === 'MANUAL_REQUIRED';
+  await updateOrderItem(supabase, item.id, {
+    delivery_status: manual ? 'pending' : result.ok ? 'delivered' : result.code === 'NO_STOCK' ? 'waiting_stock' : 'failed',
+    delivered_at: result.ok && !manual ? new Date().toISOString() : null,
+    delivery_error: result.ok ? null : result.message,
+  });
   return result;
 }
 
@@ -404,6 +411,15 @@ async function processApprovedOrderDelivery({ supabase, order, adminTelegramId =
     else if (hasRetriesLeft(Number(order.delivery_attempts || 0) + 1)) await enqueueDeliveryRetry(supabase, { order_id: order.id, reason: failed.code || 'delivery_failed', retry_count: Number(order.delivery_attempts || 0) + 1, next_retry_at: nextRetryAt(Number(order.delivery_attempts || 0) + 1), metadata: { message: failed.message } });
     else await createExceptionQueueItem(supabase, { order_id: order.id, reason: 'max_retries_exceeded', metadata: { message: failed.message } });
     return failed;
+  }
+  // Kamida bitta element qo'lda ulanadi: buyurtma "yakunlangan" emas,
+  // "tasdiqlangan, qo'lda ulash kerak" holatida qoladi. Ilgari bu yerda u
+  // completed/delivered deb belgilanib, admin panelda ko'zdan yo'qolardi.
+  // Referal va cashback admin qo'lda yetkazganda hisoblanadi.
+  if (results.some((result) => result.code === 'MANUAL_REQUIRED')) {
+    await updateOrderStatus(supabase, order.id, 'approved', { delivery_status: 'manual_required' });
+    await createAuditLog(supabase, { order_id: order.id, user_telegram_id: order.user_telegram_id, action: 'manual_required', status: 'approved' });
+    return { ok: true, code: 'MANUAL_REQUIRED', message: 'Qo‘lda yetkazib berish kerak', results };
   }
   await updateOrderStatus(supabase, order.id, 'completed', { delivery_status: 'delivered', delivered_at: new Date().toISOString(), completed_at: new Date().toISOString() });
   await createAuditLog(supabase, { order_id: order.id, user_telegram_id: order.user_telegram_id, action: 'order_completed', status: 'completed' });
