@@ -31,6 +31,7 @@ const { verifyWebLoginCode } = require('../../shared/web-auth-service');
 const rateLimit = require('../../shared/rate-limit');
 const { sendMessage } = require('../../shared/telegram');
 const { escapeHtml } = require('../../shared/messages');
+const { notifyNewOrder, userLink } = require('../../shared/admin-notify');
 
 const PAYMENT_WARN_SUPPORT = (process.env.SUPPORT_USERNAME || '@santyx').replace(/^@?/, '@');
 
@@ -660,10 +661,15 @@ exports.handler = async (event) => {
       // Adminга Telegram xabari (best-effort — sharhni bloklamaydi)
       try {
         const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        const who = acctUser.username ? `@${acctUser.username}` : userName;
+        // Mijoz bosiladigan havola bilan (profil ochiladi)
+        const who = userLink({
+          telegram_id: telegramId,
+          username: acctUser.username || null,
+          full_name: [acctUser.first_name, acctUser.last_name].filter(Boolean).join(' '),
+        });
         const settings = await fetchSettings(supabase).catch(() => null);
         const admins = adminChatIds(settings);
-        const msg = `⭐ Yangi sharh (${rating}/5): ${esc(who)}${text ? ` — ${esc(text)}` : ''}`;
+        const msg = `⭐ Yangi sharh (${rating}/5): ${who}${text ? ` — ${esc(text)}` : ''}`;
         await Promise.all(admins.map((id) => sendMessage(id, msg, null).catch(() => {})));
       } catch {
         /* ignore */
@@ -849,11 +855,22 @@ exports.handler = async (event) => {
           type: 'debit',
           description: `Balansdan to'liq to'landi #${order.order_number}`,
         }).catch((e) => console.warn('debit warn:', e?.message));
-        await processApprovedOrderDelivery({
+        const delivery = await processApprovedOrderDelivery({
           supabase,
           order,
           adminTelegramId: 'webapp_balance',
-        }).catch((e) => console.warn('deliver warn:', e?.message));
+        }).catch((e) => {
+          console.warn('deliver warn:', e?.message);
+          return { ok: false, message: e?.message || 'xato' };
+        });
+        // Pul hodisasi — adminga xabar (tugmasiz: to'lov kutilmaydi)
+        const deliveryLine = delivery?.code === 'MANUAL_REQUIRED'
+          ? '📦 Yetkazish: qo‘lda ulash kerak (admin panel → Buyurtmalar)'
+          : delivery?.ok ? '📦 Yetkazish: yetkazildi ✅' : `📦 Yetkazish: e’tibor kerak — ${delivery?.message || 'xato'}`;
+        await notifyNewOrder(supabase, { order, items: cartItems, kind: 'balance', extraLines: ['', deliveryLine] });
+      } else {
+        // To'lov kutilmoqda — adminga "To'lov keldi" tugmali xabar
+        await notifyNewOrder(supabase, { order, items: cartItems, kind: 'purchase' });
       }
 
       return json(200, {
@@ -984,6 +1001,9 @@ exports.handler = async (event) => {
         payment_source: 'humo_card_bot',
         topup_credit: credit,
       });
+
+      // Pul hodisasi — adminga "To'lov keldi" tugmali xabar
+      await notifyNewOrder(supabase, { order, kind: 'topup' });
 
       return json(200, {
         ok: true,

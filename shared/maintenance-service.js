@@ -48,7 +48,18 @@ async function processRetryQueue(supabase, limit = 20) {
     } else {
       await failDeliveryRetry(supabase, retry.id, { reason: 'max_retries_exceeded', metadata: { message: result.message } });
       await createExceptionQueueItem(supabase, { order_id: order.id, reason: 'max_retries_exceeded', metadata: { message: result.message } });
-      await notifyAdmins(supabase, `⚠ Delivery retry failed permanently\n\nOrder: #${order.order_number}\nReason: ${result.message}`);
+      const { userLines, fetchUserBrief } = require('./admin-notify');
+      const { escapeHtml } = require('./messages');
+      const user = await fetchUserBrief(supabase, order.user_telegram_id);
+      await notifyAdmins(supabase, [
+        '⚠️ <b>Yetkazish qayta urinishlari tugadi</b>',
+        '',
+        ...userLines(user),
+        `🧾 Buyurtma: <code>#${escapeHtml(order.order_number)}</code>`,
+        `Sabab: ${escapeHtml(result.message || '-')}`,
+        '',
+        'Buyurtma muammoli navbatga tushdi — admin panel → Dashboard → E’tibor talab qiladi.',
+      ].join('\n'));
       results.push({ id: retry.id, status: 'exception' });
     }
   }

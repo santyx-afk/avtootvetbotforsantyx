@@ -71,8 +71,10 @@ exports.handler = async (event) => {
   try {
     // --- Bitta foydalanuvchi tafsilotlari: balans, xaridlar, balans tarixi ---
     if (event.httpMethod === 'GET' && event.queryStringParameters?.user_id) {
-      const uid = String(event.queryStringParameters.user_id);
-      const [walletRes, ordersRes, txRes, plansRes] = await Promise.all([
+      const uid = String(event.queryStringParameters.user_id).replace(/\D/g, '');
+      if (!uid) return json(400, { ok: false, error: 'user_id noto‘g‘ri' });
+      const [userRes, walletRes, ordersRes, txRes, plansRes] = await Promise.all([
+        request(db, 'users', { query: `select=telegram_id,username,full_name,phone,phone_verified_at,is_blocked,language_code,created_at,updated_at&telegram_id=eq.${uid}&limit=1` }).catch(() => ({ data: [] })),
         request(db, 'user_wallets', { query: `select=balance&user_telegram_id=eq.${uid}&limit=1` }).catch(() => ({ data: [] })),
         request(db, 'orders', { query: `select=order_number,created_at,unique_price,amount,status,order_type,promo_code,payment_method,plan_id&user_telegram_id=eq.${uid}&order=created_at.desc&limit=100` }).catch(() => ({ data: [] })),
         request(db, 'wallet_transactions', { query: `select=amount,type,description,created_at&user_telegram_id=eq.${uid}&order=created_at.desc&limit=100` }).catch(() => ({ data: [] })),
@@ -95,7 +97,8 @@ exports.handler = async (event) => {
       const balanceHistory = (txRes.data || []).map((t) => ({
         amount: Number(t.amount), type: t.type, description: t.description, created_at: t.created_at,
       }));
-      return json(200, { ok: true, balance, purchases, balanceHistory });
+      const user = userRes.data?.[0] || { telegram_id: uid };
+      return json(200, { ok: true, user, balance, purchases, balanceHistory });
     }
 
     // --- Foydalanuvchilar ro'yxati (balans + xaridlar soni + oxirgi faollik) ---

@@ -17,7 +17,11 @@ const {
   trackEvent,
   insertReceiptSubmission,
   setUserAwaitingReceipt,
+  markOrderPaidManually,
 } = require('./db');
+const { isAdminChat, markOrderNotification, userLines, formatUzs: formatUzsLabel } = require('./admin-notify');
+const { settlePaidOrder } = require('./humo-payment-service');
+const { escapeHtml } = require('./messages');
 const {
   inlineKeyboard,
   answerCallbackQuery,
@@ -27,7 +31,6 @@ const {
 } = require('./telegram');
 const {
   welcomeText,
-  receiptForwardCaption,
   receiptAcceptedText,
   noActiveOrderForReceiptText,
   genericOrderErrorText,
@@ -50,6 +53,15 @@ function resolveAdminChatIds(settings) {
 
 function formatAmount(amount, currency = 'UZS') {
   return `${new Intl.NumberFormat('uz-UZ').format(Number(amount || 0))} ${currency}`;
+}
+
+// Admin tekshiruvi: env'dagi ID lar (isAdminTelegramId) YOKI Sozlamalardagi
+// admin_telegram_id. Ilgari faqat env tekshirilardi — panelda o'rnatilgan
+// admin bot tugmalarini bosa olmasdi.
+async function isAdmin(supabase, telegramId) {
+  if (isAdminTelegramId(telegramId)) return true;
+  const settings = await fetchSettings(supabase).catch(() => null);
+  return isAdminChat(settings, telegramId);
 }
 
 function addPromoUsageText() {
@@ -221,7 +233,18 @@ async function handleReceipt({ supabase, message }) {
   });
 
   const order = await getOrderById(supabase, orderId);
-  const caption = receiptForwardCaption(order, message.from);
+  const from = message.from || {};
+  // Mijoz bosiladigan havola bilan — admin darrov profilini ochadi.
+  const caption = [
+    '🧾 <b>Yangi to‘lov cheki</b>',
+    `Buyurtma: <code>#${escapeHtml(order?.order_number || orderId)}</code>`,
+    `Summa: ${formatUzsLabel(order?.unique_price || order?.amount || 0)}`,
+    ...userLines({
+      telegram_id: telegramId,
+      username: from.username || null,
+      full_name: [from.first_name, from.last_name].filter(Boolean).join(' '),
+    }),
+  ].join('\n');
 
   for (const adminId of adminChatIds) {
     try {
@@ -253,9 +276,39 @@ async function handleCallback({ supabase, callbackQuery }) {
   if (!isAdminAction) answerCallbackQuery(callbackQuery.id).catch(() => {});
 
   try {
+    // "To'lov keldi" — tizim aniqlamagan to'lovni admin qo'lda tasdiqlaydi
+    // (faqat to'lov kutilayotgan va muddati o'tmagan buyurtma).
+    if (data.startsWith('admin:paid:')) {
+      const orderId = data.replace('admin:paid:', '');
+      if (!(await isAdmin(supabase, telegramId))) {
+        await answerCallbackQuery(callbackQuery.id, 'Huquq yetarli emas');
+        return;
+      }
+      const res = await markOrderPaidManually(supabase, orderId, telegramId);
+      if (!res.ok) {
+        const reasons = {
+          not_found: 'Buyurtma topilmadi',
+          invalid_status: 'Buyurtma to‘lov kutish holatida emas',
+          expired: 'Muddat o‘tgan — mijoz qayta buyurtma bersin',
+          already_processed: 'Buyurtma allaqachon qayta ishlangan',
+        };
+        await answerCallbackQuery(callbackQuery.id, reasons[res.reason] || `Xatolik: ${res.reason}`);
+        if (res.reason === 'expired') {
+          await markOrderNotification(supabase, orderId, '⌛ Muddat o‘tdi — qo‘lda tasdiqlab bo‘lmaydi').catch(() => {});
+        }
+        return;
+      }
+      // Javobni darhol beramiz — yetkazish bir necha soniya olishi mumkin.
+      await answerCallbackQuery(callbackQuery.id, 'To‘lov qabul qilindi, yetkazilmoqda…').catch(() => {});
+      const amount = Number(res.order.unique_price || res.order.amount || 0);
+      const adminLabel = callbackQuery.from.username ? `@${callbackQuery.from.username}` : String(telegramId);
+      await settlePaidOrder({ supabase, order: res.order, amount, messageKey: res.order.payment_message_id, adminLabel });
+      return;
+    }
+
     if (data.startsWith('admin:approve:')) {
       const orderId = data.replace('admin:approve:', '');
-      if (!isAdminTelegramId(telegramId)) {
+      if (!(await isAdmin(supabase, telegramId))) {
         await answerCallbackQuery(callbackQuery.id, 'Huquq yetarli emas');
         return;
       }
@@ -289,7 +342,7 @@ async function handleCallback({ supabase, callbackQuery }) {
 
     if (data.startsWith('admin:reject:')) {
       const orderId = data.replace('admin:reject:', '');
-      if (!isAdminTelegramId(telegramId)) {
+      if (!(await isAdmin(supabase, telegramId))) {
         await answerCallbackQuery(callbackQuery.id, 'Huquq yetarli emas');
         return;
       }
@@ -301,6 +354,8 @@ async function handleCallback({ supabase, callbackQuery }) {
       }
 
       await editMessage(chatId, messageId, `❌ Buyurtma #${res.order.order_number} rad etildi.`, null);
+      // Boshqa adminlardagi "yangi buyurtma" xabarlari ham yangilanadi.
+      await markOrderNotification(supabase, orderId, '❌ Bekor qilindi (admin)').catch(() => {});
       await sendMessage(res.order.user_telegram_id, `❌ Buyurtmangiz #${res.order.order_number} rad etildi. Savollar bo'lsa adminga murojaat qiling.`, null);
       await answerCallbackQuery(callbackQuery.id, 'Buyurtma rad etildi');
       return;

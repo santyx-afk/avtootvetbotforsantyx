@@ -40,6 +40,18 @@ function userLabel(u = {}) {
   return String(u.telegram_id ?? '—');
 }
 
+// Bosiladigan foydalanuvchi havolasi: har qanday jadvalda ID/ism ustiga
+// bosilsa foydalanuvchi kartochkasi ochiladi (hujjat darajasidagi handler).
+function userLinkHtml(id, label) {
+  if (!id) return '—';
+  return `<a href="#" class="user-link" data-id="${esc(id)}" title="Foydalanuvchi kartochkasi">${esc(label ?? id)}</a>`;
+}
+
+// cell() kabi, lekin qiymat tayyor (xavfsiz) HTML — havola qo'yish uchun.
+function cellHtml(label, html) {
+  return `<div class="detail-cell"><span class="k">${esc(label)}</span><span class="v">${html}</span></div>`;
+}
+
 const views = {
   dashboard: document.getElementById('dashboardView'),
   categories: document.getElementById('categoriesView'),
@@ -325,7 +337,7 @@ function renderReviews() {
   const filtered = statusFilter ? state.reviews.filter((r) => r.status === statusFilter) : state.reviews;
   root.innerHTML = `<table><thead><tr><th>Foydalanuvchi</th><th>Reja</th><th>Baho</th><th>Sharh</th><th>Holat</th><th></th></tr></thead><tbody>${filtered.map((r) => `
     <tr>
-      <td>${esc(r.user_telegram_id)}</td>
+      <td>${userLinkHtml(r.user_telegram_id, r.user_name || r.user_telegram_id)}</td>
       <td>${esc(state.plans.find((p) => p.id === r.plan_id)?.name || r.plan_id)}</td>
       <td class="review-stars">${'★'.repeat(Math.max(0, Math.min(5, Number(r.rating) || 0)))}${'☆'.repeat(5 - Math.max(0, Math.min(5, Number(r.rating) || 0)))}</td>
       <td>${esc(r.text || '-')}</td>
@@ -471,10 +483,14 @@ function renderOrders() {
     root.innerHTML = `<table><thead><tr><th>№</th><th>User</th><th>Reja</th><th>Summa</th><th>Promo</th><th>Chegirma</th><th>Status</th><th>Delivery</th><th>Vaqt</th><th>Amal</th></tr></thead><tbody>${state.orders.map((o) => {
       const canApprove = ['payment_uploaded', 'checking'].includes(o.status);
       const isProcessed = ['approved', 'rejected', 'completed', 'cancelled'].includes(o.status);
+      // "To'lov keldi" — tizim aniqlamagan to'lovni qo'lda tasdiqlash: faqat
+      // to'lov kutilayotgan va muddati (10 daqiqa) o'tmagan buyurtma.
+      const canPay = ['waiting_payment', 'pending_payment'].includes(o.status)
+        && (!o.expires_at || new Date(o.expires_at).getTime() > Date.now());
       return `
   <tr>
     <td>${esc(o.order_number)}</td>
-    <td>${esc(o.user_telegram_id)}</td>
+    <td>${userLinkHtml(o.user_telegram_id)}</td>
     <td>${esc(o.plan_name || '-')}</td>
     <td>${money(o.unique_price ?? o.amount)}</td>
     <td>${o.promo_code ? `<span class="badge">${esc(o.promo_code)}</span>` : '-'}</td>
@@ -484,6 +500,7 @@ function renderOrders() {
     <td>${dt(o.created_at)}</td>
     <td>
       <button class="ghost order-detail" data-id="${esc(o.id)}">Batafsil</button>
+      ${canPay ? `<button class="order-action" data-action="mark_paid" data-id="${esc(o.id)}">💵 To'lov keldi</button>` : ''}
       <button class="ghost order-action" data-action="approve" data-id="${esc(o.id)}" ${canApprove ? '' : 'disabled'}>Approve</button>
       <button class="ghost danger order-action" data-action="reject" data-id="${esc(o.id)}" ${isProcessed ? 'disabled' : ''}>Reject</button>
       <button class="ghost order-action" data-action="retry_delivery" data-id="${esc(o.id)}">Retry</button>
@@ -506,7 +523,7 @@ function renderRecentOrders() {
   const recent = state.orders.slice(0, 6);
   if (!recent.length) { root.innerHTML = '<p>Buyurtmalar yo\'q</p>'; return; }
   root.innerHTML = `<table><thead><tr><th>№</th><th>User</th><th>Reja</th><th>Summa</th><th>Status</th><th>Vaqt</th></tr></thead><tbody>${recent.map((o) => `
-    <tr><td>${esc(o.order_number)}</td><td>${esc(o.user_telegram_id)}</td><td>${esc(o.plan_name || '-')}</td><td>${money(o.unique_price ?? o.amount)}</td><td><span class="badge">${esc(o.status)}</span></td><td>${dt(o.created_at)}</td></tr>`).join('')}</tbody></table>`;
+    <tr><td>${esc(o.order_number)}</td><td>${userLinkHtml(o.user_telegram_id)}</td><td>${esc(o.plan_name || '-')}</td><td>${money(o.unique_price ?? o.amount)}</td><td><span class="badge">${esc(o.status)}</span></td><td>${dt(o.created_at)}</td></tr>`).join('')}</tbody></table>`;
 }
 
 async function loadInventory() {
@@ -540,7 +557,7 @@ function renderInventory() {
   <td class="inv-pass">${esc(i.password_encrypted || '-')}</td>
   <td class="inv-key">${esc(i.license_key_encrypted || '-')}</td>
   <td>${esc(i.status)}</td>
-  <td>${i.assigned_user_telegram_id ? esc(i.assigned_user_telegram_id) : '-'}</td>
+  <td>${i.assigned_user_telegram_id ? userLinkHtml(i.assigned_user_telegram_id) : '-'}</td>
   <td>${soldAt ? dt(soldAt) : '-'}</td>
   <td>${dt(i.created_at)}</td>
   <td>
@@ -660,8 +677,8 @@ function renderReferrals() {
     <th>Xaridlar</th><th>Ishlagan</th><th>Kutilmoqda</th><th></th>
   </tr></thead><tbody>${state.referrals.map((r) => `
     <tr>
-      <td>${esc(userLabel(r.referrer))}<div class="hint">${esc(r.referrer_telegram_id)}</div></td>
-      <td>${esc(userLabel(r.referred))}<div class="hint">${esc(r.referred_telegram_id)}</div></td>
+      <td>${userLinkHtml(r.referrer_telegram_id, userLabel(r.referrer))}<div class="hint">${esc(r.referrer_telegram_id)}</div></td>
+      <td>${userLinkHtml(r.referred_telegram_id, userLabel(r.referred))}<div class="hint">${esc(r.referred_telegram_id)}</div></td>
       <td>${dt(r.created_at)}</td>
       <td>${refStatusBadge(r.status)}</td>
       <td>${esc(r.paid_orders)}</td>
@@ -1197,6 +1214,12 @@ function renderUserDetail(data) {
 
 async function openUserModal(userId) {
   currentUserId = userId;
+  // Boshqa modal (buyurtma/inventar/promokod) ichidan ochilganda u yopiladi —
+  // aks holda DOM tartibi tufayli kartochka orqada qolib ketadi.
+  ['promoUsageModal', 'invDetailModal', 'orderDetailModal'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.hidden = true;
+  });
   document.getElementById('userModalTitle').textContent = `Foydalanuvchi ${userId}`;
   document.getElementById('balanceMsg').textContent = '';
   document.getElementById('balanceAmount').value = '';
@@ -1204,8 +1227,25 @@ async function openUserModal(userId) {
   document.getElementById('userPurchases').innerHTML = '';
   document.getElementById('userBalanceHistory').innerHTML = '';
   document.getElementById('userModal').hidden = false;
-  renderUserDetail(await api(`admin-users?user_id=${encodeURIComponent(userId)}`));
+  const data = await api(`admin-users?user_id=${encodeURIComponent(userId)}`);
+  const u = data.user || { telegram_id: userId };
+  document.getElementById('userModalTitle').textContent = [
+    userLabel(u),
+    u.full_name && u.username ? u.full_name : null,
+    u.phone || 'raqam yo\'q',
+    `ID ${u.telegram_id}`,
+    u.is_blocked ? '🚫 bloklangan' : null,
+  ].filter(Boolean).join(' · ');
+  renderUserDetail(data);
 }
+
+// Har qanday jadvaldagi foydalanuvchi havolasi → kartochka
+document.addEventListener('click', (event) => {
+  const link = event.target.closest('.user-link');
+  if (!link) return;
+  event.preventDefault();
+  openUserModal(link.dataset.id).catch((e) => alert(e.message));
+});
 
 async function adjustBalance(direction) {
   if (!currentUserId) return;
@@ -1278,7 +1318,7 @@ async function openPromoUsage(code) {
         <tr>
           <td>${dt(o.created_at)}</td>
           <td>${esc(o.order_number)}</td>
-          <td>${esc(userLabel(o))}${o.username ? ` <span class="hint">(${esc(o.user_telegram_id)})</span>` : ''}</td>
+          <td>${userLinkHtml(o.user_telegram_id, userLabel(o))}${o.username ? ` <span class="hint">(${esc(o.user_telegram_id)})</span>` : ''}</td>
           <td>${esc(o.plan_name)}</td>
           <td>${money(o.amount)}</td>
           <td>${Number(o.discount_amount || 0) > 0 ? `−${money(o.discount_amount)}` : '-'}</td>
@@ -1306,7 +1346,7 @@ async function openInvDetail(id) {
 
     const who = d.user
       ? [
-        cell('Kimga ketgan', userLabel(d.user)),
+        cellHtml('Kimga ketgan', userLinkHtml(d.user.telegram_id, userLabel(d.user))),
         cell('Telegram ID', d.user.telegram_id),
         cell('Ism', d.user.full_name || '—'),
       ].join('')
@@ -1371,8 +1411,8 @@ async function openOrderDetail(id) {
 
     body.innerHTML = `
       <div class="detail-grid">
-        ${cell('Mijoz', userLabel(d.user))}
-        ${cell('Telegram ID', d.user.telegram_id)}
+        ${cellHtml('Mijoz', userLinkHtml(d.user.telegram_id, userLabel(d.user)))}
+        ${cellHtml('Telegram ID', userLinkHtml(d.user.telegram_id))}
         ${cell('Obuna', d.plan_name)}
         ${cell('Holat', PURCHASE_STATUS[d.status] || d.status)}
       </div>
@@ -1455,10 +1495,26 @@ document.getElementById('ordersList')?.addEventListener('click', async (event) =
   }
   const btn = event.target.closest('.order-action');
   if (!btn) return;
-  const res = await api('admin-orders', { method: 'POST', body: JSON.stringify({ action: btn.dataset.action, orderId: btn.dataset.id }) });
-  if (res?.delivery?.admin_message) alert(`Delivery: ${res.delivery.admin_message}`);
-  else if (res?.delivery?.message) alert(`Delivery: ${res.delivery.message}`);
-  if (!res?.ok && res?.error) alert(res.error);
+  if (btn.dataset.action === 'mark_paid'
+    && !confirm('To\'lov haqiqatan keldimi? Buyurtma to\'langan deb belgilanadi va mijozga yetkaziladi.')) return;
+  btn.disabled = true;
+  try {
+    const res = await api('admin-orders', { method: 'POST', body: JSON.stringify({ action: btn.dataset.action, orderId: btn.dataset.id }) });
+    if (btn.dataset.action === 'mark_paid') {
+      const d = res?.delivery;
+      alert(res?.topup
+        ? 'To\'lov qabul qilindi, balans to\'ldirildi.'
+        : d?.code === 'MANUAL_REQUIRED'
+          ? 'To\'lov qabul qilindi. Bu reja qo\'lda ulanadi — "Batafsil" → Yetkazish.'
+          : d?.ok ? 'To\'lov qabul qilindi va yetkazildi.' : `To‘lov qabul qilindi, lekin yetkazishda muammo: ${d?.message || 'noma’lum'}`);
+    } else if (res?.delivery?.admin_message) alert(`Delivery: ${res.delivery.admin_message}`);
+    else if (res?.delivery?.message) alert(`Delivery: ${res.delivery.message}`);
+    if (!res?.ok && res?.error) alert(res.error);
+  } catch (error) {
+    alert(error.message || 'Xatolik');
+  } finally {
+    btn.disabled = false;
+  }
   await loadOrders();
   await loadDashboard();
 });

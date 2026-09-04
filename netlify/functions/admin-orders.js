@@ -11,8 +11,10 @@ const {
   getOrderById,
   fetchPlan,
   creditOrderCashback,
+  markOrderPaidManually,
 } = require('../../shared/db');
 const { processApprovedDelivery } = require('../../shared/delivery-service');
+const { settlePaidOrder } = require('../../shared/humo-payment-service');
 const { processReferralPayout } = require('../../shared/referral-service');
 const { sendMessage } = require('../../shared/telegram');
 
@@ -168,6 +170,35 @@ exports.handler = async (event) => {
     if (event.httpMethod === 'POST') {
       const { action, orderId } = JSON.parse(event.body || '{}');
       if (!orderId || !action) return json(400, { ok: false, error: 'orderId va action talab qilinadi' });
+      // "To'lov keldi" — tizim aniqlamagan to'lovni admin qo'lda tasdiqlaydi.
+      // Faqat to'lov kutilayotgan va muddati o'tmagan buyurtma (bot tugmasi
+      // bilan bir xil qoida). Keyin oddiy to'lov kabi yetkaziladi.
+      if (action === 'mark_paid') {
+        const res = await markOrderPaidManually(supabase, orderId, 'web_admin');
+        if (!res.ok) {
+          const messages = {
+            not_found: 'Buyurtma topilmadi',
+            invalid_status: 'Buyurtma to‘lov kutish holatida emas',
+            expired: 'Muddat o‘tgan — mijoz qayta buyurtma bersin',
+            already_processed: 'Buyurtma allaqachon qayta ishlangan',
+          };
+          return json(400, { ...res, error: messages[res.reason] || 'Tasdiqlab bo‘lmadi' });
+        }
+        const amount = Number(res.order.unique_price || res.order.amount || 0);
+        const settled = await settlePaidOrder({
+          supabase,
+          order: res.order,
+          amount,
+          messageKey: res.order.payment_message_id,
+          adminLabel: 'admin panel',
+        });
+        return json(200, {
+          ok: true,
+          order: await getOrderById(supabase, orderId),
+          delivery: settled?.delivery || null,
+          topup: Boolean(settled?.topup),
+        });
+      }
       if (action === 'approve') {
         const approved = await approveOrder(supabase, orderId);
         if (!approved.ok) {

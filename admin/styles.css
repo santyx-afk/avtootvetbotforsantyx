@@ -551,3 +551,12 @@ input[type="checkbox"] { width: 20px; height: 20px; min-height: auto; flex: 0 0 
   min-height: 120px;
   padding: 6px;
 }
+
+/* Foydalanuvchi havolasi: jadvaldagi ID/ism bosilsa kartochka ochiladi */
+.user-link {
+  color: var(--primary-dark);
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.user-link:hover { color: var(--primary); }
