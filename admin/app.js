@@ -65,6 +65,7 @@ const views = {
   users: document.getElementById('usersView'),
   leads: document.getElementById('leadsView'),
   referrals: document.getElementById('referralsView'),
+  subscriptions: document.getElementById('subscriptionsView'),
   messages: document.getElementById('messagesView'),
   settings: document.getElementById('settingsView'),
   help: document.getElementById('helpView'),
@@ -199,6 +200,8 @@ function renderPlans() {
   parentSelect.innerHTML = `<option value="">Yo'q</option>${state.plans.filter((item) => !item.parent_plan_id).map((item) => `<option value="${esc(item.id)}">${esc(item.name)}</option>`).join('')}`;
   document.getElementById('inventoryPlanId').innerHTML = planOptions;
   document.getElementById('inventoryPlanIdCreate').innerHTML = planOptions;
+  const bulkPlan = document.getElementById('bulkPlanId');
+  if (bulkPlan) bulkPlan.innerHTML = planOptions;
   // Promokod formasidagi "qaysi tovarlarga" ro'yxati ham shu yerdan to'ladi.
   const promoPlans = document.getElementById('promoPlanIds');
   if (promoPlans) {
@@ -825,7 +828,7 @@ async function initApp() {
   document.body.classList.add('authed');
   document.getElementById('loginView').hidden = true;
   document.getElementById('appView').hidden = false;
-  await Promise.all([loadDashboard(), loadData(), loadSettings(), loadBanners(), loadPromos(), loadReviews(), loadFaq(), loadUsers(), loadLeads(), loadReferrals(), loadBroadcasts()]);
+  await Promise.all([loadDashboard(), loadData(), loadSettings(), loadBanners(), loadPromos(), loadReviews(), loadFaq(), loadUsers(), loadLeads(), loadReferrals(), loadBroadcasts(), loadSubscriptions()]);
 }
 
 // --- Image upload helper ---
@@ -1864,6 +1867,121 @@ document.getElementById('inventoryList')?.addEventListener('click', async (event
   if (!btn) return;
   await api('admin-inventory', { method: 'POST', body: JSON.stringify({ action: 'disable', id: btn.dataset.id }) });
   await loadInventory();
+});
+
+// --- Inventar: ko'p qatorli import ---
+document.getElementById('bulkLines')?.addEventListener('input', (e) => {
+  const n = e.target.value.split(/\r?\n/).filter((l) => l.trim()).length;
+  const el = document.getElementById('bulkCount');
+  if (el) el.textContent = n ? `${n} ta qator` : '';
+});
+onSubmit('bulkForm', async () => {
+  const lines = document.getElementById('bulkLines').value;
+  const n = lines.split(/\r?\n/).filter((l) => l.trim()).length;
+  if (!n) { alert('Qatorlarni kiriting'); return; }
+  const result = document.getElementById('bulkResult');
+  result.style.color = '';
+  result.textContent = 'Import qilinmoqda…';
+  const res = await api('admin-inventory', {
+    method: 'POST',
+    body: JSON.stringify({
+      action: 'bulk',
+      plan_id: document.getElementById('bulkPlanId').value,
+      type: document.getElementById('bulkType').value,
+      lines,
+      notes: document.getElementById('bulkNotes').value || null,
+    }),
+  });
+  result.textContent = `Qo'shildi: ${res.inserted}${res.skipped ? `, o'tkazib yuborildi: ${res.skipped}` : ''}`
+    + (res.errors?.length ? ` — ${res.errors.slice(0, 3).join('; ')}` : '');
+  document.getElementById('bulkLines').value = '';
+  document.getElementById('bulkCount').textContent = '';
+  const sel = document.getElementById('inventoryPlanId');
+  if (sel) sel.value = document.getElementById('bulkPlanId').value;
+  await loadInventory();
+});
+
+// --- Obunalar ---
+function subStatusBadge(s) {
+  if (s.status === 'cancelled') return '<span class="badge">Bekor qilingan</span>';
+  if (s.is_expired) return '<span class="badge">Tugagan</span>';
+  if (s.days_left !== null && s.days_left <= 3) return `<span class="badge" style="background:var(--danger-tint);color:var(--danger)">${esc(s.days_left)} kun qoldi</span>`;
+  if (s.days_left !== null && s.days_left <= 7) return `<span class="badge" style="background:#FEF3C7;color:#B45309">${esc(s.days_left)} kun qoldi</span>`;
+  return `<span class="badge" style="background:var(--success-tint);color:var(--success)">Faol${s.days_left !== null ? ` · ${esc(s.days_left)} kun` : ''}</span>`;
+}
+
+function renderSubscriptions(items = [], summary = {}) {
+  const stats = document.getElementById('subStats');
+  if (stats) {
+    stats.innerHTML = [
+      ['Faol obunalar', summary.active ?? 0],
+      ['7 kun ichida tugaydi', summary.expiring_7d ?? 0],
+      ['Tugagan / bekor', summary.expired ?? 0],
+    ].map(([l, v]) => `<div class="card"><h3>${esc(l)}</h3><strong>${esc(v)}</strong></div>`).join('');
+  }
+  const root = document.getElementById('subList');
+  if (!root) return;
+  if (!items.length) {
+    root.innerHTML = '<p class="detail-empty">Bu filtr bo\'yicha obuna yo\'q.</p>';
+    return;
+  }
+  root.innerHTML = `<table><thead><tr><th>Mijoz</th><th>Obuna</th><th>Boshlangan</th><th>Tugaydi</th><th>Holat</th><th>Eslatma</th><th>Amal</th></tr></thead><tbody>${items.map((s) => `
+    <tr>
+      <td>${userLinkHtml(s.user_telegram_id, userLabel(s.user))}${s.user?.phone ? `<div class="hint">${esc(s.user.phone)}</div>` : ''}</td>
+      <td>${esc(s.plan_name || '-')}</td>
+      <td>${dt(s.started_at || s.created_at)}</td>
+      <td>${dt(s.expires_at)}</td>
+      <td>${subStatusBadge(s)}</td>
+      <td class="hint">${s.reminder_3d_sent ? '3k ✓ ' : ''}${s.reminder_1d_sent ? '1k ✓ ' : ''}${s.expired_notified ? 'tugadi ✓' : ''}</td>
+      <td>
+        <button class="ghost sub-extend" data-id="${esc(s.id)}" data-days="30">+30 kun</button>
+        <button class="ghost sub-extend" data-id="${esc(s.id)}" data-days="">+N kun</button>
+        <button class="ghost sub-remind" data-id="${esc(s.id)}">Eslatma</button>
+        ${s.status === 'active' ? `<button class="ghost danger sub-cancel" data-id="${esc(s.id)}">Bekor</button>` : ''}
+      </td>
+    </tr>`).join('')}</tbody></table>`;
+}
+
+async function loadSubscriptions() {
+  const filter = document.getElementById('subFilter')?.value || 'active';
+  try {
+    const data = await api(`admin-subscriptions?filter=${encodeURIComponent(filter)}`);
+    renderSubscriptions(data.items || [], data.summary || {});
+  } catch (error) {
+    const root = document.getElementById('subList');
+    if (root) root.innerHTML = `<p class="detail-empty">${esc(error.message || 'Yuklanmadi')}</p>`;
+  }
+}
+document.getElementById('subFilter')?.addEventListener('change', () => loadSubscriptions());
+document.getElementById('subRefresh')?.addEventListener('click', () => loadSubscriptions());
+document.getElementById('subList')?.addEventListener('click', async (event) => {
+  const extendBtn = event.target.closest('.sub-extend');
+  const remindBtn = event.target.closest('.sub-remind');
+  const cancelBtn = event.target.closest('.sub-cancel');
+  try {
+    if (extendBtn) {
+      let days = Number(extendBtn.dataset.days || 0);
+      if (!days) {
+        const raw = prompt('Necha kunga uzaytirilsin?', '30');
+        if (raw === null) return;
+        days = Number(raw);
+      }
+      if (!(days > 0)) { alert('Kunlar soni noto\'g\'ri'); return; }
+      const res = await api('admin-subscriptions', { method: 'POST', body: JSON.stringify({ action: 'extend', id: extendBtn.dataset.id, days }) });
+      alert(`Uzaytirildi (+${days} kun)${res.notified ? ', mijozga xabar ketdi' : ''}.`);
+    } else if (remindBtn) {
+      await api('admin-subscriptions', { method: 'POST', body: JSON.stringify({ action: 'remind', id: remindBtn.dataset.id }) });
+      alert('Eslatma yuborildi.');
+    } else if (cancelBtn) {
+      if (!confirm('Obuna bekor qilinsinmi? Eslatmalar to\'xtaydi.')) return;
+      await api('admin-subscriptions', { method: 'POST', body: JSON.stringify({ action: 'cancel', id: cancelBtn.dataset.id }) });
+    } else {
+      return;
+    }
+    await loadSubscriptions();
+  } catch (error) {
+    alert(error.message);
+  }
 });
 
 // --- Image upload setup ---

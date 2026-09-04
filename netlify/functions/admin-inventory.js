@@ -6,6 +6,37 @@ function json(statusCode, body) {
   return { statusCode, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
 }
 
+// Ko'p qatorli import: har qator bitta akkaunt yoki kalit.
+//   auto_account: "login:parol", "login parol", "login;parol", "login | parol", "login<TAB>parol"
+//   license_key:  qatorning o'zi kalit
+// Bo'sh qatorlar o'tkazib yuboriladi; buzuq qatorlar xato ro'yxatiga tushadi.
+function parseInventoryLines(text, type) {
+  const items = [];
+  const errors = [];
+  String(text || '').split(/\r?\n/).forEach((raw, index) => {
+    const line = raw.trim();
+    if (!line) return;
+    if (type === 'license_key') {
+      items.push({ license_key: line });
+      return;
+    }
+    const idx = line.search(/[:;|\t ]/);
+    if (idx <= 0) {
+      errors.push(`${index + 1}-qator: login va parol ajratilmagan`);
+      return;
+    }
+    const login = line.slice(0, idx).trim();
+    const password = line.slice(idx + 1).replace(/^[:;|\t ]+/, '').trim();
+    if (!login || !password) {
+      errors.push(`${index + 1}-qator: login yoki parol bo‘sh`);
+      return;
+    }
+    items.push({ login, password });
+  });
+  return { items, errors };
+}
+exports._parseInventoryLines = parseInventoryLines;
+
 exports.handler = async (event) => {
   if (!requireAdmin(event.headers)) return json(401, { ok: false, error: 'Unauthorized' });
   const supabase = getAdminClient();
@@ -19,6 +50,39 @@ exports.handler = async (event) => {
 
     if (event.httpMethod === 'POST') {
       const payload = JSON.parse(event.body || '{}');
+      if (payload.action === 'bulk') {
+        const type = payload.type === 'account' ? 'auto_account' : payload.type;
+        if (!['auto_account', 'license_key'].includes(type)) return json(400, { ok: false, error: 'type noto‘g‘ri' });
+        if (!payload.plan_id) return json(400, { ok: false, error: 'plan_id talab qilinadi' });
+        const { items, errors } = parseInventoryLines(payload.lines, type);
+        if (!items.length) return json(400, { ok: false, error: errors[0] || 'Qatorlar bo‘sh', errors });
+        if (items.length > 500) return json(400, { ok: false, error: 'Bir martada 500 tagacha qator' });
+        const notes = payload.notes ? String(payload.notes).slice(0, 500) : null;
+        const rows = items.map((it) => ({
+          plan_id: payload.plan_id,
+          type,
+          login: it.login || null,
+          password_encrypted: it.password ? encryptText(it.password) : null,
+          license_key_encrypted: it.license_key ? encryptText(it.license_key) : null,
+          status: 'available',
+          notes,
+        }));
+        // Bitta so'rovda (PostgREST massivni qabul qiladi)
+        const { data } = await request(supabase, 'inventory_items', {
+          method: 'POST',
+          headers: { Prefer: 'return=representation' },
+          body: rows,
+        });
+        const inserted = Array.isArray(data) ? data.length : rows.length;
+        // Zaxira kelganini kutayotganlarga xabar (waitlist) — best-effort
+        try {
+          const { notifyWaitlist } = require('../../shared/stock-waitlist');
+          await notifyWaitlist(supabase, payload.plan_id);
+        } catch {
+          /* waitlist moduli yo'q yoki xato — import muvaffaqiyatli qoladi */
+        }
+        return json(200, { ok: true, inserted, skipped: errors.length, errors });
+      }
       if (payload.action === 'disable') {
         const item = await updateRow(supabase, 'inventory_items', payload.id, { status: 'disabled' });
         return json(200, { ok: true, item });

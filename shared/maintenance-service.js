@@ -87,7 +87,13 @@ async function runMaintenance(supabase) {
     console.warn('broadcast resume warn:', e?.message);
     return [];
   });
-  return { expired: expired.length, resumed, retries: retries.length, broadcasts: broadcasts.length };
+  // Zaxira kam qolgan rejalar (24 soatda bir marta ogohlantiriladi).
+  const { checkLowStock } = require('./stock-alerts');
+  const lowStock = await checkLowStock(supabase).catch((e) => {
+    console.warn('low stock check warn:', e?.message);
+    return 0;
+  });
+  return { expired: expired.length, resumed, retries: retries.length, broadcasts: broadcasts.length, lowStock };
 }
 
 module.exports = { runMaintenance, processRetryQueue, resumeStuckDeliveries };

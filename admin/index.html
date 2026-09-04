@@ -25,6 +25,7 @@
           <button data-view="reviews" class="nav-link"><span class="nav-ico">⭐</span> Sharhlar</button>
           <button data-view="users" class="nav-link"><span class="nav-ico">👥</span> Foydalanuvchilar</button>
           <button data-view="orders" class="nav-link"><span class="nav-ico">🛒</span> Buyurtmalar</button>
+          <button data-view="subscriptions" class="nav-link"><span class="nav-ico">📅</span> Obunalar</button>
           <button data-view="leads" class="nav-link"><span class="nav-ico">📥</span> Leadlar <span id="leadsNewBadge" class="nav-badge" hidden></span></button>
           <button data-view="referrals" class="nav-link"><span class="nav-ico">🤝</span> Referallar</button>
           <button data-view="messages" class="nav-link"><span class="nav-ico">✉️</span> Xabar yuborish</button>
@@ -193,6 +194,21 @@
                   <label class="full">Izoh<textarea id="inventoryNotes"></textarea></label>
                   <div class="actions full"><button type="submit">Saqlash</button></div>
                 </form>
+              </div>
+              <div class="card form-card">
+                <h3>Ko'p qatorli import</h3>
+                <p class="hint">Har qatorga bitta akkaunt: <code>login:parol</code> (yoki bo'sh joy, <code>;</code>, <code>|</code> bilan). Kalitlar uchun har qator — bitta kalit. Bir martada 500 tagacha.</p>
+                <form id="bulkForm" class="grid-form">
+                  <label>Reja<select id="bulkPlanId"></select></label>
+                  <label>Turi<select id="bulkType"><option value="account">account</option><option value="license_key">license_key</option></select></label>
+                  <label class="full">Qatorlar<textarea id="bulkLines" rows="8" placeholder="user1@mail.com:parol1&#10;user2@mail.com:parol2"></textarea></label>
+                  <label class="full">Izoh (hammasiga)<input id="bulkNotes" placeholder="Masalan: 2026-09 partiya" /></label>
+                  <div class="actions full">
+                    <button type="submit" id="bulkSubmit">Import qilish</button>
+                    <span class="hint" id="bulkCount"></span>
+                  </div>
+                </form>
+                <p id="bulkResult" class="success-text"></p>
               </div>
             </section>
 
@@ -377,6 +393,22 @@
               <div class="actions">
                 <button id="ordersLoadMore" class="ghost" hidden>Yana yuklash</button>
               </div>
+            </section>
+
+            <section id="subscriptionsView" class="view" hidden>
+              <div class="toolbar">
+                <h2>Obunalar</h2>
+                <select id="subFilter">
+                  <option value="active">Faol</option>
+                  <option value="expiring">7 kun ichida tugaydi</option>
+                  <option value="expired">Tugagan</option>
+                  <option value="all">Hammasi</option>
+                </select>
+                <button id="subRefresh" class="ghost">Yangilash</button>
+              </div>
+              <div class="cards" id="subStats"></div>
+              <p class="hint">Eslatmalar har kuni soat 09:00 da avtomatik ketadi (3 kun va 1 kun qolganda, tugaganda). Bu yerdan qo'lda uzaytirish, eslatma yuborish yoki bekor qilish mumkin.</p>
+              <div id="subList" class="table-card"></div>
             </section>
 
             <section id="messagesView" class="view" hidden>

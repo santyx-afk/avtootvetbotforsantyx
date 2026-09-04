@@ -120,16 +120,13 @@ function resolveAdminChatIds(settings) {
   return [...new Set([settings?.admin_telegram_id, process.env.ADMIN_CHAT_ID, process.env.ADMIN_TELEGRAM_ID, ...(process.env.ADMIN_TELEGRAM_IDS || '').split(',')].map((item) => String(item || '').trim()).filter(Boolean))];
 }
 
+// Zaxira kamaygani haqida ogohlantirish — bitta reja uchun 24 soatda bir
+// marta (stock-alerts.js), ilgari har sotuvda takrorlanardi.
 async function notifyLowInventoryIfNeeded(supabase, plan) {
-  const threshold = Number(process.env.LOW_INVENTORY_THRESHOLD || 2);
   if (!['auto_account', 'license_key'].includes(plan.delivery_type || plan.deliveryType)) return;
   const counts = await getInventoryCountsByPlan(supabase, plan.id);
-  const available = Number(counts.available || 0);
-  if (available > threshold) return;
-  const settings = await fetchSettings(supabase);
-  for (const adminChatId of resolveAdminChatIds(settings)) {
-    await sendMessage(adminChatId, `⚠ ${plan.name} inventory is running low.\n\nRemaining accounts: ${available}`, null);
-  }
+  const { alertLowStock } = require('./stock-alerts');
+  await alertLowStock(supabase, { plan, available: Number(counts.available || 0) }).catch((e) => console.warn('low stock alert warn:', e?.message));
 }
 
 function escapeHtml(value) {
