@@ -120,16 +120,13 @@ function resolveAdminChatIds(settings) {
   return [...new Set([settings?.admin_telegram_id, process.env.ADMIN_CHAT_ID, process.env.ADMIN_TELEGRAM_ID, ...(process.env.ADMIN_TELEGRAM_IDS || '').split(',')].map((item) => String(item || '').trim()).filter(Boolean))];
 }
 
+// Zaxira kamaygani haqida ogohlantirish — bitta reja uchun 24 soatda bir
+// marta (stock-alerts.js), ilgari har sotuvda takrorlanardi.
 async function notifyLowInventoryIfNeeded(supabase, plan) {
-  const threshold = Number(process.env.LOW_INVENTORY_THRESHOLD || 2);
   if (!['auto_account', 'license_key'].includes(plan.delivery_type || plan.deliveryType)) return;
   const counts = await getInventoryCountsByPlan(supabase, plan.id);
-  const available = Number(counts.available || 0);
-  if (available > threshold) return;
-  const settings = await fetchSettings(supabase);
-  for (const adminChatId of resolveAdminChatIds(settings)) {
-    await sendMessage(adminChatId, `⚠ ${plan.name} inventory is running low.\n\nRemaining accounts: ${available}`, null);
-  }
+  const { alertLowStock } = require('./stock-alerts');
+  await alertLowStock(supabase, { plan, available: Number(counts.available || 0) }).catch((e) => console.warn('low stock alert warn:', e?.message));
 }
 
 function escapeHtml(value) {
@@ -375,7 +372,14 @@ async function processApprovedDelivery({ supabase, order, adminTelegramId = 'web
 
 async function processOrderItemDelivery({ supabase, order, item, plan, adminTelegramId }) {
   const result = await processApprovedDelivery({ supabase, order: { ...order, plan_id: plan.id, inventory_item_id: item.inventory_item_id || null, delivery_status: 'waiting_approval' }, adminTelegramId });
-  await updateOrderItem(supabase, item.id, { delivery_status: result.ok ? 'delivered' : result.code === 'NO_STOCK' ? 'waiting_stock' : 'failed', delivered_at: result.ok ? new Date().toISOString() : null, delivery_error: result.ok ? null : result.message });
+  // Qo'lda ulanadigan reja: element hali yetkazilmagan — admin panelda
+  // "Yetkazish" qilinganda 'delivered' bo'ladi.
+  const manual = result.ok && result.code === 'MANUAL_REQUIRED';
+  await updateOrderItem(supabase, item.id, {
+    delivery_status: manual ? 'pending' : result.ok ? 'delivered' : result.code === 'NO_STOCK' ? 'waiting_stock' : 'failed',
+    delivered_at: result.ok && !manual ? new Date().toISOString() : null,
+    delivery_error: result.ok ? null : result.message,
+  });
   return result;
 }
 
@@ -404,6 +408,15 @@ async function processApprovedOrderDelivery({ supabase, order, adminTelegramId =
     else if (hasRetriesLeft(Number(order.delivery_attempts || 0) + 1)) await enqueueDeliveryRetry(supabase, { order_id: order.id, reason: failed.code || 'delivery_failed', retry_count: Number(order.delivery_attempts || 0) + 1, next_retry_at: nextRetryAt(Number(order.delivery_attempts || 0) + 1), metadata: { message: failed.message } });
     else await createExceptionQueueItem(supabase, { order_id: order.id, reason: 'max_retries_exceeded', metadata: { message: failed.message } });
     return failed;
+  }
+  // Kamida bitta element qo'lda ulanadi: buyurtma "yakunlangan" emas,
+  // "tasdiqlangan, qo'lda ulash kerak" holatida qoladi. Ilgari bu yerda u
+  // completed/delivered deb belgilanib, admin panelda ko'zdan yo'qolardi.
+  // Referal va cashback admin qo'lda yetkazganda hisoblanadi.
+  if (results.some((result) => result.code === 'MANUAL_REQUIRED')) {
+    await updateOrderStatus(supabase, order.id, 'approved', { delivery_status: 'manual_required' });
+    await createAuditLog(supabase, { order_id: order.id, user_telegram_id: order.user_telegram_id, action: 'manual_required', status: 'approved' });
+    return { ok: true, code: 'MANUAL_REQUIRED', message: 'Qo‘lda yetkazib berish kerak', results };
   }
   await updateOrderStatus(supabase, order.id, 'completed', { delivery_status: 'delivered', delivered_at: new Date().toISOString(), completed_at: new Date().toISOString() });
   await createAuditLog(supabase, { order_id: order.id, user_telegram_id: order.user_telegram_id, action: 'order_completed', status: 'completed' });

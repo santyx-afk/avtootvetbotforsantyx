@@ -13,6 +13,8 @@ const {
 } = require('./db');
 const { sendMessage } = require('./telegram');
 const { processApprovedOrderDelivery } = require('./delivery-service');
+const { userLines, fetchUserBrief, markOrderNotification } = require('./admin-notify');
+const { escapeHtml } = require('./messages');
 
 // Yetkazishni qancha kutamiz. Netlify funksiyasi ~10 soniyada uzilgani uchun
 // cheklov kerak, lekin kutish tugashi "yetkazilmadi" degani EMAS — pastdagi
@@ -77,7 +79,7 @@ function deliveryOutcomeFromOrder(order, waitSeconds) {
   };
 }
 
-async function creditTopupOrder({ supabase, order, amount, messageKey }) {
+async function creditTopupOrder({ supabase, order, amount, messageKey, adminLabel = null }) {
   // topup_credit — cashback bilan hamyonga tushadigan summa (checkout paytida hisoblangan).
   // Bo'lmasa, to'langan summaning o'zi hisoblanadi.
   const credited = Number(order.topup_credit != null ? order.topup_credit : amount || 0);
@@ -94,11 +96,99 @@ async function creditTopupOrder({ supabase, order, amount, messageKey }) {
   const wallet = await getUserBalance(supabase, order.user_telegram_id);
   await sendMessage(order.user_telegram_id, ['✅ Balansingiz to‘ldirildi!', '', `Qo‘shildi: ${formatUzs(credited)}`, `Joriy balans: ${formatUzs(wallet?.balance)}`].join('\n'), null);
 
-  const settings = await fetchSettings(supabase);
+  const [settings, user] = await Promise.all([fetchSettings(supabase), fetchUserBrief(supabase, order.user_telegram_id)]);
+  const text = [
+    adminLabel
+      ? `💰 <b>Balans to‘ldirildi — qo‘lda tasdiqlandi</b> (${escapeHtml(adminLabel)})`
+      : '💰 <b>Balans to‘ldirildi</b> (avtomatik)',
+    '',
+    ...userLines(user),
+    `🧾 Buyurtma: <code>#${escapeHtml(order.order_number)}</code>`,
+    `💵 To‘langan: ${formatUzs(amount)}`,
+    `➕ Balansga tushdi: ${formatUzs(credited)}`,
+    `👛 Yangi balans: ${formatUzs(wallet?.balance)}`,
+  ].join('\n');
   for (const adminChatId of adminIds(settings)) {
-    await sendMessage(adminChatId, ['💰 Balans to‘ldirildi', '', `User: <code>${order.user_telegram_id}</code>`, `Order: <code>${order.order_number}</code>`, `Amount: ${formatUzs(credited)}`, `New balance: ${formatUzs(wallet?.balance)}`].join('\n'), null);
+    await sendMessage(adminChatId, text, null).catch((e) => console.warn('admin notify warn:', e?.message));
   }
+  await markOrderNotification(supabase, order.id, adminLabel ? '✅ To‘lov keldi — qo‘lda tasdiqlandi' : '✅ To‘lov keldi (avtomatik)').catch(() => {});
   return { handled: true, matched: true, topup: true, order };
+}
+
+// To'lovi kelgan (avtomatik aniqlangan yoki admin qo'lda tasdiqlagan)
+// buyurtmani yakunlaydi: topup bo'lsa balansga, xarid bo'lsa yetkazishga.
+// Oxirida adminlarga natija xabari va "yangi buyurtma" xabarini yangilash.
+// adminLabel berilsa — qo'lda tasdiqlangan (kim tasdiqlagani ko'rsatiladi).
+async function settlePaidOrder({ supabase, order, amount, messageKey, adminLabel = null }) {
+  const paidOrder = order;
+
+  // Balans to'ldirish buyurtmasi: yetkazishga emas, hamyonga boradi
+  if (String(paidOrder.order_type || '') === 'topup') {
+    return creditTopupOrder({ supabase, order: paidOrder, amount, messageKey, adminLabel });
+  }
+
+  // Qisman balansdan to'langan bo'lsa — karta to'lovi aniqlangandan keyin
+  // balans qismini hamyondan yechamiz (checkout paytida emas — muddat tugasa
+  // qaytarish shart bo'lmasligi uchun).
+  if (Number(paidOrder.balance_used || 0) > 0) {
+    try {
+      await addWalletTransaction(supabase, {
+        user_telegram_id: paidOrder.user_telegram_id,
+        order_id: paidOrder.id,
+        amount: Number(paidOrder.balance_used),
+        type: 'debit',
+        description: `Balansdan yechildi #${paidOrder.order_number}`,
+      });
+    } catch (err) {
+      console.warn('balance debit warn:', err?.message);
+    }
+  }
+
+  // Funksiya qotib qolmasligi uchun yetkazishni cheklangan vaqt kutamiz
+  // (Netlify funksiyasining o'z limiti ~10 soniya).
+  const waitSeconds = Math.max(1, Math.round(DELIVERY_WAIT_MS / 1000));
+  let delivery;
+  try {
+    const deliveryPromise = processApprovedOrderDelivery({ supabase, order: paidOrder, adminTelegramId: adminLabel ? `manual:${adminLabel}` : 'humo_card_bot' });
+    const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve({ ok: false, code: WAIT_TIMEOUT }), DELIVERY_WAIT_MS));
+    delivery = await Promise.race([deliveryPromise, timeoutPromise]);
+  } catch (err) {
+    delivery = { ok: false, message: 'Tarqatishda xatolik: ' + err.message };
+  }
+
+  // Kutish tugagan bo'lsa — trevoga ko'tarishdan oldin haqiqiy holatni o'qiymiz.
+  if (delivery?.code === WAIT_TIMEOUT) {
+    let fresh = null;
+    try {
+      fresh = await getOrderById(supabase, paidOrder.id);
+    } catch (err) {
+      console.warn('order recheck warn:', err?.message);
+    }
+    delivery = deliveryOutcomeFromOrder(fresh, waitSeconds);
+  }
+
+  let deliveryLine;
+  if (delivery.code === 'MANUAL_REQUIRED') deliveryLine = '🖐 Qo‘lda ulash kerak — admin panel → Buyurtmalar → Yetkazish';
+  else if (delivery.ok) deliveryLine = delivery.slow ? `✅ Yetkazildi (${delivery.message})` : '✅ Yetkazildi';
+  else deliveryLine = `⚠️ E’tibor kerak: ${delivery.message}`;
+
+  const [settings, user] = await Promise.all([fetchSettings(supabase), fetchUserBrief(supabase, paidOrder.user_telegram_id)]);
+  const text = [
+    adminLabel
+      ? `✅ <b>To‘lov keldi — qo‘lda tasdiqlandi</b> (${escapeHtml(adminLabel)})`
+      : '✅ <b>To‘lov keldi — avtomatik aniqlandi</b>',
+    '',
+    ...userLines(user),
+    `🧾 Buyurtma: <code>#${escapeHtml(paidOrder.order_number)}</code>`,
+    `💰 Summa: ${formatUzs(amount)}`,
+    '',
+    `📦 Yetkazish: ${escapeHtml(deliveryLine)}`,
+  ].join('\n');
+  for (const adminChatId of adminIds(settings)) {
+    await sendMessage(adminChatId, text, null).catch((e) => console.warn('admin notify warn:', e?.message));
+  }
+  await markOrderNotification(supabase, paidOrder.id, adminLabel ? '✅ To‘lov keldi — qo‘lda tasdiqlandi' : '✅ To‘lov keldi (avtomatik)').catch(() => {});
+  return { handled: true, matched: true, order: paidOrder, delivery };
 }
 
 async function handleHumoPaymentNotification({ supabase, message }) {
@@ -126,59 +216,7 @@ async function handleHumoPaymentNotification({ supabase, message }) {
   await createAuditLog(supabase, { order_id: order.id, user_telegram_id: order.user_telegram_id, action: 'payment_detected', status: 'payment_detected', metadata: { amount, messageKey: key } });
   await trackEvent(supabase, { eventType: 'auto_payment_confirmed', telegramId: order.user_telegram_id, planId: order.plan_id, metadata: { orderId: order.id, amount } });
 
-  // Balans to'ldirish buyurtmasi: yetkazishga emas, hamyonga boradi
-  if (String(paidOrder.order_type || '') === 'topup') {
-    return creditTopupOrder({ supabase, order: paidOrder, amount, messageKey: key });
-  }
-
-  // Qisman balansdan to'langan bo'lsa — karta to'lovi aniqlangandan keyin
-  // balans qismini hamyondan yechamiz (checkout paytida emas — muddat tugasa
-  // qaytarish shart bo'lmasligi uchun).
-  if (Number(paidOrder.balance_used || 0) > 0) {
-    try {
-      await addWalletTransaction(supabase, {
-        user_telegram_id: paidOrder.user_telegram_id,
-        order_id: paidOrder.id,
-        amount: Number(paidOrder.balance_used),
-        type: 'debit',
-        description: `Balansdan yechildi #${paidOrder.order_number}`,
-      });
-    } catch (err) {
-      console.warn('balance debit warn:', err?.message);
-    }
-  }
-
-  // Funksiya qotib qolmasligi uchun yetkazishni cheklangan vaqt kutamiz
-  // (Netlify funksiyasining o'z limiti ~10 soniya).
-  const waitSeconds = Math.max(1, Math.round(DELIVERY_WAIT_MS / 1000));
-  let delivery;
-  try {
-    const deliveryPromise = processApprovedOrderDelivery({ supabase, order: paidOrder, adminTelegramId: 'humo_card_bot' });
-    const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve({ ok: false, code: WAIT_TIMEOUT }), DELIVERY_WAIT_MS));
-    delivery = await Promise.race([deliveryPromise, timeoutPromise]);
-  } catch (err) {
-    delivery = { ok: false, message: 'Tarqatishda xatolik: ' + err.message };
-  }
-
-  // Kutish tugagan bo'lsa — trevoga ko'tarishdan oldin haqiqiy holatni o'qiymiz.
-  if (delivery?.code === WAIT_TIMEOUT) {
-    let fresh = null;
-    try {
-      fresh = await getOrderById(supabase, paidOrder.id);
-    } catch (err) {
-      console.warn('order recheck warn:', err?.message);
-    }
-    delivery = deliveryOutcomeFromOrder(fresh, waitSeconds);
-  }
-
-  const deliveryLine = delivery.ok
-    ? (delivery.slow ? `Accounts delivered successfully (${delivery.message}).` : 'Accounts delivered successfully.')
-    : `Delivery requires attention: ${delivery.message}`;
-  const settings = await fetchSettings(supabase);
-  for (const adminChatId of adminIds(settings)) {
-    await sendMessage(adminChatId, [`✅ Payment confirmed`, '', `User: <code>${order.user_telegram_id}</code>`, `Order: <code>${order.order_number}</code>`, `Amount: ${new Intl.NumberFormat('uz-UZ').format(amount)} UZS`, '', 'Payment detected automatically.', deliveryLine].join('\n'), null);
-  }
-  return { handled: true, matched: true, order: paidOrder };
+  return settlePaidOrder({ supabase, order: paidOrder, amount, messageKey: key });
 }
 
-module.exports = { parseHumoAmount, isHumoNotification, handleHumoPaymentNotification, deliveryOutcomeFromOrder };
+module.exports = { parseHumoAmount, isHumoNotification, handleHumoPaymentNotification, deliveryOutcomeFromOrder, settlePaidOrder };

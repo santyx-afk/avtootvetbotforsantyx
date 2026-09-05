@@ -373,6 +373,13 @@ async function expireOrder(client, order) {
   const { data } = await request(client, 'orders', { method: 'PATCH', query: toQuery({ id: `eq.${order.id}`, status: 'in.(waiting_payment,pending_payment)' }), headers: { Prefer: 'return=representation' }, body: { status: 'expired', delivery_status: 'failed', updated_at: now, admin_comment: 'Payment timeout' } });
   const expired = data?.[0] || null;
   await createAuditLog(client, { order_id: order.id, user_telegram_id: order.user_telegram_id, action: 'order_expired', status: 'expired', metadata: { expiresAt: order.expires_at } });
+  if (expired) {
+    // Adminga ketgan "yangi buyurtma" xabaridan tugmalarni olib, holatni yozamiz.
+    // Lazy require — admin-notify o'zi db'ga tayanadi (aylanma import bo'lmasin).
+    await require('./admin-notify')
+      .markOrderNotification(client, order.id, '⌛ Muddat o‘tdi — to‘lov kelmadi')
+      .catch(() => {});
+  }
   return expired;
 }
 
@@ -675,6 +682,30 @@ async function markOrderPaidFromPayment(client, orderId, extra = {}) {
   const now = new Date().toISOString();
   const { data } = await request(client, 'orders', { method: 'PATCH', query: toQuery({ id: `eq.${orderId}`, status: 'in.(waiting_payment,pending_payment)' }), headers: { Prefer: 'return=representation' }, body: { status: 'payment_detected', paid_at: now, approved_at: now, payment_source: extra.payment_source || 'humo_card_bot', payment_message_id: extra.payment_message_id || null, updated_at: now } });
   return data?.[0] || null;
+}
+
+// Admin to'lovni qo'lda "keldi" deb belgilaydi (tizim aniqlamagan, lekin pul
+// kelgan). Faqat to'lov kutilayotgan va muddati o'tmagan buyurtma uchun —
+// qoida admin-notify.canMarkPaid'da, tugma va panel bir xil tekshiradi.
+// Holat o'zgarishi markOrderPaidFromPayment orqali (status sharti bilan) —
+// avtomatik aniqlash bilan bir vaqtda kelsa ham ikki marta o'tmaydi.
+async function markOrderPaidManually(client, orderId, adminId) {
+  const order = await getOrderById(client, orderId);
+  const check = require('./admin-notify').canMarkPaid(order);
+  if (!check.ok) return { ok: false, reason: check.reason, order };
+  const paid = await markOrderPaidFromPayment(client, orderId, {
+    payment_source: 'manual_admin',
+    payment_message_id: `manual:${String(adminId)}:${Date.now()}`,
+  });
+  if (!paid) return { ok: false, reason: 'already_processed', order: await getOrderById(client, orderId) };
+  await createAuditLog(client, {
+    order_id: orderId,
+    user_telegram_id: order.user_telegram_id,
+    action: 'payment_marked_manually',
+    status: 'payment_detected',
+    metadata: { admin: String(adminId), amount: Number(order.unique_price || order.amount || 0) },
+  });
+  return { ok: true, order: paid };
 }
 
 async function insertPaymentLog(client, item) { const { data } = await request(client, 'payment_logs', { method: 'POST', headers: { Prefer: 'return=representation' }, body: item }); return data?.[0] || null; }
@@ -1019,6 +1050,7 @@ module.exports = {
   updateMonitoringSnapshot,
   findWaitingOrderByUniquePrice,
   markOrderPaidFromPayment,
+  markOrderPaidManually,
   insertPaymentLog,
   insertProcessedPaymentMessage,
   getOrderItems,

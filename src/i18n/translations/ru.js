@@ -83,6 +83,10 @@ export default {
     title: 'Ваш аккаунт заблокирован',
     text: 'Обратитесь за помощью к {support}',
   },
+  maintenance: {
+    title: 'Ведутся технические работы',
+    text: 'Скоро вернёмся. Бот и оплаты работают.',
+  },
   pages: {
     catalog: {
       title: 'Каталог',
@@ -204,6 +208,9 @@ export default {
     reviewPlaceholder: 'Напишите ваше мнение...',
     submitReview: 'Отправить',
     reviewThanks: 'Спасибо за отзыв!',
+    notifyWhenBack: 'Сообщить, когда появится',
+    notifyOn: 'Сообщим ✓ (отменить)',
+    notifyHint: 'Когда товар снова появится, бот пришлёт уведомление.',
     share: 'Поделиться',
     quantity: 'Количество',
     adminReply: 'Ответ администратора',

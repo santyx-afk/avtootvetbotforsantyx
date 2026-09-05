@@ -40,6 +40,18 @@ function userLabel(u = {}) {
   return String(u.telegram_id ?? '—');
 }
 
+// Bosiladigan foydalanuvchi havolasi: har qanday jadvalda ID/ism ustiga
+// bosilsa foydalanuvchi kartochkasi ochiladi (hujjat darajasidagi handler).
+function userLinkHtml(id, label) {
+  if (!id) return '—';
+  return `<a href="#" class="user-link" data-id="${esc(id)}" title="Foydalanuvchi kartochkasi">${esc(label ?? id)}</a>`;
+}
+
+// cell() kabi, lekin qiymat tayyor (xavfsiz) HTML — havola qo'yish uchun.
+function cellHtml(label, html) {
+  return `<div class="detail-cell"><span class="k">${esc(label)}</span><span class="v">${html}</span></div>`;
+}
+
 const views = {
   dashboard: document.getElementById('dashboardView'),
   categories: document.getElementById('categoriesView'),
@@ -53,6 +65,9 @@ const views = {
   users: document.getElementById('usersView'),
   leads: document.getElementById('leadsView'),
   referrals: document.getElementById('referralsView'),
+  subscriptions: document.getElementById('subscriptionsView'),
+  wallet: document.getElementById('walletView'),
+  audit: document.getElementById('auditView'),
   messages: document.getElementById('messagesView'),
   settings: document.getElementById('settingsView'),
   help: document.getElementById('helpView'),
@@ -94,16 +109,52 @@ function switchView(name) {
 
 function renderStats(stats) {
   const cards = [
-    ['Jami foydalanuvchi', stats.totalUsers],
-    ['Jami kliklar', stats.totalClicks],
-    ['To\'lov sahifasi ochilishi', stats.totalPaymentOpens],
-    ['Bugungi tushum', Number(stats.revenueToday || 0).toLocaleString('uz-UZ')],
-    ['Haftalik tushum', Number(stats.revenueWeek || 0).toLocaleString('uz-UZ')],
-    ['Oylik tushum', Number(stats.revenueMonth || 0).toLocaleString('uz-UZ')],
+    ['Sotuv (tovar qiymati)', `${money(stats.sales)} UZS`],
+    ['Kartaga tushgan', `${money(stats.cardIncome)} UZS`],
+    ['Balansdan to\'langan', `${money(stats.balancePaid)} UZS`],
+    ['O\'rtacha chek', `${money(stats.avgCheck)} UZS`],
+    ['To\'langan buyurtmalar', stats.funnel?.orders_paid ?? 0],
+    ['Xaridorlar / takroriy', `${stats.uniqueBuyers ?? 0} / ${stats.repeatBuyers ?? 0}`],
+    ['Konversiya (yaratilgan → to\'langan)', `${stats.conversion ?? 0}%`],
+    ['Yangi foydalanuvchilar (raqamli)', `${stats.newUsers ?? 0} (${stats.newUsersWithPhone ?? 0})`],
+    ['Foydalanuvchilar (raqam bergan)', stats.totalUsers],
+    ['Raqam bermaganlar', stats.usersWithoutPhone ?? 0],
     ['Referallar', stats.totalReferrals || 0],
-    ['Referal bonuslari', Number(stats.referralBonusTotal || 0).toLocaleString('uz-UZ')],
+    ['Referal bonuslari', `${money(stats.referralBonusTotal)} UZS`],
   ];
   document.getElementById('statsCards').innerHTML = cards.map(([label, value]) => `<div class="card"><h3>${esc(label)}</h3><strong>${esc(value ?? 0)}</strong></div>`).join('');
+  const label = document.getElementById('dashRangeLabel');
+  if (label && stats.range) label.textContent = `${stats.range.from} — ${stats.range.to} (Toshkent)`;
+
+  // Hozir kutib turganlar (oraliqqa bog'liq emas)
+  const pending = document.getElementById('pendingCards');
+  if (pending) {
+    pending.innerHTML = [
+      ['⏳ To\'lov kutilmoqda', stats.waitingPaymentCount],
+      ['🧾 Chek tekshirilmoqda', stats.paymentUploadedCount],
+      ['🖐 Qo\'lda ulash kerak', stats.manualRequiredCount],
+      ['📭 Zaxira kutilmoqda', stats.waitingStockCount],
+    ].map(([l, v]) => `<div class="card"><h3>${esc(l)}</h3><strong>${esc(v ?? 0)}</strong></div>`).join('');
+  }
+
+  // Voronka: yaratilgan → to'langan → yetkazilgan (kenglik ulushga qarab)
+  const f = stats.funnel || {};
+  const funnelRoot = document.getElementById('funnel');
+  if (funnelRoot) {
+    const steps = [
+      ['Yangi foydalanuvchi', f.new_users || 0],
+      ['Raqam bergan', f.new_users_phone || 0],
+      ['Buyurtma yaratdi', f.orders_created || 0],
+      ['To\'ladi', f.orders_paid || 0],
+      ['Yetkazildi', f.orders_delivered || 0],
+    ];
+    const max = Math.max(1, ...steps.map((s) => s[1]));
+    funnelRoot.innerHTML = steps.map(([l, v], i) => {
+      const prev = i > 0 ? steps[i - 1][1] : 0;
+      const pct = i > 0 && prev ? Math.round((v / prev) * 100) : null;
+      return `<div class="funnel-row"><span class="funnel-label">${esc(l)}</span><div class="funnel-bar" style="width:${Math.max(4, Math.round((v / max) * 100))}%"></div><span class="funnel-val">${esc(v)}${pct !== null ? ` <small>(${pct}%)</small>` : ''}</span></div>`;
+    }).join('') + `<p class="hint">Muddati o'tgan: ${esc(f.orders_expired || 0)} · Rad/bekor: ${esc(f.orders_rejected || 0)} · Hali kutilmoqda: ${esc(f.orders_waiting || 0)} · Balans to'ldirish: ${esc(f.topups_paid || 0)}</p>`;
+  }
   // API qisman javob qaytarsa ham dashboard qulamasin — har bir ro'yxat guard bilan.
   const list = (rows, fn) => (Array.isArray(rows) ? rows : []).map(fn).join('') || '<li>Ma\'lumot yo\'q</li>';
   document.getElementById('topCategories').innerHTML = list(stats.mostViewedCategories, (item) => `<li>${esc(item.name)}: ${esc(item.total)}</li>`);
@@ -186,6 +237,8 @@ function renderPlans() {
   parentSelect.innerHTML = `<option value="">Yo'q</option>${state.plans.filter((item) => !item.parent_plan_id).map((item) => `<option value="${esc(item.id)}">${esc(item.name)}</option>`).join('')}`;
   document.getElementById('inventoryPlanId').innerHTML = planOptions;
   document.getElementById('inventoryPlanIdCreate').innerHTML = planOptions;
+  const bulkPlan = document.getElementById('bulkPlanId');
+  if (bulkPlan) bulkPlan.innerHTML = planOptions;
   // Promokod formasidagi "qaysi tovarlarga" ro'yxati ham shu yerdan to'ladi.
   const promoPlans = document.getElementById('promoPlanIds');
   if (promoPlans) {
@@ -325,7 +378,7 @@ function renderReviews() {
   const filtered = statusFilter ? state.reviews.filter((r) => r.status === statusFilter) : state.reviews;
   root.innerHTML = `<table><thead><tr><th>Foydalanuvchi</th><th>Reja</th><th>Baho</th><th>Sharh</th><th>Holat</th><th></th></tr></thead><tbody>${filtered.map((r) => `
     <tr>
-      <td>${esc(r.user_telegram_id)}</td>
+      <td>${userLinkHtml(r.user_telegram_id, r.user_name || r.user_telegram_id)}</td>
       <td>${esc(state.plans.find((p) => p.id === r.plan_id)?.name || r.plan_id)}</td>
       <td class="review-stars">${'★'.repeat(Math.max(0, Math.min(5, Number(r.rating) || 0)))}${'☆'.repeat(5 - Math.max(0, Math.min(5, Number(r.rating) || 0)))}</td>
       <td>${esc(r.text || '-')}</td>
@@ -383,11 +436,19 @@ const USER_SORTS = {
 
 function renderUsers(filter = '') {
   const q = filter.toLowerCase();
-  let filtered = q ? state.users.filter((u) =>
+  const qDigits = q.replace(/\D/g, '');
+  // Raqam bermaganlar "foydalanuvchi safida" emas: sukut bo'yicha yashirin,
+  // faqat belgi qo'yilsa ko'rinadi.
+  const showNoPhone = Boolean(document.getElementById('userShowNoPhone')?.checked);
+  const base = showNoPhone ? state.users : state.users.filter((u) => u.phone);
+  let filtered = q ? base.filter((u) =>
     String(u.telegram_id).includes(q) ||
     (u.username || '').toLowerCase().includes(q) ||
-    (u.full_name || '').toLowerCase().includes(q)
-  ) : state.users;
+    (u.full_name || '').toLowerCase().includes(q) ||
+    (qDigits && String(u.phone || '').replace(/\D/g, '').includes(qDigits)) ||
+    (u.tags || []).some((t) => String(t).toLowerCase().includes(q)) ||
+    (u.admin_note || '').toLowerCase().includes(q)
+  ) : base;
 
   const mode = document.getElementById('userFilter')?.value || '';
   if (USER_FILTERS[mode]) filtered = filtered.filter(USER_FILTERS[mode]);
@@ -399,14 +460,16 @@ function renderUsers(filter = '') {
   // Ilgari qat'iy 100 ta ko'rsatilib "+N ta yana..." deb yozilardi va qolganiga
   // yetib bo'lmasdi. Endi "Yana ko'rsatish" tugmasi bilan ochiladi.
   const shown = filtered.slice(0, state.usersShown);
-  root.innerHTML = `<table><thead><tr><th>Telegram ID</th><th>Username</th><th>Ism</th><th>Balans</th><th>Xaridlar</th><th>Faollik</th><th>Blocked</th><th></th></tr></thead><tbody>${shown.map((u) => `
+  root.innerHTML = `<table><thead><tr><th>Telegram ID</th><th>Username</th><th>Ism</th><th>Telefon</th><th>Balans</th><th>Xaridlar</th><th>Faollik</th><th>Teglar</th><th>Blocked</th><th></th></tr></thead><tbody>${shown.map((u) => `
     <tr>
-      <td>${esc(u.telegram_id)}</td>
+      <td>${userLinkHtml(u.telegram_id)}</td>
       <td>${u.username ? `@${esc(u.username)}` : '-'}</td>
-      <td>${esc(u.full_name || '-')}</td>
+      <td>${esc(u.full_name || '-')}${u.admin_note ? ` <span title="${esc(u.admin_note)}">📝</span>` : ''}</td>
+      <td>${u.phone ? `${esc(u.phone)}${u.phone_verified_at ? ' <span title="Telegram orqali tasdiqlangan">✅</span>' : ''}` : '<span class="hint">yo\'q</span>'}</td>
       <td>${money(u.balance)}</td>
       <td>${esc(u.purchases || 0)}</td>
       <td>${u.last_activity ? esc(new Date(u.last_activity).toLocaleDateString('uz-UZ')) : '-'}</td>
+      <td>${(u.tags || []).map((t) => `<span class="badge">${esc(t)}</span>`).join(' ') || '-'}</td>
       <td>${u.is_blocked ? '🚫' : '-'}</td>
       <td>
         <button class="ghost user-detail" data-id="${esc(u.telegram_id)}">Batafsil</button>
@@ -417,17 +480,182 @@ function renderUsers(filter = '') {
 
   const countEl = document.getElementById('usersCount');
   if (countEl) {
+    const withPhone = state.users.filter((u) => u.phone).length;
+    const noPhone = state.users.length - withPhone;
     countEl.textContent = filtered.length
-      ? `${shown.length} / ${filtered.length} ta ko'rsatilmoqda (jami ${state.users.length})`
-      : 'Foydalanuvchi topilmadi';
+      ? `${shown.length} / ${filtered.length} ta ko'rsatilmoqda (raqam bergan: ${withPhone}, raqamsiz: ${noPhone}${showNoPhone ? '' : ' — yashirin'})`
+      : `Foydalanuvchi topilmadi (raqam bergan: ${withPhone}, raqamsiz: ${noPhone}${showNoPhone ? '' : ' — yashirin'})`;
   }
   const moreBtn = document.getElementById('usersLoadMore');
   if (moreBtn) moreBtn.hidden = filtered.length <= shown.length;
 }
 
-async function loadDashboard() {
-  renderStats((await api('admin-dashboard')).stats);
+// --- E'tibor talab qiladigan buyurtmalar (Dashboard bloki) ---
+const ATTENTION_ICON = { manual: '🖐', stock: '📭', failed: '⚠️', receipt: '🧾', exception: '🚨', retry: '🔁' };
+
+function renderAttention(items = []) {
+  const root = document.getElementById('attentionList');
+  const count = document.getElementById('attentionCount');
+  const badge = document.getElementById('attentionBadge');
+  if (count) count.textContent = String(items.length);
+  if (badge) {
+    badge.textContent = String(items.length);
+    badge.hidden = items.length === 0;
+  }
+  if (!root) return;
+  if (!items.length) {
+    root.innerHTML = '<p class="detail-empty">Hammasi joyida — muammoli buyurtma yo\'q.</p>';
+    return;
+  }
+  root.innerHTML = `<table><thead><tr><th>№</th><th>Mijoz</th><th>Obuna</th><th>Summa</th><th>Muammo</th><th>Vaqt</th><th>Amal</th></tr></thead><tbody>${items.map((it) => `
+    <tr>
+      <td>${esc(it.order_number)}</td>
+      <td>${userLinkHtml(it.user_telegram_id, userLabel(it.user))}</td>
+      <td>${esc(it.plan_name)}</td>
+      <td>${money(it.amount)}</td>
+      <td>${it.kinds.map((k, i) => `<span class="badge">${ATTENTION_ICON[k] || ''} ${esc(it.reasons[i])}</span>`).join(' ')}${it.note ? `<div class="hint">${esc(it.note)}</div>` : ''}</td>
+      <td>${dt(it.created_at)}</td>
+      <td>
+        <button class="ghost order-detail" data-id="${esc(it.id)}">${it.kinds.includes('manual') ? '📦 Yetkazish' : 'Batafsil'}</button>
+        ${it.kinds.includes('stock') ? `<button class="ghost attention-stock" data-plan="${esc(it.plan_id || '')}">🔑 Inventar</button>` : ''}
+        ${it.kinds.includes('failed') || it.kinds.includes('stock') || it.kinds.includes('exception') ? `<button class="ghost order-action" data-action="retry_delivery" data-id="${esc(it.id)}">Retry</button>` : ''}
+        ${it.kinds.includes('receipt') ? `<button class="ghost order-action" data-action="approve" data-id="${esc(it.id)}">Approve</button>` : ''}
+      </td>
+    </tr>`).join('')}</tbody></table>`;
 }
+
+async function loadAttention() {
+  try {
+    const data = await api('admin-orders?attention=1');
+    renderAttention(data.items || []);
+  } catch (error) {
+    const root = document.getElementById('attentionList');
+    if (root) root.innerHTML = `<p class="detail-empty">${esc(error.message || 'Yuklanmadi')}</p>`;
+  }
+}
+
+function dashboardParams() {
+  const params = new URLSearchParams();
+  const from = document.getElementById('dashFrom')?.value;
+  const to = document.getElementById('dashTo')?.value;
+  if (from) params.set('from', from);
+  if (to) params.set('to', to);
+  const q = params.toString();
+  return q ? `?${q}` : '';
+}
+
+async function loadDashboard() {
+  const [dash] = await Promise.all([api(`admin-dashboard${dashboardParams()}`), loadAttention()]);
+  renderStats(dash.stats);
+  // Serverning tanlagan oralig'ini maydonlarga qaytaramiz (birinchi yuklashda bo'sh edi)
+  if (dash.stats?.range) {
+    const f = document.getElementById('dashFrom');
+    const t = document.getElementById('dashTo');
+    if (f && !f.value) f.value = dash.stats.range.from;
+    if (t && !t.value) t.value = dash.stats.range.to;
+  }
+}
+document.getElementById('dashApply')?.addEventListener('click', () => loadDashboard().catch((e) => alert(e.message)));
+document.querySelectorAll('.dash-quick').forEach((btn) => btn.addEventListener('click', () => {
+  const days = Number(btn.dataset.days || 30);
+  const tz = (d) => d.toLocaleDateString('en-CA', { timeZone: 'Asia/Tashkent' });
+  const now = new Date();
+  document.getElementById('dashTo').value = tz(now);
+  document.getElementById('dashFrom').value = tz(new Date(now.getTime() - (days - 1) * 86400000));
+  loadDashboard().catch((e) => alert(e.message));
+}));
+
+// --- Balans harakatlari ---
+const WALLET_LABEL = { credit: 'To\'ldirish', debit: 'Xarid', refund: 'Qaytarish', bonus: 'Bonus', admin_credit: 'Admin qo\'shdi', admin_debit: 'Admin yechdi', cashback: 'Cashback', referral: 'Referal' };
+async function loadWallet() {
+  const params = new URLSearchParams({ report: 'wallet' });
+  const type = document.getElementById('walletType')?.value;
+  const user = document.getElementById('walletUser')?.value.trim();
+  const from = document.getElementById('walletFrom')?.value;
+  const to = document.getElementById('walletTo')?.value;
+  if (type) params.set('type', type);
+  if (user) params.set('user', user);
+  if (from) params.set('from', from);
+  if (to) params.set('to', to);
+  const root = document.getElementById('walletList');
+  try {
+    const data = await api(`admin-reports?${params.toString()}`);
+    const sel = document.getElementById('walletType');
+    if (sel && sel.options.length <= 1) {
+      sel.innerHTML = '<option value="">Barcha turlar</option>' + (data.types || []).map((t) => `<option value="${esc(t)}">${esc(WALLET_LABEL[t] || t)}</option>`).join('');
+    }
+    const s = data.summary || {};
+    const byType = s.by_type || {};
+    document.getElementById('walletStats').innerHTML = [
+      ['Kirim (jami)', `${money(s.total_in)} UZS`],
+      ['Chiqim (jami)', `${money(s.total_out)} UZS`],
+      ...Object.entries(byType).filter(([, v]) => v.count > 0).map(([t, v]) => [`${WALLET_LABEL[t] || t} (${v.count})`, `${money(v.sum)} UZS`]),
+    ].map(([l, v]) => `<div class="card"><h3>${esc(l)}</h3><strong>${esc(v)}</strong></div>`).join('');
+    const items = data.items || [];
+    root.innerHTML = items.length
+      ? `<table><thead><tr><th>Vaqt</th><th>Mijoz</th><th>Tur</th><th>Summa</th><th>Izoh</th><th>Admin</th></tr></thead><tbody>${items.map((r) => `
+        <tr>
+          <td>${dt(r.created_at)}</td>
+          <td>${userLinkHtml(r.user_telegram_id, userLabel(r.user))}</td>
+          <td><span class="badge">${esc(WALLET_LABEL[r.type] || r.type)}</span></td>
+          <td>${['debit', 'admin_debit'].includes(r.type) ? '−' : '+'}${money(Math.abs(r.amount))}</td>
+          <td>${esc(r.description || '-')}</td>
+          <td>${esc(r.admin_id || '-')}</td>
+        </tr>`).join('')}</tbody></table>${s.truncated ? '<p class="hint">Faqat oxirgi yozuvlar ko\'rsatildi — oraliqni toraytiring.</p>' : ''}`
+      : '<p class="detail-empty">Bu filtr bo\'yicha harakat yo\'q.</p>';
+  } catch (error) {
+    root.innerHTML = `<p class="detail-empty">${esc(error.message || 'Yuklanmadi')}</p>`;
+  }
+}
+document.getElementById('walletApply')?.addEventListener('click', () => loadWallet());
+
+// --- Jurnal (audit) ---
+async function loadAudit() {
+  const params = new URLSearchParams({ report: 'audit' });
+  const action = document.getElementById('auditAction')?.value;
+  const search = document.getElementById('auditSearch')?.value.trim();
+  const from = document.getElementById('auditFrom')?.value;
+  const to = document.getElementById('auditTo')?.value;
+  if (action) params.set('action', action);
+  if (search) params.set('search', search);
+  if (from) params.set('from', from);
+  if (to) params.set('to', to);
+  const root = document.getElementById('auditList');
+  try {
+    const data = await api(`admin-reports?${params.toString()}`);
+    const sel = document.getElementById('auditAction');
+    if (sel && data.actions?.length) {
+      const current = sel.value;
+      const known = new Set([...sel.options].map((o) => o.value));
+      for (const a of data.actions) if (!known.has(a)) sel.insertAdjacentHTML('beforeend', `<option value="${esc(a)}">${esc(a)}</option>`);
+      sel.value = current;
+    }
+    const items = data.items || [];
+    const meta = (m) => {
+      if (!m || typeof m !== 'object' || !Object.keys(m).length) return '-';
+      const s = JSON.stringify(m);
+      return s.length > 140 ? `${s.slice(0, 140)}…` : s;
+    };
+    root.innerHTML = items.length
+      ? `<table><thead><tr><th>Vaqt</th><th>Amal</th><th>Holat</th><th>Buyurtma</th><th>Mijoz</th><th>Tafsilot</th></tr></thead><tbody>${items.map((r) => `
+        <tr>
+          <td>${dt(r.created_at)}</td>
+          <td><strong>${esc(r.action)}</strong></td>
+          <td>${esc(r.status || '-')}</td>
+          <td>${r.order_number ? `<button class="ghost order-detail" data-id="${esc(r.order_id)}">#${esc(r.order_number)}</button>` : '-'}</td>
+          <td>${r.user_telegram_id ? userLinkHtml(r.user_telegram_id, userLabel(r.user)) : '-'}</td>
+          <td class="hint" title="${esc(JSON.stringify(r.metadata || {}))}">${esc(meta(r.metadata))}</td>
+        </tr>`).join('')}</tbody></table>`
+      : '<p class="detail-empty">Yozuv topilmadi.</p>';
+  } catch (error) {
+    root.innerHTML = `<p class="detail-empty">${esc(error.message || 'Yuklanmadi')}</p>`;
+  }
+}
+document.getElementById('auditApply')?.addEventListener('click', () => loadAudit());
+document.getElementById('auditList')?.addEventListener('click', (event) => {
+  const btn = event.target.closest('.order-detail');
+  if (btn) openOrderDetail(btn.dataset.id).catch((e) => alert(e.message));
+});
 
 async function loadData() {
   const data = await api('admin-data');
@@ -444,14 +672,27 @@ const ORDERS_PAGE = 100;
 // Buyurtmalar. Ilgari server qat'iy 50 ta qaytarardi va frontend uni oshirmasdi
 // — 500+ buyurtmadan faqat oxirgi 50 tasi ko'rinardi. Endi qidiruv (№ yoki
 // Telegram ID) va "Yana yuklash" (offset) bor.
-async function loadOrders({ append = false } = {}) {
+// Joriy filtrlar (holat, tur, sana oralig'i, qidiruv) — ro'yxat va CSV uchun bir xil.
+function orderFilterParams() {
+  const params = new URLSearchParams();
   const status = document.getElementById('orderStatusFilter')?.value || '';
   const search = document.getElementById('orderSearch')?.value.trim() || '';
-  const offset = append ? state.orders.length : 0;
-
-  const params = new URLSearchParams({ limit: String(ORDERS_PAGE), offset: String(offset) });
+  const type = document.getElementById('orderType')?.value || '';
+  const from = document.getElementById('orderFrom')?.value || '';
+  const to = document.getElementById('orderTo')?.value || '';
   if (status) params.set('status', status);
   if (search) params.set('search', search);
+  if (type) params.set('type', type);
+  if (from) params.set('from', from);
+  if (to) params.set('to', to);
+  return params;
+}
+
+async function loadOrders({ append = false } = {}) {
+  const offset = append ? state.orders.length : 0;
+  const params = orderFilterParams();
+  params.set('limit', String(ORDERS_PAGE));
+  params.set('offset', String(offset));
 
   const data = await api(`admin-orders?${params.toString()}`);
   const batch = data.orders || [];
@@ -471,10 +712,14 @@ function renderOrders() {
     root.innerHTML = `<table><thead><tr><th>№</th><th>User</th><th>Reja</th><th>Summa</th><th>Promo</th><th>Chegirma</th><th>Status</th><th>Delivery</th><th>Vaqt</th><th>Amal</th></tr></thead><tbody>${state.orders.map((o) => {
       const canApprove = ['payment_uploaded', 'checking'].includes(o.status);
       const isProcessed = ['approved', 'rejected', 'completed', 'cancelled'].includes(o.status);
+      // "To'lov keldi" — tizim aniqlamagan to'lovni qo'lda tasdiqlash: faqat
+      // to'lov kutilayotgan va muddati (10 daqiqa) o'tmagan buyurtma.
+      const canPay = ['waiting_payment', 'pending_payment'].includes(o.status)
+        && (!o.expires_at || new Date(o.expires_at).getTime() > Date.now());
       return `
   <tr>
     <td>${esc(o.order_number)}</td>
-    <td>${esc(o.user_telegram_id)}</td>
+    <td>${userLinkHtml(o.user_telegram_id)}</td>
     <td>${esc(o.plan_name || '-')}</td>
     <td>${money(o.unique_price ?? o.amount)}</td>
     <td>${o.promo_code ? `<span class="badge">${esc(o.promo_code)}</span>` : '-'}</td>
@@ -484,6 +729,7 @@ function renderOrders() {
     <td>${dt(o.created_at)}</td>
     <td>
       <button class="ghost order-detail" data-id="${esc(o.id)}">Batafsil</button>
+      ${canPay ? `<button class="order-action" data-action="mark_paid" data-id="${esc(o.id)}">💵 To'lov keldi</button>` : ''}
       <button class="ghost order-action" data-action="approve" data-id="${esc(o.id)}" ${canApprove ? '' : 'disabled'}>Approve</button>
       <button class="ghost danger order-action" data-action="reject" data-id="${esc(o.id)}" ${isProcessed ? 'disabled' : ''}>Reject</button>
       <button class="ghost order-action" data-action="retry_delivery" data-id="${esc(o.id)}">Retry</button>
@@ -506,7 +752,7 @@ function renderRecentOrders() {
   const recent = state.orders.slice(0, 6);
   if (!recent.length) { root.innerHTML = '<p>Buyurtmalar yo\'q</p>'; return; }
   root.innerHTML = `<table><thead><tr><th>№</th><th>User</th><th>Reja</th><th>Summa</th><th>Status</th><th>Vaqt</th></tr></thead><tbody>${recent.map((o) => `
-    <tr><td>${esc(o.order_number)}</td><td>${esc(o.user_telegram_id)}</td><td>${esc(o.plan_name || '-')}</td><td>${money(o.unique_price ?? o.amount)}</td><td><span class="badge">${esc(o.status)}</span></td><td>${dt(o.created_at)}</td></tr>`).join('')}</tbody></table>`;
+    <tr><td>${esc(o.order_number)}</td><td>${userLinkHtml(o.user_telegram_id)}</td><td>${esc(o.plan_name || '-')}</td><td>${money(o.unique_price ?? o.amount)}</td><td><span class="badge">${esc(o.status)}</span></td><td>${dt(o.created_at)}</td></tr>`).join('')}</tbody></table>`;
 }
 
 async function loadInventory() {
@@ -540,12 +786,12 @@ function renderInventory() {
   <td class="inv-pass">${esc(i.password_encrypted || '-')}</td>
   <td class="inv-key">${esc(i.license_key_encrypted || '-')}</td>
   <td>${esc(i.status)}</td>
-  <td>${i.assigned_user_telegram_id ? esc(i.assigned_user_telegram_id) : '-'}</td>
+  <td>${i.assigned_user_telegram_id ? userLinkHtml(i.assigned_user_telegram_id) : '-'}</td>
   <td>${soldAt ? dt(soldAt) : '-'}</td>
   <td>${dt(i.created_at)}</td>
   <td>
     <button class="ghost inv-detail" data-id="${esc(i.id)}">Batafsil</button>
-    <button class="ghost inv-reveal" data-id="${esc(i.id)}">Ko'rish</button>
+    <button class="ghost inv-reveal owner-only" data-id="${esc(i.id)}">Ko'rish</button>
     <button class="ghost danger inv-disable" data-id="${esc(i.id)}">Disable</button>
   </td></tr>`;
   }).join('')}</tbody></table>`;
@@ -660,8 +906,8 @@ function renderReferrals() {
     <th>Xaridlar</th><th>Ishlagan</th><th>Kutilmoqda</th><th></th>
   </tr></thead><tbody>${state.referrals.map((r) => `
     <tr>
-      <td>${esc(userLabel(r.referrer))}<div class="hint">${esc(r.referrer_telegram_id)}</div></td>
-      <td>${esc(userLabel(r.referred))}<div class="hint">${esc(r.referred_telegram_id)}</div></td>
+      <td>${userLinkHtml(r.referrer_telegram_id, userLabel(r.referrer))}<div class="hint">${esc(r.referrer_telegram_id)}</div></td>
+      <td>${userLinkHtml(r.referred_telegram_id, userLabel(r.referred))}<div class="hint">${esc(r.referred_telegram_id)}</div></td>
       <td>${dt(r.created_at)}</td>
       <td>${refStatusBadge(r.status)}</td>
       <td>${esc(r.paid_orders)}</td>
@@ -712,6 +958,9 @@ async function loadSettings() {
   document.getElementById('settingsReferralPercent').value = state.settings.referral_percent ?? '';
   document.getElementById('settingsMinTopup').value = state.settings.min_topup ?? '';
   document.getElementById('settingsWelcomeBonus').value = state.settings.welcome_bonus ?? 0;
+  document.getElementById('settingsPaymentTimeout').value = state.settings.payment_timeout_minutes ?? 10;
+  document.getElementById('settingsMaintenanceMode').checked = Boolean(state.settings.maintenance_mode);
+  document.getElementById('settingsMaintenanceText').value = state.settings.maintenance_text || '';
   document.getElementById('welcomeText').value = state.settings.welcome_text || '';
   document.getElementById('contactText').value = state.settings.contact_text || '';
   document.getElementById('settingsGeneralTerms').value = state.settings.general_terms || '';
@@ -725,6 +974,24 @@ async function deleteItem(type, id) {
   await loadData();
 }
 
+// Rol: owner — hamma narsa; operator — faqat operatsion bo'limlar. Server
+// baribir tekshiradi, bu yerda faqat ko'rinish moslanadi.
+function applyRole(role, username) {
+  state.role = role || 'owner';
+  document.body.dataset.role = state.role;
+  const chip = document.getElementById('roleChip');
+  if (chip) chip.textContent = state.role === 'owner' ? '👑 Egasi' : `👤 ${username || 'operator'}`;
+  // Operator ommaviy xabar yubora olmaydi
+  const typeSel = document.getElementById('messageType');
+  if (typeSel) {
+    [...typeSel.options].forEach((o) => { if (o.value !== 'individual') o.hidden = state.role !== 'owner'; });
+    if (state.role !== 'owner') typeSel.value = 'individual';
+  }
+  // Operator ochib qo'ygan egasi bo'limida qolib ketmasin
+  const active = document.querySelector('.nav-link.active');
+  if (state.role !== 'owner' && active?.classList.contains('owner-only')) switchView('dashboard');
+}
+
 async function initApp() {
   document.getElementById('loginError').textContent = '';
   const session = await fetch('/api/admin-session');
@@ -734,11 +1001,85 @@ async function initApp() {
     document.getElementById('appView').hidden = true;
     return;
   }
+  let info = {};
+  try { info = await session.json(); } catch { /* eski javob */ }
+  applyRole(info.role, info.username);
   document.body.classList.add('authed');
   document.getElementById('loginView').hidden = true;
   document.getElementById('appView').hidden = false;
-  await Promise.all([loadDashboard(), loadData(), loadSettings(), loadBanners(), loadPromos(), loadReviews(), loadFaq(), loadUsers(), loadLeads(), loadReferrals()]);
+  const loaders = [loadDashboard(), loadData(), loadReviews(), loadUsers(), loadLeads(), loadBroadcasts(), loadSubscriptions()];
+  if (state.role === 'owner') loaders.push(loadSettings(), loadBanners(), loadPromos(), loadFaq(), loadReferrals(), loadAdmins());
+  await Promise.all(loaders);
 }
+
+// --- Operatorlar (faqat egasi) ---
+function renderAdmins(list = []) {
+  const root = document.getElementById('adminsList');
+  if (!root) return;
+  if (!list.length) {
+    root.innerHTML = '<p class="detail-empty">Operator yo\'q. Pastdagi forma orqali qo\'shing.</p>';
+    return;
+  }
+  root.innerHTML = `<table><thead><tr><th>Login</th><th>Rol</th><th>Holat</th><th>Oxirgi kirish</th><th></th></tr></thead><tbody>${list.map((a) => `
+    <tr>
+      <td><strong>${esc(a.username)}</strong>${a.telegram_id ? ` <span class="hint">(${esc(a.telegram_id)})</span>` : ''}</td>
+      <td>${esc(a.role)}</td>
+      <td><span class="badge">${a.is_active ? 'Faol' : 'O\'chirilgan'}</span></td>
+      <td>${dt(a.last_login_at)}</td>
+      <td>
+        <button class="ghost admin-act" data-action="set-password" data-id="${esc(a.id)}">Parol</button>
+        <button class="ghost admin-act" data-action="set-active" data-id="${esc(a.id)}" data-active="${a.is_active ? '0' : '1'}">${a.is_active ? 'O\'chirish' : 'Yoqish'}</button>
+        <button class="ghost danger admin-act" data-action="delete" data-id="${esc(a.id)}">Del</button>
+      </td>
+    </tr>`).join('')}</tbody></table>`;
+}
+async function loadAdmins() {
+  try {
+    const data = await api('admin-admins');
+    renderAdmins(data.admins || []);
+  } catch (error) {
+    const root = document.getElementById('adminsList');
+    if (root) root.innerHTML = `<p class="detail-empty">${esc(error.message || 'Yuklanmadi')}</p>`;
+  }
+}
+onSubmit('adminForm', async () => {
+  const msg = document.getElementById('adminFormMsg');
+  const res = await api('admin-admins', {
+    method: 'POST',
+    body: JSON.stringify({
+      action: 'create',
+      username: document.getElementById('adminUsername').value,
+      password: document.getElementById('adminPassword').value,
+      telegram_id: document.getElementById('adminTelegramId').value || null,
+    }),
+  });
+  msg.textContent = `Operator qo'shildi: ${res.admin?.username || ''}. Login va parolni unga bering.`;
+  document.getElementById('adminUsername').value = '';
+  document.getElementById('adminPassword').value = '';
+  document.getElementById('adminTelegramId').value = '';
+  await loadAdmins();
+});
+document.getElementById('adminsList')?.addEventListener('click', async (event) => {
+  const btn = event.target.closest('.admin-act');
+  if (!btn) return;
+  const action = btn.dataset.action;
+  const body = { action, id: btn.dataset.id };
+  if (action === 'set-password') {
+    const pwd = prompt('Yangi parol (kamida 6 belgi):');
+    if (!pwd) return;
+    body.password = pwd;
+  } else if (action === 'set-active') {
+    body.is_active = btn.dataset.active === '1';
+  } else if (action === 'delete' && !confirm('Operator o\'chirilsinmi?')) {
+    return;
+  }
+  try {
+    await api('admin-admins', { method: 'POST', body: JSON.stringify(body) });
+    await loadAdmins();
+  } catch (error) {
+    alert(error.message);
+  }
+});
 
 // --- Image upload helper ---
 function setupImageUpload(fileInputId, urlInputId, previewId, uploadBtnId) {
@@ -811,7 +1152,13 @@ function onSubmit(formId, handler) {
 document.getElementById('loginForm').addEventListener('submit', async (event) => {
   event.preventDefault();
   try {
-    await api('admin-login', { method: 'POST', body: JSON.stringify({ password: document.getElementById('password').value }) });
+    await api('admin-login', {
+      method: 'POST',
+      body: JSON.stringify({
+        username: document.getElementById('loginUsername')?.value.trim() || '',
+        password: document.getElementById('password').value,
+      }),
+    });
     document.getElementById('password').value = '';
     await initApp();
   } catch (error) {
@@ -829,6 +1176,9 @@ document.querySelectorAll('.nav-link').forEach((button) => button.addEventListen
   const title = document.getElementById('topbarTitle');
   if (title) title.textContent = button.textContent.trim();
   closeSidebar();
+  // Og'ir hisobotlar faqat bo'lim ochilganda yuklanadi
+  if (button.dataset.view === 'wallet') loadWallet();
+  if (button.dataset.view === 'audit') loadAudit();
 }));
 document.getElementById('newCategoryButton').addEventListener('click', () => fillCategoryForm());
 document.getElementById('newPlanButton').addEventListener('click', () => fillPlanForm());
@@ -981,6 +1331,9 @@ onSubmit('settingsForm', async () => {
       referral_percent: document.getElementById('settingsReferralPercent').value ? Number(document.getElementById('settingsReferralPercent').value) : null,
       min_topup: document.getElementById('settingsMinTopup').value ? Number(document.getElementById('settingsMinTopup').value) : null,
       welcome_bonus: Number(document.getElementById('settingsWelcomeBonus').value || 0),
+      payment_timeout_minutes: Math.min(180, Math.max(1, Number(document.getElementById('settingsPaymentTimeout').value || 10))),
+      maintenance_mode: document.getElementById('settingsMaintenanceMode').checked,
+      maintenance_text: document.getElementById('settingsMaintenanceText').value || null,
       welcome_text: document.getElementById('welcomeText').value,
       contact_text: document.getElementById('contactText').value,
       general_terms: document.getElementById('settingsGeneralTerms').value,
@@ -1115,11 +1468,49 @@ document.getElementById('usersLoadMore')?.addEventListener('click', () => {
   state.usersShown += 100;
   renderUsers(document.getElementById('userSearch')?.value || '');
 });
-['userFilter', 'userSort'].forEach((id) => {
+['userFilter', 'userSort', 'userShowNoPhone'].forEach((id) => {
   document.getElementById(id)?.addEventListener('change', () => {
     state.usersShown = 100;
     renderUsers(document.getElementById('userSearch')?.value || '');
   });
+});
+
+// Foydalanuvchi kartochkasi: admin izohi va teglar
+document.getElementById('userNoteSave')?.addEventListener('click', async () => {
+  if (!currentUserId) return;
+  const msg = document.getElementById('userNoteMsg');
+  const btn = document.getElementById('userNoteSave');
+  btn.disabled = true;
+  try {
+    const res = await api('admin-users', {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'update-note',
+        telegram_id: currentUserId,
+        admin_note: document.getElementById('userNote').value,
+        tags: document.getElementById('userTags').value,
+      }),
+    });
+    document.getElementById('userTags').value = (res.tags || []).join(', ');
+    msg.style.color = 'var(--success, #16a34a)';
+    msg.textContent = 'Saqlandi';
+    const u = state.users.find((x) => String(x.telegram_id) === String(currentUserId));
+    if (u) { u.admin_note = res.admin_note; u.tags = res.tags || []; }
+    renderUsers(document.getElementById('userSearch')?.value || '');
+  } catch (error) {
+    msg.style.color = 'var(--danger)';
+    msg.textContent = error.message || 'Xatolik';
+  } finally {
+    btn.disabled = false;
+  }
+});
+document.getElementById('userModalMsg')?.addEventListener('click', () => {
+  if (!currentUserId) return;
+  document.getElementById('userModal').hidden = true;
+  switchView('messages');
+  document.getElementById('messageType').value = 'individual';
+  document.getElementById('messageTelegramId').value = currentUserId;
+  syncMessageForm();
 });
 
 // --- Hammaga pul qo'shish ---
@@ -1175,7 +1566,7 @@ document.getElementById('usersList')?.addEventListener('click', async (event) =>
     switchView('messages');
     document.getElementById('messageType').value = 'individual';
     document.getElementById('messageTelegramId').value = msgBtn.dataset.id;
-    document.getElementById('messageTelegramIdLabel').hidden = false;
+    syncMessageForm();
   }
 });
 
@@ -1197,6 +1588,12 @@ function renderUserDetail(data) {
 
 async function openUserModal(userId) {
   currentUserId = userId;
+  // Boshqa modal (buyurtma/inventar/promokod) ichidan ochilganda u yopiladi —
+  // aks holda DOM tartibi tufayli kartochka orqada qolib ketadi.
+  ['promoUsageModal', 'invDetailModal', 'orderDetailModal'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.hidden = true;
+  });
   document.getElementById('userModalTitle').textContent = `Foydalanuvchi ${userId}`;
   document.getElementById('balanceMsg').textContent = '';
   document.getElementById('balanceAmount').value = '';
@@ -1204,8 +1601,30 @@ async function openUserModal(userId) {
   document.getElementById('userPurchases').innerHTML = '';
   document.getElementById('userBalanceHistory').innerHTML = '';
   document.getElementById('userModal').hidden = false;
-  renderUserDetail(await api(`admin-users?user_id=${encodeURIComponent(userId)}`));
+  document.getElementById('userNote').value = '';
+  document.getElementById('userTags').value = '';
+  document.getElementById('userNoteMsg').textContent = '';
+  const data = await api(`admin-users?user_id=${encodeURIComponent(userId)}`);
+  const u = data.user || { telegram_id: userId };
+  document.getElementById('userNote').value = u.admin_note || '';
+  document.getElementById('userTags').value = (u.tags || []).join(', ');
+  document.getElementById('userModalTitle').textContent = [
+    userLabel(u),
+    u.full_name && u.username ? u.full_name : null,
+    u.phone || 'raqam yo\'q',
+    `ID ${u.telegram_id}`,
+    u.is_blocked ? '🚫 bloklangan' : null,
+  ].filter(Boolean).join(' · ');
+  renderUserDetail(data);
 }
+
+// Har qanday jadvaldagi foydalanuvchi havolasi → kartochka
+document.addEventListener('click', (event) => {
+  const link = event.target.closest('.user-link');
+  if (!link) return;
+  event.preventDefault();
+  openUserModal(link.dataset.id).catch((e) => alert(e.message));
+});
 
 async function adjustBalance(direction) {
   if (!currentUserId) return;
@@ -1278,7 +1697,7 @@ async function openPromoUsage(code) {
         <tr>
           <td>${dt(o.created_at)}</td>
           <td>${esc(o.order_number)}</td>
-          <td>${esc(userLabel(o))}${o.username ? ` <span class="hint">(${esc(o.user_telegram_id)})</span>` : ''}</td>
+          <td>${userLinkHtml(o.user_telegram_id, userLabel(o))}${o.username ? ` <span class="hint">(${esc(o.user_telegram_id)})</span>` : ''}</td>
           <td>${esc(o.plan_name)}</td>
           <td>${money(o.amount)}</td>
           <td>${Number(o.discount_amount || 0) > 0 ? `−${money(o.discount_amount)}` : '-'}</td>
@@ -1306,7 +1725,7 @@ async function openInvDetail(id) {
 
     const who = d.user
       ? [
-        cell('Kimga ketgan', userLabel(d.user)),
+        cellHtml('Kimga ketgan', userLinkHtml(d.user.telegram_id, userLabel(d.user))),
         cell('Telegram ID', d.user.telegram_id),
         cell('Ism', d.user.full_name || '—'),
       ].join('')
@@ -1345,6 +1764,14 @@ async function openInvDetail(id) {
   }
 }
 
+// Qo'lda yetkazish formasi qachon ko'rinadi: to'lov qabul qilingan, lekin
+// hali yetkazilmagan (qo'lda ulanadigan reja, zaxira yo'q, yetkazish xato).
+function canDeliverManually(d) {
+  if (!d || d.order_type === 'topup') return false;
+  if (['rejected', 'cancelled', 'expired', 'waiting_payment', 'pending_payment', 'payment_uploaded', 'checking'].includes(d.status)) return false;
+  return d.delivery.status !== 'delivered' && d.status !== 'completed';
+}
+
 // --- Buyurtma batafsil: pul taqsimoti, yetkazilgan akkaunt, vaqt chizig'i ---
 async function openOrderDetail(id) {
   const modal = document.getElementById('orderDetailModal');
@@ -1371,8 +1798,8 @@ async function openOrderDetail(id) {
 
     body.innerHTML = `
       <div class="detail-grid">
-        ${cell('Mijoz', userLabel(d.user))}
-        ${cell('Telegram ID', d.user.telegram_id)}
+        ${cellHtml('Mijoz', userLinkHtml(d.user.telegram_id, userLabel(d.user)))}
+        ${cellHtml('Telegram ID', userLinkHtml(d.user.telegram_id))}
         ${cell('Obuna', d.plan_name)}
         ${cell('Holat', PURCHASE_STATUS[d.status] || d.status)}
       </div>
@@ -1388,6 +1815,13 @@ async function openOrderDetail(id) {
       <h4>Yetkazilgan akkaunt</h4>
       ${delivered}
       ${d.delivery.error ? `<p class="detail-empty">Yetkazishda xato: ${esc(d.delivery.error)} (${esc(d.delivery.attempts)} urinish)</p>` : ''}
+      ${canDeliverManually(d) ? `
+      <h4>📦 Qo'lda yetkazish</h4>
+      <p class="hint">${d.delivery.status === 'manual_required'
+        ? 'Bu reja qo\'lda ulanadi. Login/parol, kalit yoki yo\'riqnomani yozing — mijozga bot orqali ketadi, buyurtma yakunlanadi.'
+        : 'Avtomatik yetkazish o\'tmagan bo\'lsa, ma\'lumotni o\'zingiz yuborishingiz mumkin — mijozga bot orqali ketadi, buyurtma yakunlanadi.'}</p>
+      <textarea id="manualDeliverText" rows="4" style="width:100%" placeholder="Login: ...&#10;Parol: ...&#10;Yo'riqnoma: ..."></textarea>
+      <div class="actions"><button type="button" id="manualDeliverBtn" data-id="${esc(d.id)}">Mijozga yuborish va yakunlash</button></div>` : ''}
       <h4>Vaqt chizig'i</h4>
       <div class="detail-grid">
         ${cell('Yaratilgan', dt(d.timeline.created_at))}
@@ -1404,24 +1838,113 @@ async function openOrderDetail(id) {
 }
 
 // --- Messages ---
-document.getElementById('messageType')?.addEventListener('change', (e) => {
-  document.getElementById('messageTelegramIdLabel').hidden = e.target.value === 'broadcast';
+const BC_STATUS = {
+  awaiting_message: '📣 Xabar kutilyapti (botda)',
+  awaiting_confirm: '👀 Tasdiq kutilyapti (botda)',
+  queued: '⏳ Navbatda',
+  sending: '📤 Yuborilmoqda',
+  done: '✅ Yakunlandi',
+  cancelled: '❌ Bekor qilingan',
+  failed: '⚠️ Xato',
+};
+const BC_ACTIVE = new Set(['awaiting_message', 'awaiting_confirm', 'queued', 'sending']);
+
+// Tur o'zgarganda kerakli maydonlar ko'rinadi: ID (individual), segment
+// (broadcast/admin), matn (individual/broadcast).
+function syncMessageForm() {
+  const type = document.getElementById('messageType')?.value || 'individual';
+  const set = (id, hidden) => { const el = document.getElementById(id); if (el) el.hidden = hidden; };
+  set('messageTelegramIdLabel', type !== 'individual');
+  set('messageSegmentLabel', type === 'individual');
+  set('messageTextLabel', type === 'admin');
+  set('messageAdminHint', type !== 'admin');
+  const text = document.getElementById('messageText');
+  if (text) text.required = type !== 'admin';
+  const btn = document.getElementById('messageSubmit');
+  if (btn) btn.textContent = type === 'admin' ? '📣 Botda xabar kutilsin' : 'Yuborish';
+}
+document.getElementById('messageType')?.addEventListener('change', syncMessageForm);
+
+function renderBroadcasts(jobs = []) {
+  const root = document.getElementById('broadcastList');
+  if (!root) return;
+  if (!jobs.length) {
+    root.innerHTML = '<p class="detail-empty">Hali broadcast yuborilmagan.</p>';
+    return;
+  }
+  const segName = (s) => (state.broadcastSegments && state.broadcastSegments[s]) || s;
+  root.innerHTML = `<table><thead><tr><th>Vaqt</th><th>Tur</th><th>Kimga</th><th>Holat</th><th>Yuborildi</th><th>Xato</th><th>Matn</th><th></th></tr></thead><tbody>${jobs.map((j) => `
+    <tr>
+      <td>${dt(j.created_at)}</td>
+      <td>${j.kind === 'copy' ? '📣 Admin xabari' : 'Matn'}</td>
+      <td>${esc(segName(j.segment))} (${esc(j.total)})</td>
+      <td><span class="badge">${esc(BC_STATUS[j.status] || j.status)}</span>${j.status === 'sending' ? ` <span class="hint">${esc(j.cursor)}/${esc(j.total)}</span>` : ''}</td>
+      <td>${esc(j.sent)}</td>
+      <td>${esc(j.failed)}</td>
+      <td>${j.text ? esc(String(j.text).slice(0, 60)) + (j.text.length > 60 ? '…' : '') : '—'}${j.error ? `<div class="hint">${esc(j.error)}</div>` : ''}</td>
+      <td>${BC_ACTIVE.has(j.status) ? `<button class="ghost danger bc-cancel" data-id="${esc(j.id)}">To'xtatish</button>` : ''}</td>
+    </tr>`).join('')}</tbody></table>`;
+}
+
+let broadcastPollTimer = null;
+async function loadBroadcasts() {
+  clearTimeout(broadcastPollTimer);
+  try {
+    const data = await api('admin-messages');
+    if (data.segments && !state.broadcastSegments) {
+      state.broadcastSegments = data.segments;
+      const select = document.getElementById('messageSegment');
+      if (select) select.innerHTML = Object.entries(data.segments).map(([k, v]) => `<option value="${esc(k)}">${esc(v)}</option>`).join('');
+    }
+    const jobs = data.jobs || [];
+    renderBroadcasts(jobs);
+    // Faol ish bo'lsa jarayonni 5 soniyada bir yangilab turamiz.
+    if (jobs.some((j) => BC_ACTIVE.has(j.status))) {
+      broadcastPollTimer = setTimeout(() => loadBroadcasts().catch(() => {}), 5000);
+    }
+  } catch (error) {
+    const root = document.getElementById('broadcastList');
+    if (root) root.innerHTML = `<p class="detail-empty">${esc(error.message || 'Yuklanmadi')}</p>`;
+  }
+}
+document.getElementById('broadcastRefresh')?.addEventListener('click', () => loadBroadcasts());
+document.getElementById('broadcastList')?.addEventListener('click', async (event) => {
+  const btn = event.target.closest('.bc-cancel');
+  if (!btn) return;
+  if (!confirm('Broadcast to\'xtatilsinmi? Ketib ulgurgan xabarlar qaytmaydi.')) return;
+  btn.disabled = true;
+  try {
+    await api('admin-messages', { method: 'POST', body: JSON.stringify({ type: 'cancel', job_id: btn.dataset.id }) });
+  } catch (error) {
+    alert(error.message);
+  }
+  await loadBroadcasts();
 });
+
 document.getElementById('messageForm')?.addEventListener('submit', async (event) => {
   event.preventDefault();
   const type = document.getElementById('messageType').value;
   const text = document.getElementById('messageText').value;
   const telegramId = document.getElementById('messageTelegramId').value;
+  const segment = document.getElementById('messageSegment')?.value || 'all';
   if (type === 'individual' && !telegramId) { alert('Telegram ID kiriting'); return; }
+  if (type !== 'admin' && !text.trim()) { alert('Xabar matnini yozing'); return; }
+  if (type === 'broadcast' && !confirm('Matn tanlangan segmentga yuborilsinmi?')) return;
   const result = document.getElementById('messageResult');
-  result.textContent = 'Yuborilmoqda...';
+  const btn = document.getElementById('messageSubmit');
+  result.style.color = '';
+  result.textContent = type === 'admin' ? 'Botga so\'rov yuborilmoqda...' : 'Yuborilmoqda...';
+  btn.disabled = true;
   try {
-    const res = await api('admin-messages', { method: 'POST', body: JSON.stringify({ type, text, telegram_id: telegramId }) });
+    const res = await api('admin-messages', { method: 'POST', body: JSON.stringify({ type, text, telegram_id: telegramId, segment }) });
     result.textContent = res.message || 'Yuborildi!';
-    document.getElementById('messageText').value = '';
+    if (type !== 'admin') document.getElementById('messageText').value = '';
+    await loadBroadcasts();
   } catch (err) {
     result.textContent = err.message;
     result.style.color = 'var(--danger)';
+  } finally {
+    btn.disabled = false;
   }
 });
 
@@ -1436,18 +1959,72 @@ document.getElementById('orderSearch')?.addEventListener('input', () => {
   clearTimeout(orderSearchTimer);
   orderSearchTimer = setTimeout(() => loadOrders().catch((e) => alert(e.message)), 350);
 });
-document.getElementById('exportOrdersCsv')?.addEventListener('click', () => {
-  const header = ['№', 'User', 'Reja', 'Summa', 'Promo', 'Chegirma', 'Balansdan', 'Cashback', 'Status', 'Delivery', 'Vaqt'];
-  const rows = [header, ...state.orders.map((o) => [
-    o.order_number, o.user_telegram_id, o.plan_name || '-',
-    o.unique_price ?? o.amount, o.promo_code || '', o.discount_amount || 0,
-    o.balance_used || 0, o.cashback_amount || 0,
-    o.status, o.delivery_status || '-',
-    new Date(o.created_at).toLocaleString('uz-UZ'),
-  ])];
-  exportCsv('orders.csv', rows);
+['orderType', 'orderFrom', 'orderTo'].forEach((id) => {
+  document.getElementById(id)?.addEventListener('change', () => loadOrders().catch((e) => alert(e.message)));
 });
-document.getElementById('ordersList')?.addEventListener('click', async (event) => {
+// CSV: faqat yuklangan sahifa emas — joriy filtr bo'yicha BARCHA buyurtmalar
+// (sahifalab yig'iladi).
+document.getElementById('exportOrdersCsv')?.addEventListener('click', async (event) => {
+  const btn = event.currentTarget;
+  btn.disabled = true;
+  try {
+    const all = [];
+    let total = Infinity;
+    while (all.length < total && all.length < 20000) {
+      const params = orderFilterParams();
+      params.set('limit', '500');
+      params.set('offset', String(all.length));
+      const data = await api(`admin-orders?${params.toString()}`);
+      const batch = data.orders || [];
+      total = Number(data.total ?? batch.length);
+      all.push(...batch);
+      if (!batch.length) break;
+    }
+    const header = ['№', 'User', 'Tur', 'Reja', 'Summa', 'Promo', 'Chegirma', 'Balansdan', 'Cashback', 'Status', 'Delivery', 'Vaqt'];
+    const rows = [header, ...all.map((o) => [
+      o.order_number, o.user_telegram_id, o.order_type || 'purchase', o.plan_name || '-',
+      o.unique_price ?? o.amount, o.promo_code || '', o.discount_amount || 0,
+      o.balance_used || 0, o.cashback_amount || 0,
+      o.status, o.delivery_status || '-',
+      new Date(o.created_at).toLocaleString('uz-UZ'),
+    ])];
+    exportCsv('orders.csv', rows);
+  } catch (error) {
+    alert(error.message || 'Eksport xatosi');
+  } finally {
+    btn.disabled = false;
+  }
+});
+// Dashboard'dagi muammoli buyurtmalar: "Inventar" tugmasi rejani tanlab
+// Inventory bo'limiga o'tadi; qolgan tugmalar buyurtmalar ro'yxati bilan bir xil.
+document.getElementById('attentionRefresh')?.addEventListener('click', () => loadAttention());
+document.getElementById('attentionList')?.addEventListener('click', (event) => {
+  const stockBtn = event.target.closest('.attention-stock');
+  if (!stockBtn) return;
+  const select = document.getElementById('inventoryPlanId');
+  if (select && stockBtn.dataset.plan) select.value = stockBtn.dataset.plan;
+  switchView('inventory');
+  loadInventory().catch(() => {});
+});
+// Buyurtma tafsilotidagi "Qo'lda yetkazish" formasi
+document.getElementById('orderDetailBody')?.addEventListener('click', async (event) => {
+  const btn = event.target.closest('#manualDeliverBtn');
+  if (!btn) return;
+  const text = document.getElementById('manualDeliverText')?.value.trim() || '';
+  if (!text) { alert('Mijozga yuboriladigan matnni yozing (login/parol, kalit yoki yo\'riqnoma).'); return; }
+  if (!confirm('Matn mijozga bot orqali yuboriladi va buyurtma "yetkazildi" deb yakunlanadi. Davom etilsinmi?')) return;
+  btn.disabled = true;
+  try {
+    await api('admin-orders', { method: 'POST', body: JSON.stringify({ action: 'deliver_manual', orderId: btn.dataset.id, text }) });
+    alert('Yuborildi va buyurtma yakunlandi.');
+    await openOrderDetail(btn.dataset.id);
+    await Promise.all([loadOrders(), loadDashboard()]);
+  } catch (error) {
+    alert(error.message || 'Xatolik');
+    btn.disabled = false;
+  }
+});
+function handleOrderListClick(event) {
   const detailBtn = event.target.closest('.order-detail');
   if (detailBtn) {
     openOrderDetail(detailBtn.dataset.id).catch((e) => alert(e.message));
@@ -1455,13 +2032,34 @@ document.getElementById('ordersList')?.addEventListener('click', async (event) =
   }
   const btn = event.target.closest('.order-action');
   if (!btn) return;
-  const res = await api('admin-orders', { method: 'POST', body: JSON.stringify({ action: btn.dataset.action, orderId: btn.dataset.id }) });
-  if (res?.delivery?.admin_message) alert(`Delivery: ${res.delivery.admin_message}`);
-  else if (res?.delivery?.message) alert(`Delivery: ${res.delivery.message}`);
-  if (!res?.ok && res?.error) alert(res.error);
+  runOrderAction(btn).catch((e) => alert(e.message));
+}
+document.getElementById('attentionList')?.addEventListener('click', handleOrderListClick);
+document.getElementById('ordersList')?.addEventListener('click', handleOrderListClick);
+async function runOrderAction(btn) {
+  if (btn.dataset.action === 'mark_paid'
+    && !confirm('To\'lov haqiqatan keldimi? Buyurtma to\'langan deb belgilanadi va mijozga yetkaziladi.')) return;
+  btn.disabled = true;
+  try {
+    const res = await api('admin-orders', { method: 'POST', body: JSON.stringify({ action: btn.dataset.action, orderId: btn.dataset.id }) });
+    if (btn.dataset.action === 'mark_paid') {
+      const d = res?.delivery;
+      alert(res?.topup
+        ? 'To\'lov qabul qilindi, balans to\'ldirildi.'
+        : d?.code === 'MANUAL_REQUIRED'
+          ? 'To\'lov qabul qilindi. Bu reja qo\'lda ulanadi — "Batafsil" → Yetkazish.'
+          : d?.ok ? 'To\'lov qabul qilindi va yetkazildi.' : `To‘lov qabul qilindi, lekin yetkazishda muammo: ${d?.message || 'noma’lum'}`);
+    } else if (res?.delivery?.admin_message) alert(`Delivery: ${res.delivery.admin_message}`);
+    else if (res?.delivery?.message) alert(`Delivery: ${res.delivery.message}`);
+    if (!res?.ok && res?.error) alert(res.error);
+  } catch (error) {
+    alert(error.message || 'Xatolik');
+  } finally {
+    btn.disabled = false;
+  }
   await loadOrders();
   await loadDashboard();
-});
+}
 
 // --- Inventory ---
 document.getElementById('inventoryFilterForm')?.addEventListener('submit', async (event) => {
@@ -1533,6 +2131,121 @@ document.getElementById('inventoryList')?.addEventListener('click', async (event
   await loadInventory();
 });
 
+// --- Inventar: ko'p qatorli import ---
+document.getElementById('bulkLines')?.addEventListener('input', (e) => {
+  const n = e.target.value.split(/\r?\n/).filter((l) => l.trim()).length;
+  const el = document.getElementById('bulkCount');
+  if (el) el.textContent = n ? `${n} ta qator` : '';
+});
+onSubmit('bulkForm', async () => {
+  const lines = document.getElementById('bulkLines').value;
+  const n = lines.split(/\r?\n/).filter((l) => l.trim()).length;
+  if (!n) { alert('Qatorlarni kiriting'); return; }
+  const result = document.getElementById('bulkResult');
+  result.style.color = '';
+  result.textContent = 'Import qilinmoqda…';
+  const res = await api('admin-inventory', {
+    method: 'POST',
+    body: JSON.stringify({
+      action: 'bulk',
+      plan_id: document.getElementById('bulkPlanId').value,
+      type: document.getElementById('bulkType').value,
+      lines,
+      notes: document.getElementById('bulkNotes').value || null,
+    }),
+  });
+  result.textContent = `Qo'shildi: ${res.inserted}${res.skipped ? `, o'tkazib yuborildi: ${res.skipped}` : ''}`
+    + (res.errors?.length ? ` — ${res.errors.slice(0, 3).join('; ')}` : '');
+  document.getElementById('bulkLines').value = '';
+  document.getElementById('bulkCount').textContent = '';
+  const sel = document.getElementById('inventoryPlanId');
+  if (sel) sel.value = document.getElementById('bulkPlanId').value;
+  await loadInventory();
+});
+
+// --- Obunalar ---
+function subStatusBadge(s) {
+  if (s.status === 'cancelled') return '<span class="badge">Bekor qilingan</span>';
+  if (s.is_expired) return '<span class="badge">Tugagan</span>';
+  if (s.days_left !== null && s.days_left <= 3) return `<span class="badge" style="background:var(--danger-tint);color:var(--danger)">${esc(s.days_left)} kun qoldi</span>`;
+  if (s.days_left !== null && s.days_left <= 7) return `<span class="badge" style="background:#FEF3C7;color:#B45309">${esc(s.days_left)} kun qoldi</span>`;
+  return `<span class="badge" style="background:var(--success-tint);color:var(--success)">Faol${s.days_left !== null ? ` · ${esc(s.days_left)} kun` : ''}</span>`;
+}
+
+function renderSubscriptions(items = [], summary = {}) {
+  const stats = document.getElementById('subStats');
+  if (stats) {
+    stats.innerHTML = [
+      ['Faol obunalar', summary.active ?? 0],
+      ['7 kun ichida tugaydi', summary.expiring_7d ?? 0],
+      ['Tugagan / bekor', summary.expired ?? 0],
+    ].map(([l, v]) => `<div class="card"><h3>${esc(l)}</h3><strong>${esc(v)}</strong></div>`).join('');
+  }
+  const root = document.getElementById('subList');
+  if (!root) return;
+  if (!items.length) {
+    root.innerHTML = '<p class="detail-empty">Bu filtr bo\'yicha obuna yo\'q.</p>';
+    return;
+  }
+  root.innerHTML = `<table><thead><tr><th>Mijoz</th><th>Obuna</th><th>Boshlangan</th><th>Tugaydi</th><th>Holat</th><th>Eslatma</th><th>Amal</th></tr></thead><tbody>${items.map((s) => `
+    <tr>
+      <td>${userLinkHtml(s.user_telegram_id, userLabel(s.user))}${s.user?.phone ? `<div class="hint">${esc(s.user.phone)}</div>` : ''}</td>
+      <td>${esc(s.plan_name || '-')}</td>
+      <td>${dt(s.started_at || s.created_at)}</td>
+      <td>${dt(s.expires_at)}</td>
+      <td>${subStatusBadge(s)}</td>
+      <td class="hint">${s.reminder_3d_sent ? '3k ✓ ' : ''}${s.reminder_1d_sent ? '1k ✓ ' : ''}${s.expired_notified ? 'tugadi ✓' : ''}</td>
+      <td>
+        <button class="ghost sub-extend owner-only" data-id="${esc(s.id)}" data-days="30">+30 kun</button>
+        <button class="ghost sub-extend owner-only" data-id="${esc(s.id)}" data-days="">+N kun</button>
+        <button class="ghost sub-remind owner-only" data-id="${esc(s.id)}">Eslatma</button>
+        ${s.status === 'active' ? `<button class="ghost danger sub-cancel owner-only" data-id="${esc(s.id)}">Bekor</button>` : ''}
+      </td>
+    </tr>`).join('')}</tbody></table>`;
+}
+
+async function loadSubscriptions() {
+  const filter = document.getElementById('subFilter')?.value || 'active';
+  try {
+    const data = await api(`admin-subscriptions?filter=${encodeURIComponent(filter)}`);
+    renderSubscriptions(data.items || [], data.summary || {});
+  } catch (error) {
+    const root = document.getElementById('subList');
+    if (root) root.innerHTML = `<p class="detail-empty">${esc(error.message || 'Yuklanmadi')}</p>`;
+  }
+}
+document.getElementById('subFilter')?.addEventListener('change', () => loadSubscriptions());
+document.getElementById('subRefresh')?.addEventListener('click', () => loadSubscriptions());
+document.getElementById('subList')?.addEventListener('click', async (event) => {
+  const extendBtn = event.target.closest('.sub-extend');
+  const remindBtn = event.target.closest('.sub-remind');
+  const cancelBtn = event.target.closest('.sub-cancel');
+  try {
+    if (extendBtn) {
+      let days = Number(extendBtn.dataset.days || 0);
+      if (!days) {
+        const raw = prompt('Necha kunga uzaytirilsin?', '30');
+        if (raw === null) return;
+        days = Number(raw);
+      }
+      if (!(days > 0)) { alert('Kunlar soni noto\'g\'ri'); return; }
+      const res = await api('admin-subscriptions', { method: 'POST', body: JSON.stringify({ action: 'extend', id: extendBtn.dataset.id, days }) });
+      alert(`Uzaytirildi (+${days} kun)${res.notified ? ', mijozga xabar ketdi' : ''}.`);
+    } else if (remindBtn) {
+      await api('admin-subscriptions', { method: 'POST', body: JSON.stringify({ action: 'remind', id: remindBtn.dataset.id }) });
+      alert('Eslatma yuborildi.');
+    } else if (cancelBtn) {
+      if (!confirm('Obuna bekor qilinsinmi? Eslatmalar to\'xtaydi.')) return;
+      await api('admin-subscriptions', { method: 'POST', body: JSON.stringify({ action: 'cancel', id: cancelBtn.dataset.id }) });
+    } else {
+      return;
+    }
+    await loadSubscriptions();
+  } catch (error) {
+    alert(error.message);
+  }
+});
+
 // --- Image upload setup ---
 setupImageUpload('planImageFile', 'planImageUrl', 'planImagePreview', 'planImageUploadBtn');
 setupImageUpload('bannerImageFile', 'bannerImageUrl', 'bannerImagePreview', 'bannerImageUploadBtn');
@@ -1579,8 +2292,14 @@ const HELP_ITEMS = [
   { icon: '👥', title: 'Foydalanuvchilar', body: 'Ro’yxatdan o’tgan barcha foydalanuvchilar. Qidiruv, bloklash/blokdan chiqarish mumkin. Bloklangan foydalanuvchi botni ham, Mini App’ni ham ishlata olmaydi.' },
   { icon: '🛒', title: 'Buyurtmalar', body: 'Barcha xaridlar. Statuslar: kutilmoqda, tasdiqlangan, rad etilgan, tugallangan. Admin approve/reject qiladi. "Batafsil" tugmasi qaysi akkaunt kimga va qachon ketganini, promokod va chegirmani ko’rsatadi. Qidiruv buyurtma raqami yoki Telegram ID bo’yicha. CSV export mumkin.' },
   { icon: '📥', title: 'Leadlar', body: 'Saytdagi "Izlagan obunangiz yo’qmi?" formasidan kelgan so’rovlar. Har biri adminga Telegram xabari sifatida ham keladi. Bajarilganini belgilash yoki o’chirish mumkin.' },
-  { icon: '✉️', title: 'Xabar yuborish', body: 'Foydalanuvchilarga Telegram orqali xabar. Individual (bitta Telegram ID ga) yoki Broadcast (hammaga). Broadcast 25 talab parallel yuboriladi.' },
-  { icon: '⚙️', title: 'Sozlamalar', body: 'Karta raqami, cashback foizi, referal bonus, min topup, welcome text, contact text, umumiy qoidalar. Bu yerda o’zgartirilgan narsa butun botga ta’sir qiladi.' },
+  { icon: '✉️', title: 'Xabar yuborish', body: 'Bitta foydalanuvchiga, matnli broadcast (segment bo’yicha) yoki «Admin xabari»: tugmani bossangiz bot sizga Telegram’da «xabar kutilyapti» deb yozadi, unga rasm/video/fayl/matn yuborasiz, bot ko’rsatib tasdiq so’raydi, tasdiqlagach hammaga ketadi. Yuborish fon rejimida, jarayon tarixda ko’rinadi, istalgan payt to’xtatish mumkin.' },
+  { icon: '📅', title: 'Obunalar', body: 'Faol, 7 kun ichida tugaydigan va tugagan obunalar. Qo’lda uzaytirish (+30 yoki +N kun, mijozga xabar ketadi), eslatmani hozir yuborish, bekor qilish. Avtomatik eslatmalar har kuni 09:00 da.' },
+  { icon: '👛', title: 'Balans harakatlari', body: 'Barcha balans o’zgarishlari: to’ldirish, xarid, cashback, referal, admin qo’shgan/yechgan. Oraliq, tur va mijoz bo’yicha filtr; tur bo’yicha jamlanma.' },
+  { icon: '📜', title: 'Jurnal', body: 'Tizimdagi barcha muhim amallar: to’lov aniqlandi, qo’lda tasdiqlandi, yetkazildi, muddat o’tdi, obuna uzaytirildi va h.k. Buyurtma raqami yoki Telegram ID bo’yicha qidiruv.' },
+  { icon: '⚠️', title: 'E’tibor talab qiladi (Dashboard)', body: 'Qo’lda ulash kerak bo’lgan, zaxira kutayotgan, yetkazishda xato bo’lgan, chek tekshirilayotgan buyurtmalar bitta joyda. «Yetkazish» tugmasi — login/parolni yozasiz, mijozga bot orqali ketadi va buyurtma yakunlanadi.' },
+  { icon: '💵', title: 'To’lov keldi (qo’lda tasdiqlash)', body: 'Tizim to’lovni aniqlamagan bo’lsa-yu pul kelgan bo’lsa, 10 daqiqa ichida panelda yoki botdagi «To’lov keldi» tugmasi bilan tasdiqlaysiz — buyurtma oddiy to’lov kabi yetkaziladi. Muddati o’tgan buyurtmani tasdiqlab bo’lmaydi.' },
+  { icon: '⚙️', title: 'Sozlamalar', body: 'Karta raqami, cashback foizi, referal bonus, min topup, to’lov kutish vaqti, texnik tanaffus rejimi (Mini App yopiladi, bot ishlaydi), welcome text, umumiy qoidalar, operatorlar. Bu yerda o’zgartirilgan narsa butun botga ta’sir qiladi.' },
+  { icon: '👤', title: 'Operatorlar (rollar)', body: 'Egasi asosiy parol bilan (login bo’sh) kiradi va hamma narsani ko’radi. Operator login+parol bilan kiradi: buyurtmalarni tasdiqlaydi/rad etadi, qo’lda yetkazadi, inventar qo’shadi, leadlar va sharhlarni ko’radi, mijozga yozadi. Pul, sozlamalar, promokod, rejalar, kredensiallarni ochish, broadcast — faqat egasi.' },
 ];
 function renderHelp() {
   const root = document.getElementById('helpAccordion');

@@ -551,3 +551,36 @@ input[type="checkbox"] { width: 20px; height: 20px; min-height: auto; flex: 0 0 
   min-height: 120px;
   padding: 6px;
 }
+
+/* Foydalanuvchi havolasi: jadvaldagi ID/ism bosilsa kartochka ochiladi */
+.user-link {
+  color: var(--primary-dark);
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.user-link:hover { color: var(--primary); }
+
+/* Toolbar ichidagi checkbox yorlig'i */
+.inline-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.inline-check input { margin: 0; }
+
+/* Dashboard voronkasi */
+.funnel { display: flex; flex-direction: column; gap: 8px; padding: 6px 0; }
+.funnel-row { display: grid; grid-template-columns: 150px 1fr 90px; align-items: center; gap: 10px; font-size: 13px; }
+.funnel-label { color: var(--muted); }
+.funnel-bar { height: 18px; border-radius: 6px; background: linear-gradient(90deg, var(--primary), var(--primary-dark)); min-width: 4px; }
+.funnel-val { font-weight: 600; white-space: nowrap; }
+.funnel-val small { color: var(--muted); font-weight: 400; }
+@media (max-width: 600px) { .funnel-row { grid-template-columns: 110px 1fr 80px; } }
+
+/* Operator uchun yashirin (faqat egasi) — server ham tekshiradi */
+body[data-role="operator"] .owner-only { display: none !important; }
+.role-chip { font-size: 12px; color: var(--muted); padding: 4px 10px; }

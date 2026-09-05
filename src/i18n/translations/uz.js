@@ -83,6 +83,10 @@ export default {
     title: 'Hisobingiz bloklangan',
     text: 'Yordam uchun {support} ga murojaat qiling',
   },
+  maintenance: {
+    title: 'Texnik ishlar olib borilmoqda',
+    text: 'Tez orada qaytamiz. Bot va to‘lovlar ishlayveradi.',
+  },
   pages: {
     catalog: {
       title: 'Katalog',
@@ -204,6 +208,9 @@ export default {
     reviewPlaceholder: 'Fikringizni yozing...',
     submitReview: 'Yuborish',
     reviewThanks: 'Sharhingiz uchun rahmat!',
+    notifyWhenBack: 'Kelganda xabar ber',
+    notifyOn: 'Xabar beramiz ✓ (bekor qilish)',
+    notifyHint: 'Mahsulot qayta kelganda bot orqali xabar yuboramiz.',
     share: 'Ulashish',
     quantity: 'Miqdor',
     adminReply: 'Admin javobi',

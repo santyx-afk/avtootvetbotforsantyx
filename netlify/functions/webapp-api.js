@@ -31,11 +31,19 @@ const { verifyWebLoginCode } = require('../../shared/web-auth-service');
 const rateLimit = require('../../shared/rate-limit');
 const { sendMessage } = require('../../shared/telegram');
 const { escapeHtml } = require('../../shared/messages');
+const { notifyNewOrder, userLink } = require('../../shared/admin-notify');
 
 const PAYMENT_WARN_SUPPORT = (process.env.SUPPORT_USERNAME || '@santyx').replace(/^@?/, '@');
 
 function cardNumber(settings) {
   return settings?.seller_card_number || process.env.PAYMENT_CARD_NUMBER || '';
+}
+
+// To'lov kutish vaqti (daqiqa): Sozlamalar → env → 10. 1 dan 180 gacha.
+function paymentTimeoutMinutes(settings) {
+  const fromSettings = Number(settings?.payment_timeout_minutes);
+  const value = fromSettings > 0 ? fromSettings : Number(process.env.WEBAPP_CHECKOUT_MINUTES || 10);
+  return Math.min(180, Math.max(1, Math.round(value || 10)));
 }
 
 // Admin Telegram chat ID larini sozlama va env dan yig'adi.
@@ -423,6 +431,12 @@ exports.handler = async (event) => {
         };
 
     if (body.action === 'init') {
+      // Texnik tanaffus: Mini App yopiq (adminlar uchun ochiq — sinab ko'rish
+      // uchun), bot va to'lovni aniqlash ishlayveradi.
+      const settings = await fetchSettings(supabase).catch(() => null);
+      if (settings?.maintenance_mode && !adminChatIds(settings).includes(telegramId)) {
+        return json(503, { ok: false, error: 'maintenance', text: settings.maintenance_text || '' });
+      }
       // Muddati o'tgan to'lovlar yuqorida (expireStalePendingOrders) tozalangan
       const hasPhone = Boolean(userRow?.phone);
       return json(200, {
@@ -530,7 +544,7 @@ exports.handler = async (event) => {
       // Hammasi bitta paketda: reja, sharhlar, wishlist, sozlamalar va shu
       // rejaning stoki — birortasi boshqasining natijasiga bog'liq emas.
       // Ilgari bu 3 ta ketma-ket bosqich edi.
-      const [planRes, reviewsRes, wishRes, settings, stockRes] = await Promise.all([
+      const [planRes, reviewsRes, wishRes, settings, stockRes, waitRes] = await Promise.all([
         request(supabase, 'plans', {
           query: `select=*&id=eq.${productId}&limit=1`,
         }),
@@ -547,6 +561,9 @@ exports.handler = async (event) => {
         fetchSettings(supabase).catch(() => null),
         request(supabase, 'inventory_items', {
           query: `select=id&plan_id=eq.${productId}&status=eq.available`,
+        }).catch(() => ({ data: [] })),
+        request(supabase, 'stock_waitlist', {
+          query: `select=id&user_telegram_id=eq.${telegramId}&plan_id=eq.${productId}&notified=eq.false&limit=1`,
         }).catch(() => ({ data: [] })),
       ]);
       const p = planRes.data?.[0];
@@ -582,7 +599,17 @@ exports.handler = async (event) => {
         general_terms: settings?.general_terms || '',
         reviews,
         in_wishlist: Boolean(wishRes.data?.length),
+        in_waitlist: Boolean(waitRes.data?.length),
       });
+    }
+
+    // "Kelganda xabar ber": tugagan mahsulot uchun navbat
+    if (body.action === 'waitlist-toggle') {
+      const productId = body.productId;
+      if (!productId) return json(400, { ok: false, error: 'no_product_id' });
+      const { toggleWaitlist } = require('../../shared/stock-waitlist');
+      const result = await toggleWaitlist(supabase, telegramId, productId);
+      return json(200, { ok: true, ...result });
     }
 
     if (body.action === 'wishlist-toggle') {
@@ -660,10 +687,15 @@ exports.handler = async (event) => {
       // Adminга Telegram xabari (best-effort — sharhni bloklamaydi)
       try {
         const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        const who = acctUser.username ? `@${acctUser.username}` : userName;
+        // Mijoz bosiladigan havola bilan (profil ochiladi)
+        const who = userLink({
+          telegram_id: telegramId,
+          username: acctUser.username || null,
+          full_name: [acctUser.first_name, acctUser.last_name].filter(Boolean).join(' '),
+        });
         const settings = await fetchSettings(supabase).catch(() => null);
         const admins = adminChatIds(settings);
-        const msg = `⭐ Yangi sharh (${rating}/5): ${esc(who)}${text ? ` — ${esc(text)}` : ''}`;
+        const msg = `⭐ Yangi sharh (${rating}/5): ${who}${text ? ` — ${esc(text)}` : ''}`;
         await Promise.all(admins.map((id) => sendMessage(id, msg, null).catch(() => {})));
       } catch {
         /* ignore */
@@ -783,6 +815,9 @@ exports.handler = async (event) => {
         listCartItems(supabase, telegramId),
         fetchSettings(supabase).catch(() => null),
       ]);
+      if (settings?.maintenance_mode && !adminChatIds(settings).includes(telegramId)) {
+        return json(503, { ok: false, error: 'maintenance', text: settings.maintenance_text || '' });
+      }
       const cartItems = (items || []).filter((i) => i.plan);
       if (!cartItems.length) return json(400, { ok: false, error: 'empty_cart' });
 
@@ -828,7 +863,8 @@ exports.handler = async (event) => {
         promo,
         balanceUsed,
         cashbackAmount: cashback,
-        expiresMinutes: Number(process.env.WEBAPP_CHECKOUT_MINUTES || 10),
+        // To'lov kutish vaqti — Sozlamalardan (bo'lmasa env, sukut 10 daqiqa)
+        expiresMinutes: paymentTimeoutMinutes(settings),
       });
 
       // Reserved inventory OLIB TASHLANDI — checkout inventarni band qilmaydi.
@@ -849,11 +885,22 @@ exports.handler = async (event) => {
           type: 'debit',
           description: `Balansdan to'liq to'landi #${order.order_number}`,
         }).catch((e) => console.warn('debit warn:', e?.message));
-        await processApprovedOrderDelivery({
+        const delivery = await processApprovedOrderDelivery({
           supabase,
           order,
           adminTelegramId: 'webapp_balance',
-        }).catch((e) => console.warn('deliver warn:', e?.message));
+        }).catch((e) => {
+          console.warn('deliver warn:', e?.message);
+          return { ok: false, message: e?.message || 'xato' };
+        });
+        // Pul hodisasi — adminga xabar (tugmasiz: to'lov kutilmaydi)
+        const deliveryLine = delivery?.code === 'MANUAL_REQUIRED'
+          ? '📦 Yetkazish: qo‘lda ulash kerak (admin panel → Buyurtmalar)'
+          : delivery?.ok ? '📦 Yetkazish: yetkazildi ✅' : `📦 Yetkazish: e’tibor kerak — ${delivery?.message || 'xato'}`;
+        await notifyNewOrder(supabase, { order, items: cartItems, kind: 'balance', extraLines: ['', deliveryLine] });
+      } else {
+        // To'lov kutilmoqda — adminga "To'lov keldi" tugmali xabar
+        await notifyNewOrder(supabase, { order, items: cartItems, kind: 'purchase' });
       }
 
       return json(200, {
@@ -958,6 +1005,9 @@ exports.handler = async (event) => {
 
     if (body.action === 'topup') {
       const settings = await fetchSettings(supabase).catch(() => null);
+      if (settings?.maintenance_mode && !adminChatIds(settings).includes(telegramId)) {
+        return json(503, { ok: false, error: 'maintenance', text: settings.maintenance_text || '' });
+      }
       const minTopup = Number(settings?.min_topup ?? 5000);
       const base = Math.round(Number(body.amount || 0));
       if (!(base >= minTopup)) return json(400, { ok: false, error: 'min_topup', min: minTopup });
@@ -967,9 +1017,7 @@ exports.handler = async (event) => {
       const cashbackPercent = Number(settings?.cashback_percent ?? 10);
       const cashback = cashbackEnabled ? Math.round((base * cashbackPercent) / 100) : 0;
       const credit = uniquePrice + cashback;
-      const expiresAt = new Date(
-        Date.now() + Number(process.env.WEBAPP_CHECKOUT_MINUTES || 10) * 60000,
-      ).toISOString();
+      const expiresAt = new Date(Date.now() + paymentTimeoutMinutes(settings) * 60000).toISOString();
 
       const order = await createOrder(supabase, {
         user_telegram_id: telegramId,
@@ -984,6 +1032,9 @@ exports.handler = async (event) => {
         payment_source: 'humo_card_bot',
         topup_credit: credit,
       });
+
+      // Pul hodisasi — adminga "To'lov keldi" tugmali xabar
+      await notifyNewOrder(supabase, { order, kind: 'topup' });
 
       return json(200, {
         ok: true,

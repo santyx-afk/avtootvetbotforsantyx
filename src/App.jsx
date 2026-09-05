@@ -49,6 +49,8 @@ export default function App() {
   const [authed, setAuthed] = useState(() => isTelegram || Boolean(getToken()));
   const [booting, setBooting] = useState(() => isTelegram || Boolean(getToken()));
   const [blocked, setBlocked] = useState(false);
+  // Texnik tanaffus (Sozlamalar → maintenance_mode): null — yo'q, satr — ekran matni
+  const [maintenance, setMaintenance] = useState(null);
   const [onboarded, setOnboardedState] = useState(() => isOnboarded());
   const [contactSaved, setContactSavedState] = useState(() => isContactSaved());
 
@@ -72,6 +74,8 @@ export default function App() {
       } catch (err) {
         if (active && (err?.status === 403 || err?.message === 'blocked')) {
           setBlocked(true);
+        } else if (active && err?.status === 503 && err?.message === 'maintenance') {
+          setMaintenance(String(err?.data?.text || ''));
         } else if (active && err?.status === 401 && !isTelegram) {
           // JWT yaroqsiz — login sahifasiga qaytamiz
           clearToken();
@@ -140,6 +144,18 @@ export default function App() {
   }
 
   if (booting) return <FullScreenLoader />;
+
+  if (maintenance !== null) {
+    return (
+      <div className="app-container" style={{ paddingTop: 80 }}>
+        <EmptyState
+          emoji="🛠"
+          title={t('maintenance.title')}
+          hint={maintenance || t('maintenance.text')}
+        />
+      </div>
+    );
+  }
 
   if (blocked) {
     return (

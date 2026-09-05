@@ -1,4 +1,4 @@
-const { createSession, verifyPassword } = require('../../shared/auth');
+const { createSession, verifyPassword, verifyPasswordHash } = require('../../shared/auth');
 const { getAdminClient, request } = require('../../shared/db');
 
 const MAX_ATTEMPTS = 5;
@@ -44,6 +44,23 @@ async function saveAttempt(supabase, ip, patch) {
   }
 }
 
+// Operator: admins jadvalidan login + scrypt parol. Faol bo'lmasa — yo'q.
+async function findOperator(supabase, username) {
+  const name = String(username || '').trim().toLowerCase();
+  if (!/^[a-z0-9_.-]{2,40}$/.test(name)) return null;
+  try {
+    // Loginlar kichik harfda saqlanadi — aniq taqqoslash (ilike'da `_` joker
+    // belgi bo'lib, boshqa operatorning qatori chiqib qolardi).
+    const { data } = await request(supabase, 'admins', {
+      query: `select=id,username,role,password_hash,is_active&username=eq.${encodeURIComponent(name)}&limit=1`,
+    });
+    const row = data?.[0];
+    return row && row.is_active !== false && row.password_hash ? row : null;
+  } catch {
+    return null;
+  }
+}
+
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') return { statusCode: 405, body: 'Method not allowed' };
 
@@ -59,18 +76,30 @@ exports.handler = async (event) => {
     return json(429, { ok: false, error: `Juda ko'p urinish. ${mins} daqiqadan keyin qayta urinib ko'ring.`, retry_after: retryAfter }, { 'Retry-After': String(retryAfter) });
   }
 
-  // 2. Parolni tekshirish
+  // 2. Parolni tekshirish: login bo'sh — egasi (ADMIN_PASSWORD), login bor — operator (admins jadvali)
   let password = '';
-  try { ({ password } = JSON.parse(event.body || '{}')); } catch { /* bo'sh */ }
+  let username = '';
+  try { ({ password = '', username = '' } = JSON.parse(event.body || '{}')); } catch { /* bo'sh */ }
 
-  if (!verifyPassword(password)) {
+  let session = null; // { role, username }
+  if (String(username || '').trim()) {
+    const operator = await findOperator(supabase, username);
+    if (operator && verifyPasswordHash(password, operator.password_hash)) {
+      session = { role: operator.role === 'owner' ? 'owner' : 'operator', username: operator.username };
+      await request(supabase, 'admins', { method: 'PATCH', query: `id=eq.${operator.id}`, body: { last_login_at: new Date().toISOString() } }).catch(() => {});
+    }
+  } else if (verifyPassword(password)) {
+    session = { role: 'owner', username: 'owner' };
+  }
+
+  if (!session) {
     const attempts = Number(attempt?.attempts || 0) + 1;
     const blockedUntil = attempts >= MAX_ATTEMPTS ? new Date(now + BLOCK_MINUTES * 60000).toISOString() : null;
     await saveAttempt(supabase, ip, { attempts, blocked_until: blockedUntil });
     if (blockedUntil) {
       return json(429, { ok: false, error: `Juda ko'p noto'g'ri urinish. ${BLOCK_MINUTES} daqiqaga bloklandingiz.`, retry_after: BLOCK_MINUTES * 60 }, { 'Retry-After': String(BLOCK_MINUTES * 60) });
     }
-    return json(401, { ok: false, error: 'Noto‘g‘ri parol', attempts_left: MAX_ATTEMPTS - attempts });
+    return json(401, { ok: false, error: username ? 'Login yoki parol noto‘g‘ri' : 'Noto‘g‘ri parol', attempts_left: MAX_ATTEMPTS - attempts });
   }
 
   // 3. Muvaffaqiyat — hisoblagichni reset qilamiz
@@ -78,12 +107,12 @@ exports.handler = async (event) => {
 
   // SESSION_SECRET o'rnatilmagan bo'lsa createSession xato tashlaydi —
   // login muvaffaqiyatsiz bo'ladi (ilgari ochiq 'dev-secret' bilan ishlab ketardi).
-  let session;
+  let token;
   try {
-    session = createSession();
+    token = createSession(session);
   } catch (error) {
     console.error('admin sessiya yaratilmadi:', error.message);
     return json(500, { ok: false, error: 'Server sozlanmagan — administratorga murojaat qiling.' });
   }
-  return json(200, { ok: true }, { 'Set-Cookie': `admin_session=${session}; Path=/; HttpOnly; SameSite=Strict; Secure` });
+  return json(200, { ok: true, role: session.role, username: session.username }, { 'Set-Cookie': `admin_session=${token}; Path=/; HttpOnly; SameSite=Strict; Secure` });
 };

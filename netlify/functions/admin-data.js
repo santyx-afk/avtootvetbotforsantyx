@@ -1,4 +1,4 @@
-const { requireAdmin } = require('../../shared/auth');
+const { requireAdmin, requireOwner } = require('../../shared/auth');
 const { getAdminClient, request, listTable, insertRow, updateRow, deleteRow, fetchPlan, toQuery } = require('../../shared/db');
 const { sendMessage } = require('../../shared/telegram');
 
@@ -146,6 +146,8 @@ exports.handler = async (event) => {
       return item;
     };
 
+    // Yozish amallari — faqat egasi (operator faqat ko'radi)
+    if (event.httpMethod !== 'GET' && !requireOwner(event.headers)) return { statusCode: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ok: false, error: 'Faqat egasi uchun' }) };
     if (event.httpMethod === 'POST') {
       const table = resolveTable(payload.type);
       const item = await insertRow(supabase, table, sanitize(table, payload.item, { isCreate: true }));

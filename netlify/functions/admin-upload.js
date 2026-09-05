@@ -1,4 +1,4 @@
-const { requireAdmin } = require('../../shared/auth');
+const { requireAdmin, requireOwner } = require('../../shared/auth');
 const { getEnv } = require('../../shared/config');
 
 const BUCKET = 'product-images';
@@ -11,6 +11,7 @@ function json(statusCode, body) {
 
 exports.handler = async (event) => {
   if (!requireAdmin(event.headers)) return json(401, { ok: false, error: 'Unauthorized' });
+  if (!requireOwner(event.headers)) return json(403, { ok: false, error: 'Faqat egasi uchun' });
   if (event.httpMethod !== 'POST') return json(405, { ok: false, error: 'Method not allowed' });
 
   try {

@@ -85,7 +85,9 @@ export async function apiCall(action, payload = {}, { signal } = {}) {
   }
 
   if (!res.ok || (data && data.ok === false)) {
-    throw new ApiError(data?.error || `HTTP ${res.status}`, res.status);
+    const error = new ApiError(data?.error || `HTTP ${res.status}`, res.status);
+    error.data = data; // masalan texnik tanaffus matni
+    throw error;
   }
   return data;
 }

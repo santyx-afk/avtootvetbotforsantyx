@@ -1,6 +1,7 @@
 const { getAdminClient, request } = require('../../shared/db');
 const { handleStart, handleCallback, handleReceipt, handleTextCommand } = require('../../shared/bot-service');
 const { handleHumoPaymentNotification } = require('../../shared/humo-payment-service');
+const { handleAdminBroadcastMessage } = require('../../shared/broadcast-service');
 
 // To'lov bildirishnomalarini yuboradigan biznes-akkaunt Telegram ID si.
 // Ilgari kodning ichida ikki joyda qattiq yozilgan edi — endi bitta joyda,
@@ -147,6 +148,11 @@ exports.handler = async (event) => {
     } else if (update.message) {
       const blocked = await isUserBlocked(supabase, update.message.from?.id);
       if (blocked) return { statusCode: 200, body: 'blocked' };
+      // Admin "Admin xabari" oqimida bo'lsa — bu xabar broadcast uchun olinadi
+      // (chek yoki buyruq deb qaralmaydi).
+      if (await handleAdminBroadcastMessage({ supabase, message: update.message })) {
+        return { statusCode: 200, body: 'OK' };
+      }
       const payment = await handleHumoPaymentNotification({ supabase, message: update.message });
       if (!payment.handled) {
         const commandHandled = update.message.text ? await handleTextCommand({ supabase, message: update.message }) : false;

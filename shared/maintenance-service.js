@@ -48,7 +48,18 @@ async function processRetryQueue(supabase, limit = 20) {
     } else {
       await failDeliveryRetry(supabase, retry.id, { reason: 'max_retries_exceeded', metadata: { message: result.message } });
       await createExceptionQueueItem(supabase, { order_id: order.id, reason: 'max_retries_exceeded', metadata: { message: result.message } });
-      await notifyAdmins(supabase, `⚠ Delivery retry failed permanently\n\nOrder: #${order.order_number}\nReason: ${result.message}`);
+      const { userLines, fetchUserBrief } = require('./admin-notify');
+      const { escapeHtml } = require('./messages');
+      const user = await fetchUserBrief(supabase, order.user_telegram_id);
+      await notifyAdmins(supabase, [
+        '⚠️ <b>Yetkazish qayta urinishlari tugadi</b>',
+        '',
+        ...userLines(user),
+        `🧾 Buyurtma: <code>#${escapeHtml(order.order_number)}</code>`,
+        `Sabab: ${escapeHtml(result.message || '-')}`,
+        '',
+        'Buyurtma muammoli navbatga tushdi — admin panel → Dashboard → E’tibor talab qiladi.',
+      ].join('\n'));
       results.push({ id: retry.id, status: 'exception' });
     }
   }
@@ -69,7 +80,23 @@ async function runMaintenance(supabase) {
   const retries = await processRetryQueue(supabase);
   await cleanupProcessedPaymentMessages(supabase, Number(process.env.PROCESSED_PAYMENT_RETENTION_DAYS || 14));
   await updateMonitoringSnapshot(supabase);
-  return { expired: expired.length, resumed, retries: retries.length };
+  // Uzilib qolgan broadcast'lar (background funksiya ishlamagan/uzilgan)
+  // cursor'dan davom ettiriladi — qisqa budjet bilan, cron 10 soniyaga sig'sin.
+  const { resumeStalledBroadcasts } = require('./broadcast-service');
+  const broadcasts = await resumeStalledBroadcasts(supabase, { budgetMs: 4000 }).catch((e) => {
+    console.warn('broadcast resume warn:', e?.message);
+    return [];
+  });
+  // Zaxira kam qolgan rejalar (24 soatda bir marta ogohlantiriladi).
+  const { checkLowStock } = require('./stock-alerts');
+  const lowStock = await checkLowStock(supabase).catch((e) => {
+    console.warn('low stock check warn:', e?.message);
+    return 0;
+  });
+  // "Kelganda xabar ber" navbati — inventar kelgan rejalar bo'yicha qolgan xabarlar.
+  const { notifyPendingWaitlists } = require('./stock-waitlist');
+  const waitlist = await notifyPendingWaitlists(supabase, { budgetMs: 3000 }).catch(() => 0);
+  return { expired: expired.length, resumed, retries: retries.length, broadcasts: broadcasts.length, lowStock, waitlist };
 }
 
 module.exports = { runMaintenance, processRetryQueue, resumeStuckDeliveries };

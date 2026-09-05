@@ -83,6 +83,10 @@ export default {
     title: 'Your account is blocked',
     text: 'Contact {support} for help',
   },
+  maintenance: {
+    title: 'Maintenance in progress',
+    text: 'We will be back soon. The bot and payments keep working.',
+  },
   pages: {
     catalog: {
       title: 'Catalog',
@@ -204,6 +208,9 @@ export default {
     reviewPlaceholder: 'Share your thoughts...',
     submitReview: 'Submit',
     reviewThanks: 'Thanks for your review!',
+    notifyWhenBack: 'Notify me when back',
+    notifyOn: 'We will notify you ✓ (cancel)',
+    notifyHint: 'The bot will message you when this item is back in stock.',
     share: 'Share',
     quantity: 'Quantity',
     adminReply: 'Admin reply',
