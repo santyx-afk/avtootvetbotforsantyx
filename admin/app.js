@@ -520,6 +520,7 @@ function renderAttention(items = []) {
         ${it.kinds.includes('stock') ? `<button class="ghost attention-stock" data-plan="${esc(it.plan_id || '')}">🔑 Inventar</button>` : ''}
         ${it.kinds.includes('failed') || it.kinds.includes('stock') || it.kinds.includes('exception') ? `<button class="ghost order-action" data-action="retry_delivery" data-id="${esc(it.id)}">Retry</button>` : ''}
         ${it.kinds.includes('receipt') ? `<button class="ghost order-action" data-action="approve" data-id="${esc(it.id)}">Approve</button>` : ''}
+        ${it.kinds.includes('receipt') ? '' : `<button class="ghost order-action" data-action="close_silent" data-id="${esc(it.id)}" title="Mijozga xabarsiz yakunlash (tashqarida hal qilingan bo'lsa)">Yopish</button>`}
       </td>
     </tr>`).join('')}</tbody></table>`;
 }
@@ -1998,6 +1999,21 @@ document.getElementById('exportOrdersCsv')?.addEventListener('click', async (eve
 // Dashboard'dagi muammoli buyurtmalar: "Inventar" tugmasi rejani tanlab
 // Inventory bo'limiga o'tadi; qolgan tugmalar buyurtmalar ro'yxati bilan bir xil.
 document.getElementById('attentionRefresh')?.addEventListener('click', () => loadAttention());
+// Eski (30 kundan oldingi) muammoli buyurtmalarni bittada xabarsiz yopish
+document.getElementById('attentionCloseStale')?.addEventListener('click', async (event) => {
+  const btn = event.currentTarget;
+  if (!confirm('30 kundan eski barcha muammoli buyurtmalar "yakunlangan" deb belgilanadi. Mijozlarga hech qanday xabar ketmaydi, akkaunt berilmaydi. Davom etilsinmi?')) return;
+  btn.disabled = true;
+  try {
+    const res = await api('admin-orders', { method: 'POST', body: JSON.stringify({ action: 'close_stale', days: 30 }) });
+    alert(`Yopildi: ${res.closed} / ${res.total}${res.errors?.length ? `\n${res.errors.slice(0, 5).join('\n')}` : ''}`);
+  } catch (error) {
+    alert(error.message || 'Xatolik');
+  } finally {
+    btn.disabled = false;
+  }
+  await Promise.all([loadAttention(), loadOrders().catch(() => {})]);
+});
 document.getElementById('attentionList')?.addEventListener('click', (event) => {
   const stockBtn = event.target.closest('.attention-stock');
   if (!stockBtn) return;
@@ -2039,6 +2055,8 @@ document.getElementById('ordersList')?.addEventListener('click', handleOrderList
 async function runOrderAction(btn) {
   if (btn.dataset.action === 'mark_paid'
     && !confirm('To\'lov haqiqatan keldimi? Buyurtma to\'langan deb belgilanadi va mijozga yetkaziladi.')) return;
+  if (btn.dataset.action === 'close_silent'
+    && !confirm('Buyurtma "yakunlangan" deb belgilanadi. Mijozga xabar ketmaydi, akkaunt berilmaydi. Tashqarida hal qilingan bo\'lsa bosing.')) return;
   btn.disabled = true;
   try {
     const res = await api('admin-orders', { method: 'POST', body: JSON.stringify({ action: btn.dataset.action, orderId: btn.dataset.id }) });

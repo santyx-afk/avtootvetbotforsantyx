@@ -241,6 +241,37 @@ async function orderDetail(supabase, orderId) {
   };
 }
 
+// Buyurtmani mijozga xabarsiz yakunlash (tashqarida hal qilingan eski
+// buyurtmalar uchun). Faqat to'lovi kelgan buyurtma yopiladi — to'lov
+// kutilayotganini "yopish" chalkashlik (u expired bo'lishi kerak).
+async function closeOrderSilently(supabase, orderId) {
+  const order = await getOrderById(supabase, orderId);
+  if (!order) return { ok: false, status: 404, error: 'Buyurtma topilmadi' };
+  if (['rejected', 'cancelled', 'expired'].includes(order.status)) return { ok: false, error: 'Buyurtma allaqachon yopiq' };
+  if (order.status === 'completed' && order.delivery_status === 'delivered') return { ok: false, error: 'Buyurtma allaqachon yakunlangan' };
+  if (['waiting_payment', 'pending_payment'].includes(order.status)) {
+    return { ok: false, error: 'To‘lov kelmagan buyurtma yopilmaydi — u muddati o‘tganda o‘zi bekor bo‘ladi' };
+  }
+  const now = new Date().toISOString();
+  const completed = await updateOrderStatus(supabase, orderId, 'completed', {
+    delivery_status: 'delivered',
+    delivered_at: order.delivered_at || now,
+    completed_at: now,
+    delivery_error: null,
+    admin_comment: [order.admin_comment, 'Paneldan xabarsiz yopildi'].filter(Boolean).join(' | '),
+  });
+  await request(supabase, 'order_items', {
+    method: 'PATCH',
+    query: `order_id=eq.${encodeURIComponent(orderId)}&delivery_status=neq.delivered`,
+    body: { delivery_status: 'delivered', delivered_at: now, updated_at: now },
+  }).catch(() => {});
+  await request(supabase, 'exception_queue', { method: 'PATCH', query: `order_id=eq.${encodeURIComponent(orderId)}&status=eq.open`, body: { status: 'resolved', resolved_at: now } }).catch(() => {});
+  await request(supabase, 'delivery_retry_queue', { method: 'PATCH', query: `order_id=eq.${encodeURIComponent(orderId)}&status=eq.pending`, body: { status: 'completed', completed_at: now, updated_at: now } }).catch(() => {});
+  await createAuditLog(supabase, { order_id: orderId, user_telegram_id: order.user_telegram_id, action: 'closed_silently', status: 'completed', metadata: { previous_status: order.status, previous_delivery: order.delivery_status } });
+  await markOrderNotification(supabase, orderId, '✅ Paneldan yopildi (xabarsiz)').catch(() => {});
+  return { ok: true, order: completed || order };
+}
+
 // Testlar uchun ochiladi.
 exports._sanitizeSearch = sanitizeSearch;
 exports._buildOrderFilters = buildOrderFilters;
@@ -295,6 +326,20 @@ exports.handler = async (event) => {
     if (event.httpMethod === 'POST') {
       const body = JSON.parse(event.body || '{}');
       const { action, orderId } = body;
+      // Eski (N kundan oldingi) muammoli buyurtmalarni bittada xabarsiz yopish
+      if (action === 'close_stale') {
+        const days = Math.min(365, Math.max(1, Math.round(Number(body.days || 30))));
+        const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+        const items = (await attentionList(supabase)).filter((it) => new Date(it.created_at).getTime() < cutoff);
+        let closed = 0;
+        const errors = [];
+        for (const it of items) {
+          const res = await closeOrderSilently(supabase, it.id);
+          if (res.ok) closed += 1;
+          else errors.push(`#${it.order_number}: ${res.error}`);
+        }
+        return json(200, { ok: true, closed, total: items.length, errors });
+      }
       if (!orderId || !action) return json(400, { ok: false, error: 'orderId va action talab qilinadi' });
       // "To'lov keldi" — tizim aniqlamagan to'lovni admin qo'lda tasdiqlaydi.
       // Faqat to'lov kutilayotgan va muddati o'tmagan buyurtma (bot tugmasi
@@ -420,6 +465,14 @@ exports.handler = async (event) => {
         await creditOrderCashback(supabase, done).catch((e) => console.warn('cashback warn:', e?.message));
         await markOrderNotification(supabase, orderId, '📦 Qo‘lda yetkazildi (admin panel)').catch(() => {});
         return json(200, { ok: true, order: done });
+      }
+      // Xabarsiz yopish: buyurtma tashqarida (Telegram orqali qo'lda) hal
+      // qilingan, tizim bilmay qolgan. Mijozga hech narsa ketmaydi, bonus/
+      // cashback hisoblanmaydi — faqat holat yakunlanadi va navbatlar yopiladi.
+      if (action === 'close_silent') {
+        const closed = await closeOrderSilently(supabase, orderId);
+        if (!closed.ok) return json(closed.status || 400, { ok: false, error: closed.error });
+        return json(200, { ok: true, order: closed.order });
       }
       if (action === 'retry_delivery') {
         const order = await retryDeliveryForOrder(supabase, orderId);
