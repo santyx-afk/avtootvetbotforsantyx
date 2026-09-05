@@ -49,8 +49,10 @@ async function findOperator(supabase, username) {
   const name = String(username || '').trim().toLowerCase();
   if (!/^[a-z0-9_.-]{2,40}$/.test(name)) return null;
   try {
+    // Loginlar kichik harfda saqlanadi — aniq taqqoslash (ilike'da `_` joker
+    // belgi bo'lib, boshqa operatorning qatori chiqib qolardi).
     const { data } = await request(supabase, 'admins', {
-      query: `select=id,username,role,password_hash,is_active&username=ilike.${encodeURIComponent(name)}&limit=1`,
+      query: `select=id,username,role,password_hash,is_active&username=eq.${encodeURIComponent(name)}&limit=1`,
     });
     const row = data?.[0];
     return row && row.is_active !== false && row.password_hash ? row : null;

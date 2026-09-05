@@ -52,7 +52,6 @@ function parseSession(token) {
   const b = Buffer.from(signature || '');
   if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
 
-  const ttlMs = Number(process.env.ADMIN_SESSION_TTL_MS || 1000 * 60 * 60 * 12);
   let ts;
   let role = 'owner';
   let username = 'owner';
@@ -68,6 +67,11 @@ function parseSession(token) {
       return null;
     }
   }
+  // Operator sessiyasi qisqaroq (2 soat): o'chirilgan operator uzoq
+  // ishlab qolmasin (panel ochilganda admin-session faolligini ham tekshiradi).
+  const ttlMs = role === 'operator'
+    ? Number(process.env.ADMIN_OPERATOR_SESSION_TTL_MS || 1000 * 60 * 60 * 2)
+    : Number(process.env.ADMIN_SESSION_TTL_MS || 1000 * 60 * 60 * 12);
   if (!Number.isFinite(ts) || Date.now() - ts > ttlMs) return null;
   return { role, username, issuedAt: ts };
 }

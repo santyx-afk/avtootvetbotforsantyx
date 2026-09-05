@@ -47,3 +47,16 @@ test('parol hash: to\'g\'ri parol o\'tadi, noto\'g\'risi yo\'q', () => {
   assert.equal(verifyPasswordHash('sekret124', stored), false);
   assert.equal(verifyPasswordHash('sekret123', 'garbage'), false);
 });
+
+test('operator sessiyasi 2 soatdan keyin tugaydi, egasiniki 12 soat', () => {
+  const crypto = require('crypto');
+  const mk = (role, ageMs) => {
+    const payload = Buffer.from(JSON.stringify({ t: Date.now() - ageMs, r: role, u: 'x' })).toString('base64url');
+    const sig = crypto.createHmac('sha256', process.env.SESSION_SECRET).update(payload).digest('hex');
+    return `${payload}.${sig}`;
+  };
+  const threeHours = 3 * 60 * 60 * 1000;
+  assert.equal(parseSession(mk('operator', threeHours)), null);
+  assert.equal(parseSession(mk('owner', threeHours))?.role, 'owner');
+  assert.equal(parseSession(mk('operator', 60 * 60 * 1000))?.role, 'operator');
+});

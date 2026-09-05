@@ -368,6 +368,17 @@ exports.handler = async (event) => {
         if (['rejected', 'cancelled', 'expired'].includes(order.status)) {
           return json(400, { ok: false, error: 'Bekor qilingan yoki muddati o‘tgan buyurtmani yetkazib bo‘lmaydi' });
         }
+        // To'lovi kelmagan buyurtma yetkazilmaydi (panel tugmani yashiradi,
+        // lekin qoida server tomonda ham turishi shart).
+        if (['waiting_payment', 'pending_payment'].includes(order.status)) {
+          return json(400, { ok: false, error: 'To‘lov hali kelmagan — avval "To‘lov keldi" deb tasdiqlang' });
+        }
+        if (['payment_uploaded', 'checking'].includes(order.status)) {
+          return json(400, { ok: false, error: 'Chek tekshirilmoqda — avval Approve qiling' });
+        }
+        if (String(order.order_type || 'purchase') === 'topup') {
+          return json(400, { ok: false, error: 'Balans to‘ldirish buyurtmasi yetkazilmaydi' });
+        }
         if (order.status === 'completed' && order.delivery_status === 'delivered') {
           return json(400, { ok: false, error: 'Buyurtma allaqachon yetkazilgan' });
         }
