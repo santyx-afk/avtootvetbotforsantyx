@@ -33,6 +33,7 @@ frontend murojaat qilib krash bo'lgani). Endi tartib quyidagicha.
 | [2026-09-05_broadcast-jobs.sql](2026-09-05_broadcast-jobs.sql) | 2026-09-05 | `broadcast_jobs` — admin xabari (bot orqali nusxa) va matnli broadcast navbati |
 | [2026-09-05_settings-maintenance-timeout.sql](2026-09-05_settings-maintenance-timeout.sql) | 2026-09-05 | Sozlamalar: `maintenance_mode`, `maintenance_text`, `payment_timeout_minutes` |
 | [2026-09-05_admins-roles-waitlist.sql](2026-09-05_admins-roles-waitlist.sql) | 2026-09-05 | `admins` rollari (operator login/parol), `stock_waitlist` unique indeks |
+| [2026-09-23_stage2-hardening.sql](2026-09-23_stage2-hardening.sql) | ⏳ **kutilmoqda** | `orders.unique_price` partial unique index (to'lov to'qnashuvi) + `processed_updates` jadvali (takroriy Telegram update idempotentligi). Ixtiyoriy — kod migratsiyasiz ham ishlaydi, lekin himoyani kuchaytiradi. |
 
 ## BASELINE.md haqida
 

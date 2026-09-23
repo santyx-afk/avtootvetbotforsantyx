@@ -16,6 +16,7 @@ const {
   getOrderItems,
   getInventoryItemById,
   createOrder,
+  isUniqueViolation,
   generateUniquePrice,
   expireOrder,
   createLead,
@@ -43,6 +44,21 @@ function paymentTimeoutMinutes(settings) {
   const fromSettings = Number(settings?.payment_timeout_minutes);
   const value = fromSettings > 0 ? fromSettings : Number(process.env.WEBAPP_CHECKOUT_MINUTES || 10);
   return Math.min(180, Math.max(1, Math.round(value || 10)));
+}
+
+// Buyurtma/to'ldirish yaratishga chastota chegarasi. Bitta skript minutlab
+// yuzlab buyurtma ochib (har biri adminга xabar + unique_price band qiladi)
+// tizimni ko'mib tashlamasin. Kalit — telegram_id (autentifikatsiyalangan).
+// fail-open: baza javob bermasa halol xaridorni bloklamaymiz.
+async function orderRateLimit(supabase, telegramId) {
+  return rateLimit.hit(supabase, {
+    scope: 'order_create',
+    key: String(telegramId),
+    limit: Number(process.env.ORDER_RATE_LIMIT || 15),
+    windowSeconds: Number(process.env.ORDER_RATE_WINDOW || 600),
+    blockSeconds: Number(process.env.ORDER_RATE_BLOCK || 300),
+    failClosed: false,
+  });
 }
 
 // Admin Telegram chat ID larini sozlama va env dan yig'adi.
@@ -793,6 +809,11 @@ exports.handler = async (event) => {
       const cartItems = (items || []).filter((i) => i.plan);
       if (!cartItems.length) return json(400, { ok: false, error: 'empty_cart' });
 
+      const checkoutGate = await orderRateLimit(supabase, telegramId);
+      if (!checkoutGate.allowed) {
+        return json(429, { ok: false, error: 'too_many_requests', retry_after: checkoutGate.retryAfter }, { 'Retry-After': String(checkoutGate.retryAfter) });
+      }
+
       const basePrice = cartItems.reduce(
         (s, i) => s + Number(i.plan.price || 0) * Number(i.quantity || 1),
         0,
@@ -984,26 +1005,47 @@ exports.handler = async (event) => {
       const base = Math.round(Number(body.amount || 0));
       if (!(base >= minTopup)) return json(400, { ok: false, error: 'min_topup', min: minTopup });
 
-      const uniquePrice = await generateUniquePrice(supabase, base);
+      const topupGate = await orderRateLimit(supabase, telegramId);
+      if (!topupGate.allowed) {
+        return json(429, { ok: false, error: 'too_many_requests', retry_after: topupGate.retryAfter }, { 'Retry-After': String(topupGate.retryAfter) });
+      }
+
       const cashbackEnabled = Boolean(settings?.cashback_enabled);
       const cashbackPercent = Number(settings?.cashback_percent ?? 10);
       const cashback = cashbackEnabled ? Math.round((base * cashbackPercent) / 100) : 0;
-      const credit = uniquePrice + cashback;
       const expiresAt = new Date(Date.now() + paymentTimeoutMinutes(settings) * 60000).toISOString();
 
-      const order = await createOrder(supabase, {
-        user_telegram_id: telegramId,
-        order_type: 'topup',
-        amount: uniquePrice,
-        base_price: base,
-        unique_price: uniquePrice,
-        expires_at: expiresAt,
-        status: 'waiting_payment',
-        delivery_status: 'not_required',
-        payment_method: 'humo_card_bot',
-        payment_source: 'humo_card_bot',
-        topup_credit: credit,
-      });
+      // unique_price to'qnashuvida (partial unique index) suffiksni qayta
+      // generatsiya qilib qayta uramiz. Credit = unique_price + cashback, shuning
+      // uchun har urinishda qayta hisoblanadi.
+      let uniquePrice = await generateUniquePrice(supabase, base);
+      let credit = uniquePrice + cashback;
+      let order;
+      for (let attempt = 0; ; attempt += 1) {
+        try {
+          order = await createOrder(supabase, {
+            user_telegram_id: telegramId,
+            order_type: 'topup',
+            amount: uniquePrice,
+            base_price: base,
+            unique_price: uniquePrice,
+            expires_at: expiresAt,
+            status: 'waiting_payment',
+            delivery_status: 'not_required',
+            payment_method: 'humo_card_bot',
+            payment_source: 'humo_card_bot',
+            topup_credit: credit,
+          });
+          break;
+        } catch (error) {
+          if (attempt < 5 && isUniqueViolation(error, 'unique_price')) {
+            uniquePrice = await generateUniquePrice(supabase, base);
+            credit = uniquePrice + cashback;
+            continue;
+          }
+          throw error;
+        }
+      }
 
       // Pul hodisasi — adminga "To'lov keldi" tugmali xabar
       await notifyNewOrder(supabase, { order, kind: 'topup' });

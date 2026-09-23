@@ -9,9 +9,16 @@ process.env.TELEGRAM_BOT_TOKEN = '1:mock';
 
 const { handler } = require('../netlify/functions/telegram-webhook');
 
-// Har qanday tashqi so'rov bo'lmasligi kerak — agar sekret gate ishlasa fetch
-// umuman chaqirilmaydi. Xavfsizlik uchun no-op qo'yamiz.
-global.fetch = async () => ({ ok: true, status: 200, headers: { get: () => null }, text: async () => '[]', json: async () => [] });
+// Sekret gate o'tgach idempotentlik tekshiruvi processed_updates ga INSERT qiladi:
+// yangi update uchun qator qaytishi kerak (aks holda "takror" deb hisoblanadi).
+global.fetch = async (url, opts = {}) => {
+  const u = String(url);
+  const body = opts.body ? JSON.parse(opts.body) : undefined;
+  const data = u.includes('/rest/v1/processed_updates') && (opts.method === 'POST')
+    ? [{ update_id: body?.update_id ?? 1 }]
+    : [];
+  return { ok: true, status: 200, headers: { get: () => null }, text: async () => JSON.stringify(data), json: async () => data };
+};
 
 const fakeAdminCallback = JSON.stringify({
   update_id: 1,

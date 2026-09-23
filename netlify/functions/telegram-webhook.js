@@ -58,6 +58,14 @@ exports.handler = async (event) => {
 
   const supabase = getAdminClient();
 
+  // Takroriy update'dan himoya (idempotentlik): Telegram javob kechiksa o'sha
+  // update'ni qayta yuboradi. Bir marta ishlov beramiz. Jadval bo'lmasa fail-open.
+  const { markUpdateProcessed } = require('../../shared/db');
+  const firstTime = await markUpdateProcessed(supabase, update.update_id);
+  if (!firstTime) {
+    return { statusCode: 200, body: JSON.stringify({ ok: true, ignored: 'duplicate-update' }) };
+  }
+
   try {
     if (update.business_message) {
       const msg = update.business_message;
