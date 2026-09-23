@@ -14,10 +14,8 @@ const {
 const { sendMessage } = require('./telegram');
 const { processApprovedOrderDelivery } = require('./delivery-service');
 const { nextRetryAt, hasRetriesLeft } = require('./retry-policy');
-
-function adminIds(settings) {
-  return [...new Set([settings?.admin_telegram_id, process.env.ADMIN_CHAT_ID, process.env.ADMIN_TELEGRAM_ID, ...(process.env.ADMIN_TELEGRAM_IDS || '').split(',')].map((x) => String(x || '').trim()).filter(Boolean))];
-}
+// Admin ID lari bitta joyda — admin-notify.adminChatIds (nusxa ko'chirilmaydi).
+const { adminChatIds: adminIds } = require('./admin-notify');
 
 async function notifyAdmins(supabase, text) {
   const settings = await fetchSettings(supabase);

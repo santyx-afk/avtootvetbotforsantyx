@@ -19,7 +19,7 @@ const {
   clearUserAwaitingReceipt,
   markOrderPaidManually,
 } = require('./db');
-const { isAdminChat, markOrderNotification, userLines, formatUzs: formatUzsLabel } = require('./admin-notify');
+const { isAdminChat, markOrderNotification, userLines, formatUzs: formatUzsLabel, adminChatIds: resolveAdminChatIds } = require('./admin-notify');
 const { settlePaidOrder } = require('./humo-payment-service');
 const { escapeHtml } = require('./messages');
 const {
@@ -40,16 +40,6 @@ const {
   helpText,
 } = require('./messages');
 const { processApprovedDelivery } = require('./delivery-service');
-
-function resolveAdminChatIds(settings) {
-  const ids = [];
-  if (settings?.admin_telegram_id) ids.push(String(settings.admin_telegram_id));
-  if (process.env.ADMIN_CHAT_ID) ids.push(String(process.env.ADMIN_CHAT_ID));
-  if (process.env.ADMIN_TELEGRAM_ID) ids.push(String(process.env.ADMIN_TELEGRAM_ID));
-  const multi = (process.env.ADMIN_TELEGRAM_IDS || '').split(',').map((item) => item.trim()).filter(Boolean);
-  ids.push(...multi);
-  return [...new Set(ids)];
-}
 
 function formatAmount(amount, currency = 'UZS') {
   return `${new Intl.NumberFormat('uz-UZ').format(Number(amount || 0))} ${currency}`;

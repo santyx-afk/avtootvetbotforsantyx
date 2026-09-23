@@ -31,7 +31,7 @@ const { verifyWebLoginCode } = require('../../shared/web-auth-service');
 const rateLimit = require('../../shared/rate-limit');
 const { sendMessage } = require('../../shared/telegram');
 const { escapeHtml } = require('../../shared/messages');
-const { notifyNewOrder, userLink } = require('../../shared/admin-notify');
+const { notifyNewOrder, userLink, adminChatIds } = require('../../shared/admin-notify');
 
 const PAYMENT_WARN_SUPPORT = (process.env.SUPPORT_USERNAME || '@santyx').replace(/^@?/, '@');
 
@@ -61,21 +61,6 @@ async function orderRateLimit(supabase, telegramId) {
   });
 }
 
-// Admin Telegram chat ID larini sozlama va env dan yig'adi.
-function adminChatIds(settings) {
-  return [
-    ...new Set(
-      [
-        settings?.admin_telegram_id,
-        process.env.ADMIN_CHAT_ID,
-        process.env.ADMIN_TELEGRAM_ID,
-        ...(process.env.ADMIN_TELEGRAM_IDS || '').split(','),
-      ]
-        .map((x) => String(x || '').trim())
-        .filter(Boolean),
-    ),
-  ];
-}
 
 // Yetkazilgan buyurtma elementlaridan kredensiallarni (deshifrlangan) chiqaradi.
 async function collectDeliveries(supabase, orderId) {

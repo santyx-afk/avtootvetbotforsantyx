@@ -13,7 +13,7 @@ const {
 } = require('./db');
 const { sendMessage } = require('./telegram');
 const { processApprovedOrderDelivery } = require('./delivery-service');
-const { userLines, fetchUserBrief, markOrderNotification } = require('./admin-notify');
+const { userLines, fetchUserBrief, markOrderNotification, adminChatIds: adminIds } = require('./admin-notify');
 const { escapeHtml } = require('./messages');
 
 // Yetkazishni qancha kutamiz. Netlify funksiyasi ~10 soniyada uzilgani uchun
@@ -75,10 +75,6 @@ function isHumoNotification(message = {}) {
 
 function messageKey(message = {}) {
   return [message.chat?.id || 'chat', message.message_id || message.date || Date.now()].join(':');
-}
-
-function adminIds(settings) {
-  return [...new Set([settings?.admin_telegram_id, process.env.ADMIN_CHAT_ID, process.env.ADMIN_TELEGRAM_ID, ...(process.env.ADMIN_TELEGRAM_IDS || '').split(',')].map((x) => String(x || '').trim()).filter(Boolean))];
 }
 
 async function findWaitingOrderByBasePrice(client, amount) {

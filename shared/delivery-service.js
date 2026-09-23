@@ -20,6 +20,8 @@ const { sendMessage } = require('./telegram');
 const { decryptText, isEncryptionKeyHealthy } = require('./encryption');
 const { nextRetryAt, hasRetriesLeft } = require('./retry-policy');
 const { processReferralPayout } = require('./referral-service');
+// Admin ID lari bitta joyda — admin-notify.adminChatIds (nusxa ko'chirilmaydi).
+const { adminChatIds: resolveAdminChatIds } = require('./admin-notify');
 
 function mapTelegramSendError(error) {
   const msg = String(error?.message || '');
@@ -116,9 +118,6 @@ function credentialFault(failures) {
 }
 
 
-function resolveAdminChatIds(settings) {
-  return [...new Set([settings?.admin_telegram_id, process.env.ADMIN_CHAT_ID, process.env.ADMIN_TELEGRAM_ID, ...(process.env.ADMIN_TELEGRAM_IDS || '').split(',')].map((item) => String(item || '').trim()).filter(Boolean))];
-}
 
 // Zaxira kamaygani haqida ogohlantirish — bitta reja uchun 24 soatda bir
 // marta (stock-alerts.js), ilgari har sotuvda takrorlanardi.
