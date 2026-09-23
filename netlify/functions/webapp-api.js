@@ -12,7 +12,6 @@ const {
   getUserBalance,
   createCheckoutOrder,
   setUserAwaitingReceipt,
-  addWalletTransaction,
   getOrderById,
   getOrderItems,
   getInventoryItemById,
@@ -117,8 +116,6 @@ function extractPhoneFromRaw(raw) {
   );
 }
 
-const AUTO_DELIVERY = ['auto_account', 'license_key'];
-
 // Bitta plan qatorini frontend uchun mahsulot obyektiga aylantiradi.
 // Teglar bazada jsonb massiv yoki vergul bilan ajratilgan matn bo'lishi mumkin —
 // ikkalasini ham massivga keltiramiz (qidiruv teglar bo'yicha ham ishlaydi).
@@ -165,14 +162,14 @@ function aggregateRatings(reviews) {
   return out;
 }
 
-async function availableStockByPlan(supabase) {
-  const { data } = await request(supabase, 'inventory_items', {
-    query: 'select=plan_id&status=eq.available',
-  });
-  const map = {};
-  for (const it of data || []) map[it.plan_id] = (map[it.plan_id] || 0) + 1;
-  return map;
-}
+// Mijozga ZAXIRA HOLATI ko'rsatilmaydi. Egasi so'ragan: avto-akkaunt obuna
+// zaxirada qolmasa ham "mavjud emas / tugagan" chiqmasin — mijoz obuna
+// tugaganini ko'rmasin va bemalol sotib olsin. To'lovdan keyin akkaunt bo'lmasa
+// admin qo'lda ulaydi (admin alohida ogohlantiriladi). Shuning uchun katalog/
+// mahsulot/wishlist hamma joyda stock=null (son yashirin), in_stock=true.
+// Eslatma: haqiqiy zaxira baribir DB darajasida (claim_inventory_item) tekshiriladi,
+// bu faqat KO'RSATISHGA taalluqli — ortiqcha sotishga olib kelmaydi.
+const CUSTOMER_STOCK = { stock: null, inStock: true };
 
 function reviewShape(row) {
   return {
@@ -225,17 +222,11 @@ async function handlePublicCatalog(supabase) {
 
   const plans = plansRes.data || [];
   const ratingMap = aggregateRatings(reviewsRes.data || []);
-  const stockMap = await availableStockByPlan(supabase).catch(() => ({}));
 
   const parentIds = new Set(plans.map((p) => p.parent_plan_id).filter(Boolean));
   const products = plans
     .filter((p) => !parentIds.has(p.id))
-    .map((p) => {
-      const auto = AUTO_DELIVERY.includes(p.delivery_type);
-      const stock = auto ? stockMap[p.id] || 0 : null;
-      const inStock = auto ? stock > 0 : true;
-      return productShape(p, { stock, inStock, rating: ratingMap[p.id] || { avg: 0, count: 0 } });
-    });
+    .map((p) => productShape(p, { ...CUSTOMER_STOCK, rating: ratingMap[p.id] || { avg: 0, count: 0 } }));
 
   return json(200, {
     ok: true,
@@ -478,7 +469,7 @@ exports.handler = async (event) => {
 
       // Stok ham shu paketda — u boshqa so'rovlarga bog'liq emas, ilgari
       // alohida, ketma-ket bosqich bo'lib kelardi.
-      const [bannersRes, categoriesRes, plansRes, reviewsRes, wishlistRes, stockMap] = await Promise.all([
+      const [bannersRes, categoriesRes, plansRes, reviewsRes, wishlistRes] = await Promise.all([
         request(supabase, 'banners', {
           query: 'select=id,title,subtitle,btn_text,image_url,link,gradient,expires_at&is_active=eq.true&order=sort_order.asc',
         }).catch(() =>
@@ -497,7 +488,6 @@ exports.handler = async (event) => {
         request(supabase, 'wishlist', {
           query: `select=plan_id&user_telegram_id=eq.${telegramId}`,
         }).catch(() => ({ data: [] })),
-        availableStockByPlan(supabase).catch(() => ({})),
       ]);
 
       const banners = (bannersRes.data || []).filter(
@@ -507,22 +497,13 @@ exports.handler = async (event) => {
       const ratingMap = aggregateRatings(reviewsRes.data || []);
       const wishlistIds = (wishlistRes.data || []).map((w) => w.plan_id);
 
-      // Faqat "yaproq" rejalar (variantlari bo'lmagan) mahsulot sifatida ko'rsatiladi
+      // Faqat "yaproq" rejalar (variantlari bo'lmagan) mahsulot sifatida ko'rsatiladi.
+      // Zaxira holati mijozga ko'rsatilmaydi (CUSTOMER_STOCK) — hamma mahsulot
+      // sotib olishga ochiq (yuqoridagi izohga qarang).
       const parentIds = new Set(plans.map((p) => p.parent_plan_id).filter(Boolean));
       const products = plans
         .filter((p) => !parentIds.has(p.id))
-        .map((p) => {
-          const auto = AUTO_DELIVERY.includes(p.delivery_type);
-          const stock = auto ? stockMap[p.id] || 0 : null;
-          const inStock = auto ? stock > 0 : true;
-          return productShape(p, {
-            stock,
-            inStock,
-            rating: ratingMap[p.id] || { avg: 0, count: 0 },
-          });
-        });
-      // Eslatma: stok tugagan mahsulotlar ham ko'rsatiladi (ProductCard "Tugagan"
-      // disabled tugmani chiqaradi). Avval bu yerda .filter((p) => p.in_stock) bor edi.
+        .map((p) => productShape(p, { ...CUSTOMER_STOCK, rating: ratingMap[p.id] || { avg: 0, count: 0 } }));
 
       return json(200, {
         ok: true,
@@ -544,7 +525,9 @@ exports.handler = async (event) => {
       // Hammasi bitta paketda: reja, sharhlar, wishlist, sozlamalar va shu
       // rejaning stoki — birortasi boshqasining natijasiga bog'liq emas.
       // Ilgari bu 3 ta ketma-ket bosqich edi.
-      const [planRes, reviewsRes, wishRes, settings, stockRes, waitRes] = await Promise.all([
+      // Zaxira so'rovi (inventory_items) olib tashlandi — mijozga stok holati
+      // ko'rsatilmaydi (CUSTOMER_STOCK). waitRes hozircha qoladi (waitlist ma'lumoti).
+      const [planRes, reviewsRes, wishRes, settings, waitRes] = await Promise.all([
         request(supabase, 'plans', {
           query: `select=*&id=eq.${productId}&limit=1`,
         }),
@@ -559,9 +542,6 @@ exports.handler = async (event) => {
           query: `select=id&user_telegram_id=eq.${telegramId}&plan_id=eq.${productId}&limit=1`,
         }).catch(() => ({ data: [] })),
         fetchSettings(supabase).catch(() => null),
-        request(supabase, 'inventory_items', {
-          query: `select=id&plan_id=eq.${productId}&status=eq.available`,
-        }).catch(() => ({ data: [] })),
         request(supabase, 'stock_waitlist', {
           query: `select=id&user_telegram_id=eq.${telegramId}&plan_id=eq.${productId}&notified=eq.false&limit=1`,
         }).catch(() => ({ data: [] })),
@@ -580,18 +560,10 @@ exports.handler = async (event) => {
           }
         : { avg: 0, count: 0 };
 
-      const auto = AUTO_DELIVERY.includes(p.delivery_type);
-      let stock = null;
-      let inStock = true;
-      if (auto) {
-        stock = (stockRes.data || []).length;
-        inStock = stock > 0;
-      }
-
       return json(200, {
         ok: true,
         product: {
-          ...productShape(p, { stock, inStock, rating }),
+          ...productShape(p, { ...CUSTOMER_STOCK, rating }),
           warranty_text: p.warranty_text || '',
           rules_text: p.rules_text || '',
           how_it_works_text: p.how_it_works_text || '',
@@ -850,22 +822,28 @@ exports.handler = async (event) => {
         cashback = promoRes.cashback || 0;
       }
 
-      // Balans (server hisoblaydi)
-      let balanceUsed = 0;
+      // Balans qancha ishlatilishini SERVER hal qiladi. Bu yerda faqat "tilak"
+      // (payableAfterPromo gacha) uzatiladi — haqiqiy band qilish createCheckoutOrder
+      // ichida atomik bo'ladi (reserveWalletBalance), balans yetishiga qarab.
+      // `wallet` o'qishi faqat "yetarli balans bormi" ni oldindan bilish uchun.
+      let balanceWanted = 0;
       if (body.useBalance) {
         const payableAfterPromo = Math.max(0, basePrice - discount);
-        balanceUsed = Math.min(Number(wallet?.balance || 0), payableAfterPromo);
+        balanceWanted = Math.min(Number(wallet?.balance || 0), payableAfterPromo);
       }
 
       const order = await createCheckoutOrder(supabase, {
         user_telegram_id: telegramId,
         items: cartItems,
         promo,
-        balanceUsed,
+        balanceUsed: balanceWanted,
         cashbackAmount: cashback,
         // To'lov kutish vaqti — Sozlamalardan (bo'lmasa env, sukut 10 daqiqa)
         expiresMinutes: paymentTimeoutMinutes(settings),
       });
+
+      // Haqiqatan band qilingan balans (yetmagan bo'lsa kamroq bo'lishi mumkin).
+      const balanceUsed = Number(order.balance_used || 0);
 
       // Reserved inventory OLIB TASHLANDI — checkout inventarni band qilmaydi.
       // Stock faqat to'lov tasdiqlangach tekshiriladi (processApprovedOrderDelivery).
@@ -876,15 +854,9 @@ exports.handler = async (event) => {
 
       const fullyCovered = Number(order.unique_price || 0) <= 0;
 
-      // To'liq balansdan to'langan bo'lsa — hoziroq yechamiz va yetkazamiz
+      // To'liq balansdan qoplangan bo'lsa — darhol yetkazamiz. Balans allaqachon
+      // checkout'da band qilingan (yechilgan), shuning uchun bu yerda QAYTA yechilmaydi.
       if (fullyCovered && balanceUsed > 0) {
-        await addWalletTransaction(supabase, {
-          user_telegram_id: telegramId,
-          order_id: order.id,
-          amount: balanceUsed,
-          type: 'debit',
-          description: `Balansdan to'liq to'landi #${order.order_number}`,
-        }).catch((e) => console.warn('debit warn:', e?.message));
         const delivery = await processApprovedOrderDelivery({
           supabase,
           order,
@@ -1138,10 +1110,7 @@ exports.handler = async (event) => {
       if (!wl.length) return json(200, { ok: true, items: [] });
 
       const planIds = wl.map((w) => w.plan_id);
-      const [plansRes, stockMap] = await Promise.all([
-        request(supabase, 'plans', { query: `select=*&id=in.(${planIds.join(',')})` }),
-        availableStockByPlan(supabase).catch(() => ({})),
-      ]);
+      const plansRes = await request(supabase, 'plans', { query: `select=*&id=in.(${planIds.join(',')})` });
       const byId = {};
       for (const p of plansRes.data || []) byId[p.id] = p;
 
@@ -1149,18 +1118,15 @@ exports.handler = async (event) => {
         .map((w) => {
           const p = byId[w.plan_id];
           if (!p || !p.is_active) return null;
-          const auto = AUTO_DELIVERY.includes(p.delivery_type);
-          const stock = auto ? stockMap[p.id] || 0 : null;
-          const inStock = auto ? stock > 0 : true;
           const priceAtAdd = w.price_at_add != null ? Number(w.price_at_add) : null;
+          // Zaxira holati mijozga ko'rsatilmaydi (CUSTOMER_STOCK).
           return {
-            ...productShape(p, { stock, inStock, rating: { avg: 0, count: 0 } }),
+            ...productShape(p, { ...CUSTOMER_STOCK, rating: { avg: 0, count: 0 } }),
             price_at_add: priceAtAdd,
             price_dropped: priceAtAdd != null && Number(p.price) < priceAtAdd,
           };
         })
         .filter(Boolean);
-      // Wishlistda stock=0 obunalar ham ko'rsatiladi (foydalanuvchi o'chira olishi uchun).
 
       return json(200, { ok: true, items });
     }

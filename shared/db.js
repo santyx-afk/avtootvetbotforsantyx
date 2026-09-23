@@ -374,6 +374,10 @@ async function expireOrder(client, order) {
   const expired = data?.[0] || null;
   await createAuditLog(client, { order_id: order.id, user_telegram_id: order.user_telegram_id, action: 'order_expired', status: 'expired', metadata: { expiresAt: order.expires_at } });
   if (expired) {
+    // Checkout'da band qilingan balans bo'lsa — QAYTARAMIZ. PATCH sharti
+    // (status in waiting_payment/pending_payment) atomik, faqat bitta chaqiruv
+    // `expired` oladi, shuning uchun qaytarish ham bir marta bo'ladi.
+    await refundOrderBalance(client, expired).catch((e) => console.warn('expire refund warn:', e?.message));
     // Adminga ketgan "yangi buyurtma" xabaridan tugmalarni olib, holatni yozamiz.
     // Lazy require — admin-notify o'zi db'ga tayanadi (aylanma import bo'lmasin).
     await require('./admin-notify')
@@ -508,6 +512,66 @@ async function addWalletTransaction(client, item) {
   return { ...(data?.[0] || {}), wallet };
 }
 
+// Balansdan `amount` ni ATOMIK band qiladi (checkout paytida chaqiriladi).
+//
+// Nega kerak: ilgari balans checkout'da faqat O'QILARDI, band qilinmасди —
+// yechish esa to'lov kelganda bo'lardi. Shu sabab bir foydalanuvchi bir xil
+// balansni bir nechta buyurtmaga "ishlatib", keyin ularni to'lab, balansni
+// manfiyga tushira olardi (double-spend). Endi balans DARHOL, faqat yetsa,
+// band qilinadi.
+//
+// Compare-and-swap (CAS): joriy balansni o'qib, `balance=eq.<old>` sharti
+// bilan yangilaymiz. Orada boshqa so'rov o'zgartirgan bo'lsa 0 qator qaytadi
+// va qayta uriladi. Migratsiya shart emas — mavjud user_wallets ustuni ustida
+// ishlaydi. Qaytaradi: haqiqatan band qilingan summa (balans yetmasa kamroq,
+// yoki 0). Balans HECH QACHON manfiyga tushmaydi.
+async function reserveWalletBalance(client, telegramId, amount) {
+  const want = Math.max(0, Math.round(Number(amount || 0)));
+  if (!(want > 0)) return 0;
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const wallet = await getUserBalance(client, telegramId);
+    const balance = Math.max(0, Number(wallet.balance || 0));
+    const take = Math.min(balance, want);
+    if (take <= 0) return 0;
+    const { data } = await request(client, 'user_wallets', {
+      method: 'PATCH',
+      // Faqat balans hali o'sha bo'lsa yangilanadi (yo'qotilgan yangilanish bo'lmaydi).
+      query: toQuery({ user_telegram_id: `eq.${telegramId}`, balance: `eq.${balance}` }),
+      headers: { Prefer: 'return=representation' },
+      body: { balance: balance - take, updated_at: new Date().toISOString() },
+    });
+    if (data?.[0]) return take;
+    // Boshqa so'rov ulgurdi — qayta o'qib uriladi.
+  }
+  return 0;
+}
+
+// Band qilingan balansni buyurtmaga QAYTARADI (muddat o'tsa yoki rad etilsa).
+// Bir buyurtma uchun faqat bir marta — audit_logs guard. Balans reserved
+// bo'lgani uchun (checkout'da yechilgan) qaytarish uni oshiradi.
+async function refundOrderBalance(client, order) {
+  try {
+    const amount = Math.round(Number(order?.balance_used || 0));
+    if (!(amount > 0)) return false;
+    const prior = await request(client, 'audit_logs', {
+      query: `select=id&order_id=eq.${order.id}&action=eq.balance_refunded&limit=1`,
+    }).then((r) => r.data).catch(() => []);
+    if (prior && prior[0]) return false;
+    await addWalletTransaction(client, {
+      user_telegram_id: order.user_telegram_id,
+      order_id: order.id,
+      amount,
+      type: 'refund',
+      description: `Bekor qilingan buyurtma uchun qaytarildi #${order.order_number}`,
+    });
+    await createAuditLog(client, { order_id: order.id, user_telegram_id: order.user_telegram_id, action: 'balance_refunded', status: 'completed', metadata: { amount } });
+    return true;
+  } catch (e) {
+    console.warn('refundOrderBalance warn:', e?.message);
+    return false;
+  }
+}
+
 async function createCartItem(client, item) {
   const { data } = await request(client, 'cart_items', {
     method: 'POST',
@@ -546,10 +610,37 @@ async function generateUniquePrice(client, basePrice) {
 async function createCheckoutOrder(client, { user_telegram_id, items, expiresMinutes = Number(process.env.PAYMENT_EXPIRES_MINUTES || 30), promo = null, balanceUsed = 0, cashbackAmount = 0 }) {
   const basePrice = items.reduce((sum, item) => sum + Number(item.plan?.price || item.price || 0) * Number(item.quantity || 1), 0);
   const discount = promo ? calculatePromoDiscount(basePrice, promo) : 0;
-  const payableBase = Math.max(0, basePrice - discount - Number(balanceUsed || 0));
+  const payableAfterPromo = Math.max(0, basePrice - discount);
+
+  // Balansni SHU YERDA, atomik band qilamiz — chaqiruvchi bergan `balanceUsed`
+  // faqat "nechani ishlatmoqchi" degan tilak. Haqiqatan yechilgan summa
+  // (reservedBalance) balans yetishiga qarab kamroq bo'lishi mumkin. Shu tufayli
+  // narx band qilingandan KEYIN hisoblanadi va double-spend bo'lmaydi.
+  const wantBalance = Math.min(Math.max(0, Math.round(Number(balanceUsed || 0))), payableAfterPromo);
+  const reservedBalance = wantBalance > 0 ? await reserveWalletBalance(client, user_telegram_id, wantBalance) : 0;
+
+  const payableBase = Math.max(0, payableAfterPromo - reservedBalance);
   const uniquePrice = payableBase > 0 ? await generateUniquePrice(client, payableBase) : 0;
   const expiresAt = new Date(Date.now() + expiresMinutes * 60 * 1000).toISOString();
-  const order = await createOrder(client, { user_telegram_id, plan_id: items[0]?.plan_id || items[0]?.plan?.id || null, amount: uniquePrice, base_price: basePrice, unique_price: uniquePrice, expires_at: expiresAt, status: uniquePrice > 0 ? 'waiting_payment' : 'payment_detected', delivery_status: 'waiting_approval', payment_method: 'humo_card_bot', payment_source: uniquePrice > 0 ? 'humo_card_bot' : 'balance', promo_code: promo?.code || null, discount_amount: discount, balance_used: Number(balanceUsed || 0), cashback_amount: Number(cashbackAmount || 0) });
+  let order;
+  try {
+    order = await createOrder(client, { user_telegram_id, plan_id: items[0]?.plan_id || items[0]?.plan?.id || null, amount: uniquePrice, base_price: basePrice, unique_price: uniquePrice, expires_at: expiresAt, status: uniquePrice > 0 ? 'waiting_payment' : 'payment_detected', delivery_status: 'waiting_approval', payment_method: 'humo_card_bot', payment_source: uniquePrice > 0 ? 'humo_card_bot' : 'balance', promo_code: promo?.code || null, discount_amount: discount, balance_used: reservedBalance, cashback_amount: Number(cashbackAmount || 0) });
+  } catch (error) {
+    // Buyurtma yaratilmasa band qilingan balansni QAYTARAMIZ — aks holda pul
+    // yechilgan-u, buyurtma yo'q bo'lib qolardi.
+    if (reservedBalance > 0) {
+      await adjustWalletBalance(client, user_telegram_id, reservedBalance).catch((e) => console.warn('reserve rollback warn:', e?.message));
+    }
+    throw error;
+  }
+  // Band qilingan balans uchun tranzaksiya izi (balans tarixida ko'rinsin).
+  // Balansning O'ZI yuqorida reserveWalletBalance orqali yechilgan — bu faqat yozuv.
+  if (reservedBalance > 0) {
+    await request(client, 'wallet_transactions', {
+      method: 'POST',
+      body: { user_telegram_id: String(user_telegram_id), order_id: order.id, amount: reservedBalance, type: 'debit', description: `Buyurtma uchun balansdan #${order.order_number}` },
+    }).catch((e) => console.warn('reserve tx warn:', e?.message));
+  }
   // Buyurtma elementlari BITTA so'rovda yoziladi (PostgREST massivni qabul
   // qiladi). Ilgari har bir dona uchun alohida, ketma-ket so'rov ketardi —
   // 3 ta tovar 3 ta bosqich edi. Promokod hisoblagichi ham shu bilan parallel.
@@ -820,6 +911,8 @@ async function rejectOrder(client, orderId) {
     const latest = await getOrderById(client, orderId);
     return { ok: false, reason: 'already_processed', order: latest };
   }
+  // Rad etilgan buyurtmada checkout'da band qilingan balans bo'lsa — qaytaramiz.
+  await refundOrderBalance(client, data[0]).catch((e) => console.warn('reject refund warn:', e?.message));
   return { ok: true, order: data[0] };
 }
 
@@ -1031,6 +1124,8 @@ module.exports = {
   getUserBalance,
   addWalletTransaction,
   adjustWalletBalance,
+  reserveWalletBalance,
+  refundOrderBalance,
   createCartItem,
   listCartItems,
   updateCartItemQuantity,

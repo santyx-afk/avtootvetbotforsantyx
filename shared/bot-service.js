@@ -7,7 +7,6 @@ const {
   validatePromoCode,
   getUserBalance,
   getOrderById,
-  updateOrderStatus,
   approveOrder,
   rejectOrder,
   isAdminTelegramId,
@@ -17,6 +16,7 @@ const {
   trackEvent,
   insertReceiptSubmission,
   setUserAwaitingReceipt,
+  clearUserAwaitingReceipt,
   markOrderPaidManually,
 } = require('./db');
 const { isAdminChat, markOrderNotification, userLines, formatUzs: formatUzsLabel } = require('./admin-notify');
@@ -213,6 +213,30 @@ async function handleReceipt({ supabase, message }) {
   }
 
   const orderId = userState.current_order_id;
+  const order = await getOrderById(supabase, orderId);
+
+  // Buyurtma endi to'lov KUTMAYOTGAN bo'lsa — bu xabar chek EMAS.
+  //
+  // Ilgari holat umuman tekshirilmasdi: checkout `awaiting_receipt` belgisini
+  // qo'yardi va uni hech kim tozalamasdi, shuning uchun mijoz keyin istalgan
+  // narsa yozsa (hatto buyurtma allaqachon avtomatik to'langan yoki yetkazilgan
+  // bo'lsa ham), o'sha buyurtma "payment_uploaded" holatiga QAYTARDI va adminга
+  // soxta "yangi chek" + ✅/❌ tugmalar borardi. "Tasdiqlash" bosilsa esa
+  // ikkinchi akkaunt bekorga ketardi. Endi faqat haqiqatan to'lov kutayotgan
+  // (muddati o'tmagan) buyurtma uchun chek qabul qilinadi.
+  const isExpired = order?.expires_at && new Date(order.expires_at).getTime() < Date.now();
+  const isOpen = order && ['waiting_payment', 'pending_payment'].includes(order.status) && !isExpired;
+  if (!isOpen) {
+    await clearUserAwaitingReceipt(supabase, telegramId).catch(() => {});
+    const paidOrDone = order && ['payment_detected', 'delivering', 'completed', 'approved'].includes(order.status);
+    await sendMessage(
+      message.chat.id,
+      paidOrDone ? '✅ To‘lovingiz allaqachon qabul qilingan. Rahmat!' : noActiveOrderForReceiptText(),
+      null,
+    );
+    return;
+  }
+
   const adminChatIds = resolveAdminChatIds(settings);
 
   const fileId = message.photo?.[message.photo.length - 1]?.file_id || message.document?.file_id;
@@ -227,18 +251,36 @@ async function handleReceipt({ supabase, message }) {
     status: 'payment_uploaded',
   });
 
-  await updateOrderStatus(supabase, orderId, 'payment_uploaded', {
-    receipt_submission_id: receiptRecord?.id || null,
-    delivery_status: 'checking',
+  // Holatni ATOMIK, faqat to'lov kutayotgan holatdan o'tkazamiz. Avtomatik to'lov
+  // aniqlash orada ulgurса (payment_detected), uni bosib ketmaymiz.
+  const { request, toQuery } = require('./db');
+  const { data: claimed } = await request(supabase, 'orders', {
+    method: 'PATCH',
+    query: toQuery({ id: `eq.${orderId}`, status: 'in.(waiting_payment,pending_payment)' }),
+    headers: { Prefer: 'return=representation' },
+    body: {
+      status: 'payment_uploaded',
+      delivery_status: 'checking',
+      receipt_submission_id: receiptRecord?.id || null,
+      updated_at: new Date().toISOString(),
+    },
   });
+  // Bu buyurtma bo'yicha boshqa xabar chek bo'lib qayta ishlanmasin.
+  await clearUserAwaitingReceipt(supabase, telegramId).catch(() => {});
 
-  const order = await getOrderById(supabase, orderId);
+  if (!claimed?.[0]) {
+    // Orada holat o'zgardi (avtomatik to'lov) — holatni buzmaymiz, tugma bermaymiz.
+    await sendMessage(message.chat.id, '✅ To‘lovingiz allaqachon qabul qilingan. Rahmat!', null);
+    return;
+  }
+
+  const order2 = claimed[0];
   const from = message.from || {};
   // Mijoz bosiladigan havola bilan — admin darrov profilini ochadi.
   const caption = [
     '🧾 <b>Yangi to‘lov cheki</b>',
-    `Buyurtma: <code>#${escapeHtml(order?.order_number || orderId)}</code>`,
-    `Summa: ${formatUzsLabel(order?.unique_price || order?.amount || 0)}`,
+    `Buyurtma: <code>#${escapeHtml(order2?.order_number || orderId)}</code>`,
+    `Summa: ${formatUzsLabel(order2?.unique_price || order2?.amount || 0)}`,
     ...userLines({
       telegram_id: telegramId,
       username: from.username || null,
@@ -255,7 +297,7 @@ async function handleReceipt({ supabase, message }) {
           { text: '❌ Rad etish', callback_data: `admin:reject:${orderId}` },
         ],
       ]);
-      await sendMessage(adminId, `Buyurtma #${order?.order_number || orderId} bo‘yicha qaror:`, adminKeyboard);
+      await sendMessage(adminId, `Buyurtma #${order2?.order_number || orderId} bo‘yicha qaror:`, adminKeyboard);
     } catch (err) {
       console.error(`Failed to notify admin ${adminId}:`, err);
     }

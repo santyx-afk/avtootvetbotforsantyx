@@ -168,7 +168,11 @@ Create these variables in `.env` locally and in Netlify Site settings for produc
 > below, which falls back only to `TELEGRAM_BOT_TOKEN` (also secret).
 
 ### Recommended
-- `TELEGRAM_WEBHOOK_SECRET` — secret token validated on Telegram webhook requests.
+- `TELEGRAM_WEBHOOK_SECRET` — **mandatory now.** Secret token validated on every
+  Telegram webhook request. If unset, the webhook rejects **all** updates (it
+  used to fail open, which let anyone POST forged updates — e.g. a `callback_query`
+  carrying an admin `from.id` to self-approve and drain an order). After setting
+  it, re-open `/api/set-webhook` so the token is registered with Telegram too.
 - `WEB_JWT_SECRET` — signing key for browser login tokens. Falls back to
   `TELEGRAM_BOT_TOKEN` if unset; set it explicitly so rotating the bot token
   does not log every web user out.

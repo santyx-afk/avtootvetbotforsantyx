@@ -296,7 +296,10 @@ async function processApprovedDelivery({ supabase, order, adminTelegramId = 'web
   const item = await resolveDeliveryItem(supabase, { order, plan, deliveryType, userChatId });
   console.log('Selected inventory item', { orderId: order.id, deliveryType, itemId: item?.id, itemType: item?.type, login: item?.login || null });
   if (!item) {
-    // To'lov qabul qilindi, lekin zaxirada akkaunt yo'q → mijozga xabar + adminga alert.
+    // To'lov qabul qilindi, lekin zaxirada akkaunt yo'q. Mijozga ZAXIRA TUGAGANI
+    // AYTILMAYDI — u faqat "obuna tayyorlanmoqda, tez orada yuboriladi" degan
+    // neytral xabar oladi (egasi so'raganidek). Admin esa alohida, aniq
+    // "zaxira tugadi" ogohlantirishini oladi va qo'lda ulaydi.
     await updateOrderStatus(supabase, order.id, 'delivering', { delivery_status: 'waiting_stock' });
     await createDeliveryLog(supabase, { order_id: order.id, user_telegram_id: userChatId, plan_id: plan.id, delivery_type: deliveryType, admin_telegram_id: String(adminTelegramId), status: 'waiting_stock' });
     // Bildirishnoma buyurtma bo'yicha bir marta (retry'lar spam qilmasligi uchun).
@@ -304,7 +307,7 @@ async function processApprovedDelivery({ supabase, order, adminTelegramId = 'web
     if (firstTime) {
       const sent = await safeSendMessage(
         userChatId,
-        '⏳ Zaxirada akkaunt qolmagani sababli hozircha bera olmadik.\nAdmin tez orada siz bilan bog‘lanadi va obunani taqdim etadi.',
+        '✅ To‘lovingiz qabul qilindi. Obunangiz tayyorlanmoqda va tez orada yuboriladi.',
         { orderId: order.id, deliveryType, noStock: true },
       );
       await notifyAdminsOutOfStock(supabase, { order, plan, userChatId }).catch((e) => console.warn('oos admin alert warn:', e?.message));
@@ -324,13 +327,43 @@ async function processApprovedDelivery({ supabase, order, adminTelegramId = 'web
       if (!login || !password) {
         throw credentialFault(failures);
       }
-      const sent = await safeSendMessage(userChatId, `To‘lovingiz tasdiqlandi.\n\nObuna: ${plan.name}\nBuyurtma: #${order.order_number}\n\nKirish ma’lumotlari:\nLogin: ${login}\nParol: ${password}\n\nMuhim: ma’lumotlarni hech kimga yubormang.`, { orderId: order.id, deliveryType });
+      // Login/parol HTML-escape qilinadi va <code> ichida yuboriladi. Sabab:
+      // xabar parse_mode:'HTML' bilan ketadi; parolda `<`, `>` yoki `&` bo'lsa
+      // (generatsiya qilingan parollarda tez-tez uchraydi) Telegram xabarni RAD
+      // etardi. Natijada akkaunt "available" ga qaytib, tizim doim eng eskisini
+      // olgani uchun O'SHA buzuq akkaunt keyingi har bir mijozga qayta tushib,
+      // butun avtomatik yetkazish to'xtab qolardi. <code> — tap-to-copy uchun ham qulay.
+      const sent = await safeSendMessage(userChatId, [
+        'To‘lovingiz tasdiqlandi.',
+        '',
+        `Obuna: ${escapeHtml(plan.name)}`,
+        `Buyurtma: #${escapeHtml(order.order_number)}`,
+        '',
+        'Kirish ma’lumotlari:',
+        `Login: <code>${escapeHtml(login)}</code>`,
+        `Parol: <code>${escapeHtml(password)}</code>`,
+        '',
+        'Muhim: ma’lumotlarni hech kimga yubormang.',
+      ].join('\n'), { orderId: order.id, deliveryType });
       if (!sent.ok) throw sent.error;
     } else if (deliveryType === 'license_key') {
       const failures = [];
       const key = resolveLicenseKey(item, failures);
       if (!key) throw credentialFault(failures);
-      const sent = await safeSendMessage(userChatId, `To‘lovingiz tasdiqlandi.\n\nObuna: ${plan.name}\nBuyurtma: #${order.order_number}\n\nAktivatsiya kodi:\n${key}\n\nQo‘llanma:\n${plan.deliveryInstructions || '-'}`, { orderId: order.id, deliveryType });
+      // Kalit ham escape + <code> (yuqoridagi sabab). Qo'llanma (deliveryInstructions)
+      // admin yozgan matn — instruction_only/manual oqimidagidek HTML sifatida qoldiriladi.
+      const sent = await safeSendMessage(userChatId, [
+        'To‘lovingiz tasdiqlandi.',
+        '',
+        `Obuna: ${escapeHtml(plan.name)}`,
+        `Buyurtma: #${escapeHtml(order.order_number)}`,
+        '',
+        'Aktivatsiya kodi:',
+        `<code>${escapeHtml(key)}</code>`,
+        '',
+        'Qo‘llanma:',
+        plan.deliveryInstructions || '-',
+      ].join('\n'), { orderId: order.id, deliveryType });
       if (!sent.ok) throw sent.error;
     }
   } catch (error) {

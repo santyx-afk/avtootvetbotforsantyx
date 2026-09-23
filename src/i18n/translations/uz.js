@@ -185,7 +185,7 @@ export default {
     successText: 'Obunangiz tayyor 🎉',
     waitingStockTitle: 'To\'lov tasdiqlandi',
     waitingStockText:
-      'Zaxirada obuna qolmaganligi sababli admin siz bilan aloqaga chiqib obuna ulab beradi.',
+      'To\'lovingiz qabul qilindi. Obunangiz tayyorlanmoqda va tez orada yuboriladi.',
     manualText: 'To\'lovingiz tasdiqlandi. Obunangiz admin tomonidan qo\'lda ulanadi.',
     login: 'Login',
     password: 'Parol',
