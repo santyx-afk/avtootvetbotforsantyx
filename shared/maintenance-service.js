@@ -6,6 +6,7 @@ const {
   listStuckDeliveringOrders,
   enqueueDeliveryRetry,
   cleanupProcessedPaymentMessages,
+  cleanupProcessedUpdates,
   updateMonitoringSnapshot,
   createExceptionQueueItem,
   fetchSettings,
@@ -13,10 +14,8 @@ const {
 const { sendMessage } = require('./telegram');
 const { processApprovedOrderDelivery } = require('./delivery-service');
 const { nextRetryAt, hasRetriesLeft } = require('./retry-policy');
-
-function adminIds(settings) {
-  return [...new Set([settings?.admin_telegram_id, process.env.ADMIN_CHAT_ID, process.env.ADMIN_TELEGRAM_ID, ...(process.env.ADMIN_TELEGRAM_IDS || '').split(',')].map((x) => String(x || '').trim()).filter(Boolean))];
-}
+// Admin ID lari bitta joyda — admin-notify.adminChatIds (nusxa ko'chirilmaydi).
+const { adminChatIds: adminIds } = require('./admin-notify');
 
 async function notifyAdmins(supabase, text) {
   const settings = await fetchSettings(supabase);
@@ -79,6 +78,8 @@ async function runMaintenance(supabase) {
   const resumed = await resumeStuckDeliveries(supabase);
   const retries = await processRetryQueue(supabase);
   await cleanupProcessedPaymentMessages(supabase, Number(process.env.PROCESSED_PAYMENT_RETENTION_DAYS || 14));
+  // Idempotentlik jadvali (takroriy update'lar) ham vaqti-vaqti tozalanadi.
+  await cleanupProcessedUpdates(supabase, Number(process.env.PROCESSED_UPDATE_RETENTION_DAYS || 2)).catch(() => {});
   await updateMonitoringSnapshot(supabase);
   // Uzilib qolgan broadcast'lar (background funksiya ishlamagan/uzilgan)
   // cursor'dan davom ettiriladi — qisqa budjet bilan, cron 10 soniyaga sig'sin.

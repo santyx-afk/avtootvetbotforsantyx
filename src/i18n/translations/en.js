@@ -185,7 +185,7 @@ export default {
     successText: 'Your subscription is ready 🎉',
     waitingStockTitle: 'Payment confirmed',
     waitingStockText:
-      'The subscription is currently out of stock, so an admin will contact you and set it up.',
+      'Your payment is received. Your subscription is being prepared and will arrive shortly.',
     manualText: 'Your payment is confirmed. Your subscription will be set up manually by an admin.',
     login: 'Login',
     password: 'Password',

@@ -46,6 +46,32 @@ function normalizeSegment(segment) {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// PostgREST server "max-rows" cheklovi (ko'pincha 1000) tufayli bitta so'rov
+// `limit=10000` bo'lsa ham eng ko'pi bilan max-rows qator qaytaradi. Shu sabab
+// 1000+ foydalanuvchida broadcast hammaga bormasdi (1000-dan keyingilar jimgina
+// tushib qolardi). Bu yordamchi offset bilan sahifalab HAMMA qatorni oladi:
+// har sahifada qaytgan son bo'yicha oldinga suriladi, bo'sh sahifa kelganda
+// to'xtaydi — server max-rows nechaga sozlangan bo'lsa ham to'g'ri ishlaydi.
+async function fetchAllRows(supabase, table, baseQuery, { pageSize = 1000, maxRows = 500000 } = {}) {
+  const out = [];
+  let offset = 0;
+  for (;;) {
+    const { data } = await request(supabase, table, {
+      query: `${baseQuery}&limit=${pageSize}&offset=${offset}`,
+    }).catch(() => ({ data: [] }));
+    const rows = data || [];
+    if (rows.length === 0) break; // qator qolmadi — oxiri
+    out.push(...rows);
+    offset += rows.length;
+    if (out.length >= maxRows) break; // ehtiyot chorasi (cheksiz sikl bo'lmasin)
+    // Eslatma: "rows.length < pageSize bo'lsa to'xta" DEB BO'LMAYDI — agar server
+    // max-rows < pageSize bo'lsa (masalan 500), birinchi sahifayoq to'liq bo'lmay
+    // qolib, qolgan qatorlar tushib qolardi. Faqat bo'sh sahifada to'xtaymiz;
+    // bu eng ko'pi bilan bitta qo'shimcha bo'sh so'rov qiladi, xolos.
+  }
+  return out;
+}
+
 // Segment filtri (sof funksiya — testlanadi). ctx: { buyers:Set, recent:Set,
 // withBalance:Set, now:number }.
 function filterSegment(users, segment, ctx = {}) {
@@ -69,19 +95,23 @@ function filterSegment(users, segment, ctx = {}) {
 // Segment bo'yicha qabul qiluvchilar ro'yxati (telegram_id massiv).
 async function resolveSegment(supabase, segment) {
   const seg = normalizeSegment(segment);
-  const { data: users } = await request(supabase, 'users', {
-    query: 'select=telegram_id,phone,language_code,webapp_lang,created_at,updated_at&is_blocked=eq.false&order=created_at.asc&limit=10000',
-  });
-  const list = users || [];
+  // HAMMA foydalanuvchi (sahifalab) — 1000+ bo'lsa ham to'liq keladi.
+  const list = await fetchAllRows(
+    supabase,
+    'users',
+    'select=telegram_id,phone,language_code,webapp_lang,created_at,updated_at&is_blocked=eq.false&order=created_at.asc',
+  );
   const ctx = { now: Date.now() };
   if (['buyers', 'no_purchase', 'inactive_30d'].includes(seg)) {
-    const { data: orders } = await request(supabase, 'orders', {
-      query: toQuery({
+    const orders = await fetchAllRows(
+      supabase,
+      'orders',
+      toQuery({
         select: 'user_telegram_id,created_at,order_type',
         status: 'in.(completed,approved,payment_detected,delivering)',
-        limit: 20000,
+        order: 'created_at.asc',
       }),
-    }).catch(() => ({ data: [] }));
+    );
     const cutoff = ctx.now - 30 * 24 * 60 * 60 * 1000;
     ctx.buyers = new Set();
     ctx.recent = new Set();
@@ -92,7 +122,7 @@ async function resolveSegment(supabase, segment) {
     }
   }
   if (seg === 'with_balance') {
-    const { data: wallets } = await request(supabase, 'user_wallets', { query: 'select=user_telegram_id&balance=gt.0&limit=20000' }).catch(() => ({ data: [] }));
+    const wallets = await fetchAllRows(supabase, 'user_wallets', 'select=user_telegram_id&balance=gt.0&order=user_telegram_id.asc');
     ctx.withBalance = new Set((wallets || []).map((w) => String(w.user_telegram_id)));
   }
   return filterSegment(list, seg, ctx);
@@ -416,6 +446,7 @@ module.exports = {
   segmentLabel,
   normalizeSegment,
   filterSegment,
+  fetchAllRows,
   resolveSegment,
   createJob,
   getJob,

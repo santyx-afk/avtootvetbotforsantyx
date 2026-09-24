@@ -13,7 +13,7 @@ const {
 } = require('./db');
 const { sendMessage } = require('./telegram');
 const { processApprovedOrderDelivery } = require('./delivery-service');
-const { userLines, fetchUserBrief, markOrderNotification } = require('./admin-notify');
+const { userLines, fetchUserBrief, markOrderNotification, adminChatIds: adminIds } = require('./admin-notify');
 const { escapeHtml } = require('./messages');
 
 // Yetkazishni qancha kutamiz. Netlify funksiyasi ~10 soniyada uzilgani uchun
@@ -29,18 +29,52 @@ function parseHumoAmount(text = '') {
   return Number.isFinite(amount) ? amount : null;
 }
 
+// HUMO kartabotining username'i. Band bo'lgan username'ni soxtalab bo'lmaydi,
+// shuning uchun bu jo'natuvchini tekshirishning asosiy usuli. Zarur bo'lsa
+// env orqali o'zgartirsa bo'ladi (masalan bot nomi almashsa).
+const HUMO_BOT_USERNAME = String(process.env.HUMO_BOT_USERNAME || 'humocardbot').toLowerCase();
+
+// Xabar HAQIQATAN ham HUMO kartabotidan kelganmi.
+//
+// Ilgari to'lov faqat MATNGA qarab ("Пополнение ➕ X UZS") aniqlanardi,
+// jo'natuvchi umuman tekshirilmasdi. Natijada istalgan odam botga shu matnni
+// yozib (yoki o'zi yozgan xabarni forward qilib) to'lovsiz tovar/balans olardi.
+// Endi jo'natuvchi shart:
+//   - HUMO botining username'i (o'zi yoki forward manbasi) — band, soxtalab
+//     bo'lmaydi; YOKI
+//   - env'da sozlangan raqamli ID (HUMO_CARD_BOT_ID).
+// Foydalanuvchining o'z username/ID si Telegram tomonidan qo'yiladi, uni HUMO
+// botiniki qilib ko'rsatib bo'lmaydi.
+function isHumoSender(message = {}) {
+  const username = String(
+    message.from?.username
+      || message.forward_from?.username
+      || message.forward_origin?.sender_user?.username
+      || '',
+  ).toLowerCase();
+  if (username && username === HUMO_BOT_USERNAME) return true;
+
+  const configuredId = String(process.env.HUMO_CARD_BOT_ID || '').trim();
+  if (configuredId) {
+    const senderId = String(
+      message.from?.id
+        || message.forward_from?.id
+        || message.forward_origin?.sender_user?.id
+        || '',
+    );
+    if (senderId && senderId === configuredId) return true;
+  }
+  return false;
+}
+
 function isHumoNotification(message = {}) {
-  const username = String(message.from?.username || message.forward_from?.username || message.forward_origin?.sender_user?.username || '').toLowerCase();
+  if (!isHumoSender(message)) return false;
   const text = message.text || message.caption || '';
-  return username === 'humocardbot' || (text.includes('Пополнение') && /➕[\s\S]*UZS/i.test(text));
+  return text.includes('Пополнение') && /➕[\s\S]*UZS/i.test(text);
 }
 
 function messageKey(message = {}) {
   return [message.chat?.id || 'chat', message.message_id || message.date || Date.now()].join(':');
-}
-
-function adminIds(settings) {
-  return [...new Set([settings?.admin_telegram_id, process.env.ADMIN_CHAT_ID, process.env.ADMIN_TELEGRAM_ID, ...(process.env.ADMIN_TELEGRAM_IDS || '').split(',')].map((x) => String(x || '').trim()).filter(Boolean))];
 }
 
 async function findWaitingOrderByBasePrice(client, amount) {
@@ -127,22 +161,10 @@ async function settlePaidOrder({ supabase, order, amount, messageKey, adminLabel
     return creditTopupOrder({ supabase, order: paidOrder, amount, messageKey, adminLabel });
   }
 
-  // Qisman balansdan to'langan bo'lsa — karta to'lovi aniqlangandan keyin
-  // balans qismini hamyondan yechamiz (checkout paytida emas — muddat tugasa
-  // qaytarish shart bo'lmasligi uchun).
-  if (Number(paidOrder.balance_used || 0) > 0) {
-    try {
-      await addWalletTransaction(supabase, {
-        user_telegram_id: paidOrder.user_telegram_id,
-        order_id: paidOrder.id,
-        amount: Number(paidOrder.balance_used),
-        type: 'debit',
-        description: `Balansdan yechildi #${paidOrder.order_number}`,
-      });
-    } catch (err) {
-      console.warn('balance debit warn:', err?.message);
-    }
-  }
+  // Eslatma: qisman balans bu yerda YECHILMAYDI. Balans endi checkout paytida
+  // (createCheckoutOrder → reserveWalletBalance) atomik band qilinadi, muddat
+  // o'tsa/rad etilsa esa qaytariladi. Ilgari bu yerda yechilardi — u paytda
+  // balans checkout'da band qilinmagani uchun double-spend teshigi bor edi.
 
   // Funksiya qotib qolmasligi uchun yetkazishni cheklangan vaqt kutamiz
   // (Netlify funksiyasining o'z limiti ~10 soniya).
@@ -219,4 +241,4 @@ async function handleHumoPaymentNotification({ supabase, message }) {
   return settlePaidOrder({ supabase, order: paidOrder, amount, messageKey: key });
 }
 
-module.exports = { parseHumoAmount, isHumoNotification, handleHumoPaymentNotification, deliveryOutcomeFromOrder, settlePaidOrder };
+module.exports = { parseHumoAmount, isHumoSender, isHumoNotification, handleHumoPaymentNotification, deliveryOutcomeFromOrder, settlePaidOrder };

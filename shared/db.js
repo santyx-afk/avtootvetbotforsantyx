@@ -283,6 +283,13 @@ function generateOrderNumber() {
   return String(Math.floor(10000 + Math.random() * 90000));
 }
 
+// PostgREST/Postgres noyoblik buzilishi (unique_violation) xatosimi.
+function isUniqueViolation(error, columnHint) {
+  const msg = String(error?.message || '');
+  if (!(msg.includes('23505') || /duplicate key/i.test(msg))) return false;
+  return columnHint ? msg.includes(columnHint) : true;
+}
+
 async function createOrder(client, order) {
   const payload = {
     order_number: order.order_number || generateOrderNumber(),
@@ -314,12 +321,27 @@ async function createOrder(client, order) {
   if (order.cashback_amount !== undefined && order.cashback_amount !== null && Number(order.cashback_amount) > 0) {
     payload.cashback_amount = Number(order.cashback_amount);
   }
-  const { data } = await request(client, 'orders', {
-    method: 'POST',
-    headers: { Prefer: 'return=representation' },
-    body: payload,
-  });
-  return data?.[0] || null;
+  // order_number — tasodifiy 5 xonali son, bazada UNIQUE. Ilgari to'qnashuvda
+  // INSERT jimgina yiqilar va buyurtma umuman yaratilmasdi (baza to'lgani sari
+  // tez-tez). Endi to'qnashuvda faqat order_number ni qayta generatsiya qilib
+  // qayta uramiz (chaqiruvchi aniq order_number bermagan bo'lsa).
+  const callerGaveNumber = Boolean(order.order_number);
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      const { data } = await request(client, 'orders', {
+        method: 'POST',
+        headers: { Prefer: 'return=representation' },
+        body: payload,
+      });
+      return data?.[0] || null;
+    } catch (error) {
+      if (!callerGaveNumber && attempt < 7 && isUniqueViolation(error, 'order_number')) {
+        payload.order_number = generateOrderNumber();
+        continue;
+      }
+      throw error;
+    }
+  }
 }
 
 
@@ -374,6 +396,13 @@ async function expireOrder(client, order) {
   const expired = data?.[0] || null;
   await createAuditLog(client, { order_id: order.id, user_telegram_id: order.user_telegram_id, action: 'order_expired', status: 'expired', metadata: { expiresAt: order.expires_at } });
   if (expired) {
+    // Checkout'da band qilingan balans bo'lsa — QAYTARAMIZ. PATCH sharti
+    // (status in waiting_payment/pending_payment) atomik, faqat bitta chaqiruv
+    // `expired` oladi, shuning uchun qaytarish ham bir marta bo'ladi.
+    await refundOrderBalance(client, expired).catch((e) => console.warn('expire refund warn:', e?.message));
+    // Band qilingan promokod foydalanishini ham qaytaramiz (abandon qilingan
+    // buyurtma promokodni yeb qo'ymasin).
+    await releasePromoUse(client, expired).catch((e) => console.warn('expire promo release warn:', e?.message));
     // Adminga ketgan "yangi buyurtma" xabaridan tugmalarni olib, holatni yozamiz.
     // Lazy require — admin-notify o'zi db'ga tayanadi (aylanma import bo'lmasin).
     await require('./admin-notify')
@@ -508,6 +537,66 @@ async function addWalletTransaction(client, item) {
   return { ...(data?.[0] || {}), wallet };
 }
 
+// Balansdan `amount` ni ATOMIK band qiladi (checkout paytida chaqiriladi).
+//
+// Nega kerak: ilgari balans checkout'da faqat O'QILARDI, band qilinmасди —
+// yechish esa to'lov kelganda bo'lardi. Shu sabab bir foydalanuvchi bir xil
+// balansni bir nechta buyurtmaga "ishlatib", keyin ularni to'lab, balansni
+// manfiyga tushira olardi (double-spend). Endi balans DARHOL, faqat yetsa,
+// band qilinadi.
+//
+// Compare-and-swap (CAS): joriy balansni o'qib, `balance=eq.<old>` sharti
+// bilan yangilaymiz. Orada boshqa so'rov o'zgartirgan bo'lsa 0 qator qaytadi
+// va qayta uriladi. Migratsiya shart emas — mavjud user_wallets ustuni ustida
+// ishlaydi. Qaytaradi: haqiqatan band qilingan summa (balans yetmasa kamroq,
+// yoki 0). Balans HECH QACHON manfiyga tushmaydi.
+async function reserveWalletBalance(client, telegramId, amount) {
+  const want = Math.max(0, Math.round(Number(amount || 0)));
+  if (!(want > 0)) return 0;
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const wallet = await getUserBalance(client, telegramId);
+    const balance = Math.max(0, Number(wallet.balance || 0));
+    const take = Math.min(balance, want);
+    if (take <= 0) return 0;
+    const { data } = await request(client, 'user_wallets', {
+      method: 'PATCH',
+      // Faqat balans hali o'sha bo'lsa yangilanadi (yo'qotilgan yangilanish bo'lmaydi).
+      query: toQuery({ user_telegram_id: `eq.${telegramId}`, balance: `eq.${balance}` }),
+      headers: { Prefer: 'return=representation' },
+      body: { balance: balance - take, updated_at: new Date().toISOString() },
+    });
+    if (data?.[0]) return take;
+    // Boshqa so'rov ulgurdi — qayta o'qib uriladi.
+  }
+  return 0;
+}
+
+// Band qilingan balansni buyurtmaga QAYTARADI (muddat o'tsa yoki rad etilsa).
+// Bir buyurtma uchun faqat bir marta — audit_logs guard. Balans reserved
+// bo'lgani uchun (checkout'da yechilgan) qaytarish uni oshiradi.
+async function refundOrderBalance(client, order) {
+  try {
+    const amount = Math.round(Number(order?.balance_used || 0));
+    if (!(amount > 0)) return false;
+    const prior = await request(client, 'audit_logs', {
+      query: `select=id&order_id=eq.${order.id}&action=eq.balance_refunded&limit=1`,
+    }).then((r) => r.data).catch(() => []);
+    if (prior && prior[0]) return false;
+    await addWalletTransaction(client, {
+      user_telegram_id: order.user_telegram_id,
+      order_id: order.id,
+      amount,
+      type: 'refund',
+      description: `Bekor qilingan buyurtma uchun qaytarildi #${order.order_number}`,
+    });
+    await createAuditLog(client, { order_id: order.id, user_telegram_id: order.user_telegram_id, action: 'balance_refunded', status: 'completed', metadata: { amount } });
+    return true;
+  } catch (e) {
+    console.warn('refundOrderBalance warn:', e?.message);
+    return false;
+  }
+}
+
 async function createCartItem(client, item) {
   const { data } = await request(client, 'cart_items', {
     method: 'POST',
@@ -543,13 +632,139 @@ async function generateUniquePrice(client, basePrice) {
   throw new Error('No unique payment suffix available');
 }
 
+// Promokoddan bitta foydalanishni ATOMIK band qiladi (checkout paytida).
+//
+// Ilgari used_count checkout oxirida oddiy "o'qi → +1 → yoz" bilan oshirilardi:
+// ikki parallel checkout ikkalasi ham used_count=4 (max 5) ni o'qib, ikkalasi
+// 5 yozar — natijada max_uses dan oshib ketardi. Endi CAS (compare-and-swap)
+// bilan faqat `used_count < max_uses` bo'lsa oshiriladi.
+// Qaytaradi: true — band qilindi; false — limit tugagan (promokod berilmaydi).
+async function reservePromoUse(client, promo) {
+  if (!promo?.id) return true; // promokod yo'q — to'sqinlik yo'q
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const { data: rows } = await request(client, 'promo_codes', {
+      query: toQuery({ select: 'used_count,max_uses', id: `eq.${promo.id}`, limit: 1 }),
+    }).catch(() => ({ data: null }));
+    const row = rows?.[0];
+    if (!row) return true; // topilmadi — bu bosqichda bloklamaymiz
+    const used = Number(row.used_count || 0);
+    const max = row.max_uses == null ? null : Number(row.max_uses);
+    if (max != null && used >= max) return false; // limit tugagan
+    const { data } = await request(client, 'promo_codes', {
+      method: 'PATCH',
+      query: toQuery({ id: `eq.${promo.id}`, used_count: `eq.${used}` }),
+      headers: { Prefer: 'return=representation' },
+      body: { used_count: used + 1 },
+    }).catch(() => ({ data: null }));
+    if (data?.[0]) return true;
+    // Boshqa so'rov ulgurdi — qayta o'qib uriladi.
+  }
+  return false;
+}
+
+// used_count ni promokod kodi bo'yicha bittaga ATOMIK kamaytiradi (0 dan
+// pastga tushmaydi). Guard'siz xom amal — chaqiruvchi idempotentlikni o'zi hal qiladi.
+async function decrementPromoUsageByCode(client, code) {
+  if (!code) return false;
+  const { data: rows } = await request(client, 'promo_codes', {
+    query: toQuery({ select: 'id,used_count', code: `eq.${String(code).trim().toUpperCase()}`, limit: 1 }),
+  }).catch(() => ({ data: null }));
+  const promo = rows?.[0];
+  if (!promo?.id) return false;
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const { data: cur } = await request(client, 'promo_codes', {
+      query: toQuery({ select: 'used_count', id: `eq.${promo.id}`, limit: 1 }),
+    }).catch(() => ({ data: null }));
+    const used = Number(cur?.[0]?.used_count || 0);
+    const next = Math.max(0, used - 1);
+    if (next === used) return false; // allaqachon 0
+    const { data } = await request(client, 'promo_codes', {
+      method: 'PATCH',
+      query: toQuery({ id: `eq.${promo.id}`, used_count: `eq.${used}` }),
+      headers: { Prefer: 'return=representation' },
+      body: { used_count: next },
+    }).catch(() => ({ data: null }));
+    if (data?.[0]) return true;
+  }
+  return false;
+}
+
+// Band qilingan promokod foydalanishini QAYTARADI (muddat o'tsa/rad etilsa).
+// Bir buyurtma uchun faqat bir marta (audit guard) — abandon qilingan buyurtma
+// promokodni "yeb qo'ymaydi".
+async function releasePromoUse(client, order) {
+  const code = order?.promo_code;
+  if (!code || !order?.id) return false;
+  try {
+    const prior = await request(client, 'audit_logs', {
+      query: `select=id&order_id=eq.${order.id}&action=eq.promo_use_released&limit=1`,
+    }).then((r) => r.data).catch(() => []);
+    if (prior && prior[0]) return false;
+    // Guard'ni oldin yozamiz — release ikki marta bo'lmasin.
+    await createAuditLog(client, { order_id: order.id, user_telegram_id: order.user_telegram_id, action: 'promo_use_released', status: 'completed', metadata: { code } });
+    return await decrementPromoUsageByCode(client, code);
+  } catch (e) {
+    console.warn('releasePromoUse warn:', e?.message);
+    return false;
+  }
+}
+
 async function createCheckoutOrder(client, { user_telegram_id, items, expiresMinutes = Number(process.env.PAYMENT_EXPIRES_MINUTES || 30), promo = null, balanceUsed = 0, cashbackAmount = 0 }) {
   const basePrice = items.reduce((sum, item) => sum + Number(item.plan?.price || item.price || 0) * Number(item.quantity || 1), 0);
-  const discount = promo ? calculatePromoDiscount(basePrice, promo) : 0;
-  const payableBase = Math.max(0, basePrice - discount - Number(balanceUsed || 0));
-  const uniquePrice = payableBase > 0 ? await generateUniquePrice(client, payableBase) : 0;
+
+  // Promokod foydalanishini narx hisoblashdan OLDIN atomik band qilamiz. Band
+  // qilib bo'lmasa (limit tugagan — validate bilan checkout orasida) promokodni
+  // umuman qo'llamaymiz: mijoz chegirmasiz narx to'laydi, lekin max_uses oshmaydi.
+  const promoReserved = promo ? await reservePromoUse(client, promo) : false;
+  const activePromo = promoReserved ? promo : null;
+  const discount = activePromo ? calculatePromoDiscount(basePrice, activePromo) : 0;
+  const effectiveCashback = activePromo ? Number(cashbackAmount || 0) : 0;
+  const payableAfterPromo = Math.max(0, basePrice - discount);
+
+  // Balansni SHU YERDA, atomik band qilamiz — chaqiruvchi bergan `balanceUsed`
+  // faqat "nechani ishlatmoqchi" degan tilak. Haqiqatan yechilgan summa
+  // (reservedBalance) balans yetishiga qarab kamroq bo'lishi mumkin. Shu tufayli
+  // narx band qilingandan KEYIN hisoblanadi va double-spend bo'lmaydi.
+  const wantBalance = Math.min(Math.max(0, Math.round(Number(balanceUsed || 0))), payableAfterPromo);
+  const reservedBalance = wantBalance > 0 ? await reserveWalletBalance(client, user_telegram_id, wantBalance) : 0;
+
+  const payableBase = Math.max(0, payableAfterPromo - reservedBalance);
+  let uniquePrice = payableBase > 0 ? await generateUniquePrice(client, payableBase) : 0;
   const expiresAt = new Date(Date.now() + expiresMinutes * 60 * 1000).toISOString();
-  const order = await createOrder(client, { user_telegram_id, plan_id: items[0]?.plan_id || items[0]?.plan?.id || null, amount: uniquePrice, base_price: basePrice, unique_price: uniquePrice, expires_at: expiresAt, status: uniquePrice > 0 ? 'waiting_payment' : 'payment_detected', delivery_status: 'waiting_approval', payment_method: 'humo_card_bot', payment_source: uniquePrice > 0 ? 'humo_card_bot' : 'balance', promo_code: promo?.code || null, discount_amount: discount, balance_used: Number(balanceUsed || 0), cashback_amount: Number(cashbackAmount || 0) });
+  let order;
+  // unique_price to'qnashuviga qarshi: bir vaqtda ikki checkout bir xil summani
+  // olib qolsa (generateUniquePrice o'qigach), partial unique index (migratsiya
+  // 2026-09-23) INSERT ni rad etadi — biz suffiksni qayta generatsiya qilib
+  // qayta uramiz. Index hali qo'llanmagan bo'lsa hech qanday konflikt bo'lmaydi
+  // va bu sikl bir marta ishlaydi (eski xatti-harakat).
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      order = await createOrder(client, { user_telegram_id, plan_id: items[0]?.plan_id || items[0]?.plan?.id || null, amount: uniquePrice, base_price: basePrice, unique_price: uniquePrice, expires_at: expiresAt, status: uniquePrice > 0 ? 'waiting_payment' : 'payment_detected', delivery_status: 'waiting_approval', payment_method: 'humo_card_bot', payment_source: uniquePrice > 0 ? 'humo_card_bot' : 'balance', promo_code: activePromo?.code || null, discount_amount: discount, balance_used: reservedBalance, cashback_amount: effectiveCashback });
+      break;
+    } catch (error) {
+      if (uniquePrice > 0 && attempt < 5 && isUniqueViolation(error, 'unique_price')) {
+        uniquePrice = await generateUniquePrice(client, payableBase);
+        continue;
+      }
+      // Buyurtma yaratilmasa band qilingan resurslarni QAYTARAMIZ — aks holda
+      // balans yechilgan-u yoki promokod "band"-u, buyurtma yo'q bo'lib qolardi.
+      if (reservedBalance > 0) {
+        await adjustWalletBalance(client, user_telegram_id, reservedBalance).catch((e) => console.warn('reserve rollback warn:', e?.message));
+      }
+      if (promoReserved && activePromo) {
+        await decrementPromoUsageByCode(client, activePromo.code).catch(() => {});
+      }
+      throw error;
+    }
+  }
+  // Band qilingan balans uchun tranzaksiya izi (balans tarixida ko'rinsin).
+  // Balansning O'ZI yuqorida reserveWalletBalance orqali yechilgan — bu faqat yozuv.
+  if (reservedBalance > 0) {
+    await request(client, 'wallet_transactions', {
+      method: 'POST',
+      body: { user_telegram_id: String(user_telegram_id), order_id: order.id, amount: reservedBalance, type: 'debit', description: `Buyurtma uchun balansdan #${order.order_number}` },
+    }).catch((e) => console.warn('reserve tx warn:', e?.message));
+  }
   // Buyurtma elementlari BITTA so'rovda yoziladi (PostgREST massivni qabul
   // qiladi). Ilgari har bir dona uchun alohida, ketma-ket so'rov ketardi —
   // 3 ta tovar 3 ta bosqich edi. Promokod hisoblagichi ham shu bilan parallel.
@@ -560,12 +775,11 @@ async function createCheckoutOrder(client, { user_telegram_id, items, expiresMin
       orderItems.push({ order_id: order.id, user_telegram_id: String(user_telegram_id), plan_id: item.plan_id || item.plan?.id, quantity: 1, unit_price: unit, total_price: unit, delivery_status: 'pending' });
     }
   }
-  await Promise.all([
-    promo?.id
-      ? request(client, 'promo_codes', { method: 'PATCH', query: toQuery({ id: `eq.${promo.id}` }), body: { used_count: Number(promo.used_count || 0) + 1 } })
-      : Promise.resolve(),
-    orderItems.length ? request(client, 'order_items', { method: 'POST', body: orderItems }) : Promise.resolve(),
-  ]);
+  // Eslatma: promokod used_count endi YUQORIDA, reservePromoUse orqali atomik
+  // oshirilgan (bu yerda emas) — shuning uchun faqat buyurtma elementlari yoziladi.
+  if (orderItems.length) {
+    await request(client, 'order_items', { method: 'POST', body: orderItems });
+  }
   return order;
 }
 
@@ -661,6 +875,35 @@ async function listStuckDeliveringOrders(client, minutes = 2, limit = 20) {
 async function cleanupProcessedPaymentMessages(client, days = 14) {
   const cutoff = new Date(Date.now() - Number(days || 14) * 24 * 60 * 60 * 1000).toISOString();
   return request(client, 'processed_payment_messages', { method: 'DELETE', query: toQuery({ created_at: `lt.${cutoff}` }) });
+}
+
+// Telegram update'ini bir marta qayta ishlashni kafolatlaydi (idempotentlik).
+// Telegram javob kechiksa o'sha update'ni qayta yuboradi — takror ishlov
+// balansni ikki marta o'zgartirishi yoki xabarni takrorlashi mumkin edi.
+//
+// update_id PRIMARY KEY: birinchi INSERT qatorni qaytaradi (true = yangi),
+// takror INSERT ignore-duplicates tufayli bo'sh qaytaradi (false = takror).
+// FAIL-OPEN: processed_updates jadvali yo'q (migratsiya qo'llanmagan) yoki baza
+// javob bermasa — true qaytaramiz, ya'ni bot to'xtamaydi, oddiy ishlaydi.
+async function markUpdateProcessed(client, updateId) {
+  if (updateId === undefined || updateId === null || updateId === '') return true;
+  try {
+    const { data } = await request(client, 'processed_updates', {
+      method: 'POST',
+      query: 'on_conflict=update_id',
+      headers: { Prefer: 'return=representation,resolution=ignore-duplicates' },
+      body: { update_id: Number(updateId) },
+    });
+    return Boolean(data?.[0]); // yangi bo'lsa true, takror bo'lsa false
+  } catch (e) {
+    console.warn('processed_updates check skipped (fail-open):', e?.message);
+    return true;
+  }
+}
+
+async function cleanupProcessedUpdates(client, days = 2) {
+  const cutoff = new Date(Date.now() - Number(days || 2) * 24 * 60 * 60 * 1000).toISOString();
+  return request(client, 'processed_updates', { method: 'DELETE', query: toQuery({ created_at: `lt.${cutoff}` }) }).catch(() => null);
 }
 
 async function updateMonitoringSnapshot(client) {
@@ -820,6 +1063,9 @@ async function rejectOrder(client, orderId) {
     const latest = await getOrderById(client, orderId);
     return { ok: false, reason: 'already_processed', order: latest };
   }
+  // Rad etilgan buyurtmada checkout'da band qilingan balans/promokodni qaytaramiz.
+  await refundOrderBalance(client, data[0]).catch((e) => console.warn('reject refund warn:', e?.message));
+  await releasePromoUse(client, data[0]).catch((e) => console.warn('reject promo release warn:', e?.message));
   return { ok: true, order: data[0] };
 }
 
@@ -1018,6 +1264,7 @@ module.exports = {
   mapPlan,
   toQuery,
   createOrder,
+  isUniqueViolation,
   createExceptionQueueItem,
   createAuditLog,
   getInventoryItemById,
@@ -1026,11 +1273,15 @@ module.exports = {
   getPromoCode,
   validatePromoCode,
   promoAppliesToPlans,
+  reservePromoUse,
+  releasePromoUse,
   grantWelcomeBonus,
   rpcRequest,
   getUserBalance,
   addWalletTransaction,
   adjustWalletBalance,
+  reserveWalletBalance,
+  refundOrderBalance,
   createCartItem,
   listCartItems,
   updateCartItemQuantity,
@@ -1053,6 +1304,8 @@ module.exports = {
   markOrderPaidManually,
   insertPaymentLog,
   insertProcessedPaymentMessage,
+  markUpdateProcessed,
+  cleanupProcessedUpdates,
   getOrderItems,
   expirePendingOrders,
   getOrderById,

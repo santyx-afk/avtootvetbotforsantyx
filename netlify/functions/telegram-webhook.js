@@ -1,7 +1,16 @@
+const crypto = require('crypto');
 const { getAdminClient, request } = require('../../shared/db');
 const { handleStart, handleCallback, handleReceipt, handleTextCommand } = require('../../shared/bot-service');
 const { handleHumoPaymentNotification } = require('../../shared/humo-payment-service');
 const { handleAdminBroadcastMessage } = require('../../shared/broadcast-service');
+
+// Maxfiy tokenlarni doimiy vaqtda solishtirish (timing attack'dan himoya).
+function secretEquals(a, b) {
+  const bufA = Buffer.from(String(a || ''));
+  const bufB = Buffer.from(String(b || ''));
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}
 
 // To'lov bildirishnomalarini yuboradigan biznes-akkaunt Telegram ID si.
 // Ilgari kodning ichida ikki joyda qattiq yozilgan edi — endi bitta joyda,
@@ -24,7 +33,18 @@ exports.handler = async (event) => {
   const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
   const headerSecret = event.headers['x-telegram-bot-api-secret-token'] || event.headers['X-Telegram-Bot-Api-Secret-Token'];
 
-  if (secret && headerSecret !== secret) {
+  // Webhook maxfiy tokeni MAJBURIY. Ilgari token o'rnatilmagan bo'lsa tekshiruv
+  // butunlay o'tkazib yuborilardi (fail-open). U holda istalgan odam webhook
+  // manziliga soxta update POST qila olardi — masalan `callback_query` ni admin
+  // `from.id` si bilan yuborib (`admin:approve:<id>` / `admin:paid:<id>`),
+  // buyurtmani o'zi tasdiqlab, akkauntni tekinga oldirib olardi (from.id ni
+  // hech kim tekshirmaydi, chunki odatda Telegram kafolatlaydi — lekin faqat
+  // token to'g'ri bo'lsa). Endi token yo'q bo'lsa YOKI mos kelmasa — rad etiladi.
+  if (!secret) {
+    console.error('TELEGRAM_WEBHOOK_SECRET o‘rnatilmagan — webhook rad etildi. Netlify env ga qo‘shing (Functions scope) va /api/set-webhook ni qayta oching.');
+    return { statusCode: 200, body: JSON.stringify({ ok: true, ignored: 'webhook-secret-not-configured' }) };
+  }
+  if (!secretEquals(headerSecret, secret)) {
     return { statusCode: 200, body: JSON.stringify({ ok: true, ignored: 'invalid-secret' }) };
   }
 
@@ -38,19 +58,22 @@ exports.handler = async (event) => {
 
   const supabase = getAdminClient();
 
+  // Takroriy update'dan himoya (idempotentlik): Telegram javob kechiksa o'sha
+  // update'ni qayta yuboradi. Bir marta ishlov beramiz. Jadval bo'lmasa fail-open.
+  const { markUpdateProcessed } = require('../../shared/db');
+  const firstTime = await markUpdateProcessed(supabase, update.update_id);
+  if (!firstTime) {
+    return { statusCode: 200, body: JSON.stringify({ ok: true, ignored: 'duplicate-update' }) };
+  }
+
   try {
     if (update.business_message) {
       const msg = update.business_message;
-      
-      // LOG TO AUDIT_LOGS for debugging
-      const { createAuditLog } = require('../../shared/db');
-      await createAuditLog(supabase, {
-        order_id: null,
-        user_telegram_id: String(msg.from?.id || 'unknown'),
-        action: 'business_message_received',
-        status: 'debug',
-        metadata: { payload: msg }
-      });
+
+      // Eslatma: ilgari bu yerda HAR BIR business_message'ning to'liq payload'i
+      // audit_logs ga "debug" bo'lib yozilardi — bu sotuvchining barcha shaxsiy
+      // yozishmalarini bazaga nusxalash (maxfiylik muammosi) va jadvalni keraksiz
+      // shishirish edi. Olib tashlandi; to'lov aniqlash pastda o'z izini qoldiradi.
 
       // Try standard auto-payment handler first (handles "Пополнение" format)
       const payment = await handleHumoPaymentNotification({ supabase, message: msg });

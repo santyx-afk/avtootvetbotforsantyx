@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const {
   parseHumoAmount,
   isHumoNotification,
+  isHumoSender,
   deliveryOutcomeFromOrder,
 } = require('../shared/humo-payment-service');
 
@@ -16,9 +17,49 @@ test('ignores non-HUMO messages without UZS top-up marker', () => {
   assert.equal(isHumoNotification({ from: { username: 'otherbot' }, text: 'hello' }), false);
 });
 
-test('detects HUMO notifications by sender username or top-up shape', () => {
-  assert.equal(isHumoNotification({ from: { username: 'HUMOcardbot' }, text: 'anything' }), true);
-  assert.equal(isHumoNotification({ text: '🎉 Пополнение\n➕ 245.731,00 UZS' }), true);
+test('detects a real HUMO top-up only from the HUMO bot sender', () => {
+  const topupText = '🎉 Пополнение\n➕ 245.731,00 UZS';
+  // Haqiqiy HUMO botidan (username band — soxtalab bo'lmaydi) — qabul qilinadi.
+  assert.equal(isHumoNotification({ from: { username: 'HUMOcardbot' }, text: topupText }), true);
+  // Admin HUMO bot xabarini forward qilsa ham — manba HUMO bot.
+  assert.equal(isHumoNotification({ forward_from: { username: 'humocardbot' }, text: topupText }), true);
+  assert.equal(
+    isHumoNotification({ forward_origin: { sender_user: { username: 'humocardbot' } }, text: topupText }),
+    true,
+  );
+});
+
+// Soxta to'lov teshigi (KRITIK): ilgari faqat matn "Пополнение ➕ X UZS" bo'lsa
+// yetardi va istalgan odam botga shu matnni yozib to'lovsiz tovar olardi.
+test('rejects a fake top-up that only has the text but not the HUMO sender', () => {
+  const topupText = '🎉 Пополнение\n➕ 245.731,00 UZS';
+  assert.equal(isHumoNotification({ text: topupText }), false);
+  assert.equal(isHumoNotification({ from: { username: 'random_user' }, text: topupText }), false);
+  assert.equal(isHumoNotification({ from: { id: 777000111 }, text: topupText }), false);
+  // O'zi yozgan xabarni forward qilsa ham — manba HUMO bot emas.
+  assert.equal(
+    isHumoNotification({ forward_origin: { sender_user: { username: 'attacker' } }, text: topupText }),
+    false,
+  );
+});
+
+test('isHumoSender checks the sender, independent of the text', () => {
+  assert.equal(isHumoSender({ from: { username: 'HUMOcardbot' } }), true);
+  assert.equal(isHumoSender({ from: { username: 'someone' } }), false);
+  assert.equal(isHumoSender({ text: 'Пополнение ➕ 1 UZS' }), false);
+});
+
+test('HUMO_CARD_BOT_ID env lets a numeric sender id be trusted', () => {
+  const topupText = '🎉 Пополнение\n➕ 100.000,00 UZS';
+  const prev = process.env.HUMO_CARD_BOT_ID;
+  process.env.HUMO_CARD_BOT_ID = '555000123';
+  try {
+    assert.equal(isHumoNotification({ from: { id: 555000123 }, text: topupText }), true);
+    assert.equal(isHumoNotification({ from: { id: 999 }, text: topupText }), false);
+  } finally {
+    if (prev === undefined) delete process.env.HUMO_CARD_BOT_ID;
+    else process.env.HUMO_CARD_BOT_ID = prev;
+  }
 });
 
 // Kutish muddati tugagani "yetkazilmadi" degani emas — buyurtma bazada
