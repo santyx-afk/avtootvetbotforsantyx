@@ -1974,6 +1974,7 @@ async function openOrderDetail(id) {
 const BC_STATUS = {
   awaiting_message: '📣 Xabar kutilyapti (botda)',
   awaiting_confirm: '👀 Tasdiq kutilyapti (botda)',
+  scheduled: '⏰ Rejalashtirilgan',
   queued: '⏳ Navbatda',
   sending: '📤 Yuborilmoqda',
   done: '✅ Yakunlandi',
@@ -1981,6 +1982,29 @@ const BC_STATUS = {
   failed: '⚠️ Xato',
 };
 const BC_ACTIVE = new Set(['awaiting_message', 'awaiting_confirm', 'queued', 'sending']);
+// To'xtatish/bekor qilish mumkin bo'lganlar (rejalashtirilgan ham). Tarix faqat
+// BC_ACTIVE uchun 5 soniyada yangilanadi — soatlab kutadigan ish uchun emas.
+const BC_CANCELLABLE = new Set([...BC_ACTIVE, 'scheduled']);
+
+// datetime-local qiymati Toshkent vaqti deb olinadi (UTC+5, yozgi vaqt yo'q) —
+// admin brauzeri qaysi mintaqada bo'lishidan qat'i nazar.
+function tashkentLocalToIso(value) {
+  return value ? new Date(`${value}:00+05:00`).toISOString() : null;
+}
+
+function syncScheduleFields() {
+  const type = document.getElementById('messageType')?.value || 'individual';
+  const on = Boolean(document.getElementById('messageScheduleOn')?.checked);
+  document.getElementById('messageScheduleLabel').hidden = type === 'individual';
+  document.getElementById('messageScheduleAtLabel').hidden = type === 'individual' || !on;
+  const at = document.getElementById('messageScheduleAt');
+  if (on && at && !at.value) {
+    // Sukut: ertaga 10:00 (Toshkent)
+    const tomorrow = new Date(Date.now() + 5 * 3600 * 1000 + 24 * 3600 * 1000).toISOString().slice(0, 10);
+    at.value = `${tomorrow}T10:00`;
+  }
+}
+document.getElementById('messageScheduleOn')?.addEventListener('change', syncScheduleFields);
 
 // Tur o'zgarganda kerakli maydonlar ko'rinadi: ID (individual), segment
 // (broadcast/admin), matn (individual/broadcast).
@@ -1995,6 +2019,7 @@ function syncMessageForm() {
   if (text) text.required = type !== 'admin';
   const btn = document.getElementById('messageSubmit');
   if (btn) btn.textContent = type === 'admin' ? '📣 Botda xabar kutilsin' : 'Yuborish';
+  syncScheduleFields();
 }
 document.getElementById('messageType')?.addEventListener('change', syncMessageForm);
 
@@ -2011,11 +2036,11 @@ function renderBroadcasts(jobs = []) {
       <td>${dt(j.created_at)}</td>
       <td>${j.kind === 'copy' ? '📣 Admin xabari' : 'Matn'}</td>
       <td>${esc(segName(j.segment))} (${esc(j.total)})</td>
-      <td><span class="badge">${esc(BC_STATUS[j.status] || j.status)}</span>${j.status === 'sending' ? ` <span class="hint">${esc(j.cursor)}/${esc(j.total)}</span>` : ''}</td>
+      <td><span class="badge">${esc(BC_STATUS[j.status] || j.status)}</span>${j.status === 'sending' ? ` <span class="hint">${esc(j.cursor)}/${esc(j.total)}</span>` : ''}${j.scheduled_at && ['awaiting_message', 'awaiting_confirm', 'scheduled'].includes(j.status) ? `<div class="hint">⏰ ${dt(j.scheduled_at)}</div>` : ''}</td>
       <td>${esc(j.sent)}</td>
       <td>${esc(j.failed)}</td>
       <td>${j.text ? esc(String(j.text).slice(0, 60)) + (j.text.length > 60 ? '…' : '') : '—'}${j.error ? `<div class="hint">${esc(j.error)}</div>` : ''}</td>
-      <td>${BC_ACTIVE.has(j.status) ? `<button class="ghost danger bc-cancel" data-id="${esc(j.id)}">To'xtatish</button>` : ''}</td>
+      <td>${BC_CANCELLABLE.has(j.status) ? `<button class="ghost danger bc-cancel" data-id="${esc(j.id)}">${j.status === 'scheduled' ? 'Bekor qilish' : 'To\'xtatish'}</button>` : ''}</td>
     </tr>`).join('')}</tbody></table>`;
 }
 
@@ -2062,14 +2087,19 @@ document.getElementById('messageForm')?.addEventListener('submit', async (event)
   const segment = document.getElementById('messageSegment')?.value || 'all';
   if (type === 'individual' && !telegramId) { alert('Telegram ID kiriting'); return; }
   if (type !== 'admin' && !text.trim()) { alert('Xabar matnini yozing'); return; }
-  if (type === 'broadcast' && !confirm('Matn tanlangan segmentga yuborilsinmi?')) return;
+  const scheduleOn = type !== 'individual' && Boolean(document.getElementById('messageScheduleOn')?.checked);
+  const scheduledAt = scheduleOn ? tashkentLocalToIso(document.getElementById('messageScheduleAt')?.value) : null;
+  if (scheduleOn && !scheduledAt) { alert('Yuborish vaqtini tanlang'); return; }
+  if (type === 'broadcast' && !confirm(scheduledAt
+    ? `Matn ${document.getElementById('messageScheduleAt').value.replace('T', ' ')} (Toshkent) da tanlangan segmentga yuborilsinmi?`
+    : 'Matn tanlangan segmentga yuborilsinmi?')) return;
   const result = document.getElementById('messageResult');
   const btn = document.getElementById('messageSubmit');
   result.style.color = '';
   result.textContent = type === 'admin' ? 'Botga so\'rov yuborilmoqda...' : 'Yuborilmoqda...';
   btn.disabled = true;
   try {
-    const res = await api('admin-messages', { method: 'POST', body: JSON.stringify({ type, text, telegram_id: telegramId, segment }) });
+    const res = await api('admin-messages', { method: 'POST', body: JSON.stringify({ type, text, telegram_id: telegramId, segment, scheduled_at: scheduledAt }) });
     result.textContent = res.message || 'Yuborildi!';
     if (type !== 'admin') document.getElementById('messageText').value = '';
     await loadBroadcasts();
@@ -2442,7 +2472,7 @@ const HELP_ITEMS = [
   { icon: '👥', title: 'Foydalanuvchilar', body: 'Ro’yxatdan o’tgan barcha foydalanuvchilar. Qidiruv, bloklash/blokdan chiqarish mumkin. Bloklangan foydalanuvchi botni ham, Mini App’ni ham ishlata olmaydi. “Sarflagan” — mijozning pul tushgan xaridlari summasi (chegirmadan keyin). “Ko’p sarflaganlar” saralashi eng sodiq mijozlarni tepaga chiqaradi. “💸 Guruhga pul qo’shish” — hammaga, ommaviy xabar segmentiga (xarid qilganlar, balansi borlar, 30 kun faol bo’lmaganlar, til…) yoki teg bo’yicha (masalan “vip”) pul qo’shadi; oldin nechta odamga va jami qancha ketishi ko’rsatiladi. Tugma ikki marta bosilsa ham pul bir marta qo’shiladi.' },
   { icon: '🛒', title: 'Buyurtmalar', body: 'Barcha xaridlar. Statuslar: kutilmoqda, tasdiqlangan, rad etilgan, tugallangan. Admin approve/reject qiladi. "Batafsil" tugmasi qaysi akkaunt kimga va qachon ketganini, promokod va chegirmani ko’rsatadi. Qidiruv buyurtma raqami yoki Telegram ID bo’yicha. CSV export mumkin.' },
   { icon: '📥', title: 'Leadlar', body: 'Saytdagi "Izlagan obunangiz yo’qmi?" formasidan kelgan so’rovlar. Har biri adminga Telegram xabari sifatida ham keladi. Bajarilganini belgilash yoki o’chirish mumkin.' },
-  { icon: '✉️', title: 'Xabar yuborish', body: 'Bitta foydalanuvchiga, matnli broadcast (segment bo’yicha) yoki «Admin xabari»: tugmani bossangiz bot sizga Telegram’da «xabar kutilyapti» deb yozadi, unga rasm/video/fayl/matn yuborasiz, bot ko’rsatib tasdiq so’raydi, tasdiqlagach hammaga ketadi. Yuborish fon rejimida, jarayon tarixda ko’rinadi, istalgan payt to’xtatish mumkin.' },
+  { icon: '✉️', title: 'Xabar yuborish', body: 'Bitta foydalanuvchiga, matnli broadcast (segment bo’yicha) yoki «Admin xabari»: tugmani bossangiz bot sizga Telegram’da «xabar kutilyapti» deb yozadi, unga rasm/video/fayl/matn yuborasiz, bot ko’rsatib tasdiq so’raydi, tasdiqlagach hammaga ketadi. Yuborish fon rejimida, jarayon tarixda ko’rinadi, istalgan payt to’xtatish mumkin. “⏰ Keyinroq yuborish” belgisi bilan matnli broadcast yoki Admin xabarini kerakli vaqtga (Toshkent vaqti, 5 daqiqa aniqlik bilan) rejalashtirish mumkin; qabul qiluvchilar ro’yxati yuborish paytida yangilanadi. Rejalashtirilgan xabarni tarixdagi “Bekor qilish” tugmasi bilan bekor qilasiz.' },
   { icon: '📅', title: 'Obunalar', body: 'Faol, 7 kun ichida tugaydigan va tugagan obunalar. Qo’lda uzaytirish (+30 yoki +N kun, mijozga xabar ketadi), eslatmani hozir yuborish, bekor qilish. Avtomatik eslatmalar har kuni 09:00 da.' },
   { icon: '👛', title: 'Balans harakatlari', body: 'Barcha balans o’zgarishlari: to’ldirish, xarid, cashback, referal, admin qo’shgan/yechgan. Oraliq, tur va mijoz bo’yicha filtr; tur bo’yicha jamlanma.' },
   { icon: '📜', title: 'Jurnal', body: 'Tizimdagi barcha muhim amallar: to’lov aniqlandi, qo’lda tasdiqlandi, yetkazildi, muddat o’tdi, obuna uzaytirildi va h.k. Buyurtma raqami yoki Telegram ID bo’yicha qidiruv.' },
