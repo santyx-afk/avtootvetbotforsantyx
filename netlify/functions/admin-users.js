@@ -1,5 +1,5 @@
 const { requireAdmin, requireOwner } = require('../../shared/auth');
-const { getAdminClient, request, toQuery, addWalletTransaction, rpcRequest } = require('../../shared/db');
+const { getAdminClient, request, fetchAllRows, toQuery, addWalletTransaction, rpcRequest } = require('../../shared/db');
 const { sendMessage } = require('../../shared/telegram');
 
 function json(sc, body) { return { statusCode: sc, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }; }
@@ -104,27 +104,31 @@ exports.handler = async (event) => {
 
     // --- Foydalanuvchilar ro'yxati (balans + xaridlar soni + oxirgi faollik) ---
     if (event.httpMethod === 'GET') {
-      // Ilgari limit 500 edi — 889 foydalanuvchidan 389 tasi admin panelda
-      // umuman ko'rinmasdi (qidiruv ham faqat yuklanganlar ichida ishlardi).
-      // Endi standart 5000: butun baza bir marta keladi, qidiruv to'liq ishlaydi.
-      const limit = Math.min(Math.max(Number(event.queryStringParameters?.limit || 5000), 1), 10000);
+      // `limit=5000` yetarli emas edi: Supabase (PostgREST max-rows) baribir
+      // eng ko'pi 1000 qator qaytaradi — 1000-dan keyingi (eski) foydalanuvchilar
+      // panelda ko'rinmas, qidiruvda chiqmas, balans ham 1000-hamyondan keyin
+      // 0 ko'rinardi. Endi har uch jadval sahifalab TO'LIQ olinadi.
+      // Tartib o'sish bo'yicha: yuklash paytida qo'shilgan yangi qator oxiriga
+      // tushadi va sahifalar surilib takror/tushib qolish bo'lmaydi.
       const cols = 'telegram_id,username,full_name,phone,phone_verified_at,language_code,is_blocked,created_at,updated_at,admin_note,tags';
-      const [usersRes, walletsRes, ordersRes] = await Promise.all([
-        request(db, 'users', { query: `select=${cols}&order=created_at.desc&limit=${limit}` })
-          .catch(() => request(db, 'users', { query: `select=telegram_id,username,full_name,phone,language_code,created_at&order=created_at.desc&limit=${limit}` })),
-        request(db, 'user_wallets', { query: 'select=user_telegram_id,balance' }).catch(() => ({ data: [] })),
-        request(db, 'orders', { query: 'select=user_telegram_id,created_at,order_type&order=created_at.desc&limit=10000' }).catch(() => ({ data: [] })),
+      const usersOrder = 'order=created_at.asc,telegram_id.asc';
+      const [userRows, walletRows, orderRows] = await Promise.all([
+        fetchAllRows(db, 'users', `select=${cols}&${usersOrder}`)
+          .catch(() => fetchAllRows(db, 'users', `select=telegram_id,username,full_name,phone,language_code,created_at&${usersOrder}`)),
+        fetchAllRows(db, 'user_wallets', 'select=user_telegram_id,balance&order=user_telegram_id.asc').catch(() => []),
+        fetchAllRows(db, 'orders', 'select=user_telegram_id,created_at,order_type&order=created_at.asc,id.asc').catch(() => []),
       ]);
       const balanceMap = {};
-      for (const w of walletsRes.data || []) balanceMap[String(w.user_telegram_id)] = Number(w.balance || 0);
+      for (const w of walletRows) balanceMap[String(w.user_telegram_id)] = Number(w.balance || 0);
       const purchaseMap = {};
       const lastMap = {};
-      for (const o of ordersRes.data || []) {
+      for (const o of orderRows) {
         const id = String(o.user_telegram_id);
         if (String(o.order_type || 'purchase') !== 'topup') purchaseMap[id] = (purchaseMap[id] || 0) + 1;
-        if (!lastMap[id]) lastMap[id] = o.created_at; // desc tartib — birinchisi eng oxirgi
+        lastMap[id] = o.created_at; // o'sish tartibi — oxirgisi eng yangi
       }
-      const users = (usersRes.data || []).map((u) => {
+      // Panel uchun eng yangilari tepada
+      const users = userRows.reverse().map((u) => {
         const id = String(u.telegram_id);
         return { ...u, tags: Array.isArray(u.tags) ? u.tags : [], balance: balanceMap[id] || 0, purchases: purchaseMap[id] || 0, last_activity: lastMap[id] || u.updated_at || u.created_at };
       });
