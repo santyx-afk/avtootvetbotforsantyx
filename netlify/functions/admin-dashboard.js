@@ -1,5 +1,5 @@
-const { requireAdmin } = require('../../shared/auth');
-const { getAdminClient, countRows, listRecentEvents, listEventsByType, listTable, request, toQuery, PAID_ORDER_STATUSES: PAID, orderSaleValue: value } = require('../../shared/db');
+const { requireAdmin, requireOwner } = require('../../shared/auth');
+const { getAdminClient, countRows, listRecentEvents, listEventsByType, listTable, request, fetchAllRows, toQuery, PAID_ORDER_STATUSES: PAID, orderSaleValue: value, isPaidPurchase } = require('../../shared/db');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -89,6 +89,77 @@ function summarizeOrders(orders, { from, to }) {
   };
 }
 exports._summarizeOrders = summarizeOrders;
+
+// Sof foyda (sof funksiya — testlanadi). Har bir to'langan xarid uchun:
+//   tannarx = buyurtma elementlari (order_items) bo'yicha reja tannarxlari
+//             yig'indisi; elementlar bo'lmasa — orders.plan_id × 1
+//   foyda   = sotuv qiymati (base_price − chegirma) − tannarx
+// Savatdagi bir nechta tovarli buyurtmada sotuv qiymati elementlarga
+// unit_price ulushiga qarab bo'linadi (rejalar kesimi uchun).
+// Tannarxi kiritilmagan reja sotilgan bo'lsa, u 0 deb olinadi va
+// `missingCostSales` da sanaladi — foyda oshirib ko'rsatilganini bildiradi.
+function summarizeProfit(orders, items, plans) {
+  const planById = new Map(plans.map((p) => [p.id, p]));
+  const itemsByOrder = new Map();
+  for (const it of items) {
+    if (!itemsByOrder.has(it.order_id)) itemsByOrder.set(it.order_id, []);
+    itemsByOrder.get(it.order_id).push(it);
+  }
+  const costOf = (planId) => {
+    const raw = planById.get(planId)?.cost_price;
+    return raw == null || raw === '' ? null : Number(raw);
+  };
+
+  let cost = 0;
+  let sales = 0;
+  let missingCostSales = 0;
+  const byPlan = new Map();
+  const byDay = new Map();
+  for (const o of orders.filter(isPaidPurchase)) {
+    const orderValue = value(o);
+    const lines = itemsByOrder.get(o.id)?.length
+      ? itemsByOrder.get(o.id).map((it) => ({ planId: it.plan_id, qty: Number(it.quantity || 1), unit: Number(it.unit_price || 0) }))
+      : [{ planId: o.plan_id, qty: 1, unit: orderValue }];
+    const unitTotal = lines.reduce((s, l) => s + l.unit * l.qty, 0);
+    let orderCost = 0;
+    for (const l of lines) {
+      const share = unitTotal > 0 ? (l.unit * l.qty) / unitTotal : 1 / lines.length;
+      const lineRevenue = orderValue * share;
+      const unitCost = costOf(l.planId);
+      if (unitCost == null) missingCostSales += l.qty;
+      const lineCost = (unitCost || 0) * l.qty;
+      orderCost += lineCost;
+      const row = byPlan.get(l.planId) || { id: l.planId, sold: 0, revenue: 0, cost: 0, hasCost: unitCost != null };
+      row.sold += l.qty;
+      row.revenue += lineRevenue;
+      row.cost += lineCost;
+      byPlan.set(l.planId, row);
+    }
+    cost += orderCost;
+    sales += orderValue;
+    const day = tashkentDay(o.created_at);
+    byDay.set(day, (byDay.get(day) || 0) + orderValue - orderCost);
+  }
+  const profit = sales - cost;
+  const plansProfit = [...byPlan.values()]
+    .map((r) => ({
+      ...r,
+      name: planById.get(r.id)?.name || 'O‘chirilgan reja',
+      revenue: Math.round(r.revenue),
+      cost: Math.round(r.cost),
+      profit: Math.round(r.revenue - r.cost),
+    }))
+    .sort((a, b) => b.profit - a.profit);
+  return {
+    cost: Math.round(cost),
+    profit: Math.round(profit),
+    margin: sales > 0 ? Math.round((profit / sales) * 100) : 0,
+    missingCostSales,
+    plansProfit,
+    dailyProfit: Object.fromEntries([...byDay.entries()].map(([d, v]) => [d, Math.round(v)])),
+  };
+}
+exports._summarizeProfit = summarizeProfit;
 exports._rangeBounds = rangeBounds;
 
 exports.handler = async (event) => {
@@ -120,29 +191,44 @@ exports.handler = async (event) => {
       listRecentEvents(supabase, 20),
       listTable(supabase, 'categories'),
       listTable(supabase, 'plans'),
-      // Ilgari faqat oxirgi 500 ta buyurtma olinardi — oylik raqam kesilib
-      // qolardi. Endi tanlangan oraliqdagi hammasi (10 000 tagacha).
-      request(supabase, 'orders', {
-        query: toQuery({
-          select: 'id,amount,base_price,unique_price,discount_amount,balance_used,status,delivery_status,plan_id,user_telegram_id,order_type,created_at',
-          and: `(created_at.gte.${range.fromIso},created_at.lte.${range.toIso})`,
-          order: 'created_at.desc',
-          limit: 10000,
-        }),
-      }),
-      request(supabase, 'inventory_items', { query: toQuery({ select: 'plan_id,status', limit: 5000 }) }),
+      // Tanlangan oraliqdagi HAMMA buyurtma. Ilgari `limit: 10000` edi, lekin
+      // Supabase (PostgREST max-rows) baribir 1000 tadan ko'p qaytarmaydi —
+      // band oylarda tushum kam ko'rsatilardi. Endi sahifalab olinadi.
+      fetchAllRows(supabase, 'orders', toQuery({
+        select: 'id,amount,base_price,unique_price,discount_amount,balance_used,status,delivery_status,plan_id,user_telegram_id,order_type,created_at',
+        and: `(created_at.gte.${range.fromIso},created_at.lte.${range.toIso})`,
+        order: 'created_at.asc,id.asc',
+      })),
+      // Zaxira ham 1000 bilan kesilardi — "kam qoldi" ogohlantirishi noto'g'ri edi
+      fetchAllRows(supabase, 'inventory_items', 'select=plan_id,status&order=id.asc'),
       request(supabase, 'referrals', { query: 'select=total_earned' }).catch(() => ({ data: [] })),
       countRows(supabase, 'orders', 'status=in.(waiting_payment,pending_payment)'),
       countRows(supabase, 'orders', 'status=in.(payment_uploaded,checking)'),
       countRows(supabase, 'orders', 'status=eq.approved&delivery_status=eq.manual_required'),
       countRows(supabase, 'orders', 'delivery_status=eq.waiting_stock&status=not.in.(completed,rejected,cancelled,expired)'),
     ]);
-    const orders = ordersResp.data || [];
-    const inventory = inventoryResp.data || [];
+    const orders = ordersResp;
+    const inventory = inventoryResp;
     const referrals = referralsResp.data || [];
     const resolveName = (items, entry) => ({ ...entry, name: items.find((item) => item.id === entry.id)?.name || entry.id });
 
     const summary = summarizeOrders(orders, range);
+
+    // Sof foyda — faqat egasi uchun (operator marjani ko'rmaydi). Buyurtma
+    // elementlari buyurtma bilan bir vaqtda yoziladi, shuning uchun shu
+    // oraliq (+10 daqiqa zaxira) bo'yicha olinadi.
+    let profit = null;
+    if (requireOwner(event.headers)) {
+      const itemsTo = new Date(Date.parse(range.toIso) + 10 * 60 * 1000).toISOString();
+      const items = await fetchAllRows(supabase, 'order_items', toQuery({
+        select: 'order_id,plan_id,quantity,unit_price',
+        and: `(created_at.gte.${range.fromIso},created_at.lte.${itemsTo})`,
+        order: 'created_at.asc,id.asc',
+      })).catch((e) => { console.warn('order_items warn:', e?.message); return []; });
+      profit = summarizeProfit(orders, items, plans);
+      for (const d of summary.dailyRevenue) d.profit = profit.dailyProfit[d.iso] || 0;
+      delete profit.dailyProfit;
+    }
     const availableByPlan = inventory.reduce((acc, row) => {
       if (!acc[row.plan_id]) acc[row.plan_id] = 0;
       if (row.status === 'available') acc[row.plan_id] += 1;
@@ -191,6 +277,7 @@ exports.handler = async (event) => {
             topups_paid: summary.topupsPaid,
           },
           dailyRevenue: summary.dailyRevenue,
+          profit,
           // Global (oraliqqa bog'liq emas) — hozir nima kutib turibdi
           waitingPaymentCount,
           paymentUploadedCount,

@@ -122,6 +122,13 @@ function renderStats(stats) {
     ['Referallar', stats.totalReferrals || 0],
     ['Referal bonuslari', `${money(stats.referralBonusTotal)} UZS`],
   ];
+  // Sof foyda — server faqat egasiga yuboradi (operator uchun profit = null)
+  const p = stats.profit;
+  if (p) {
+    cards.splice(1, 0,
+      ['Tannarx', `${money(p.cost)} UZS`],
+      ['Sof foyda (marja)', `${money(p.profit)} UZS (${p.margin}%)`]);
+  }
   document.getElementById('statsCards').innerHTML = cards.map(([label, value]) => `<div class="card"><h3>${esc(label)}</h3><strong>${esc(value ?? 0)}</strong></div>`).join('');
   const label = document.getElementById('dashRangeLabel');
   if (label && stats.range) label.textContent = `${stats.range.from} — ${stats.range.to} (Toshkent)`;
@@ -162,29 +169,56 @@ function renderStats(stats) {
   document.getElementById('topPayments').innerHTML = list(stats.mostPaymentClicks, (item) => `<li>${esc(item.name)}: ${esc(item.total)}</li>`);
   document.getElementById('eventLogs').innerHTML = list(stats.eventLogs, (item) => `<li><strong>${esc(item.event_type)}</strong> — ${dt(item.created_at)}</li>`);
 
+  renderPlanProfit(p);
+
   // Revenue chart
   if (typeof Chart !== 'undefined' && stats.dailyRevenue) {
-    renderRevenueChart(stats.dailyRevenue);
+    renderRevenueChart(stats.dailyRevenue, Boolean(p));
   }
 }
 
+// Rejalar kesimida foyda. Tannarxi kiritilmagan rejalar alohida belgilanadi —
+// ularning foydasi oshirib ko'rsatilgan (tannarx 0 deb olingan).
+function renderPlanProfit(p) {
+  const card = document.getElementById('planProfitCard');
+  if (!card) return;
+  card.hidden = !p;
+  if (!p) return;
+  const rows = p.plansProfit || [];
+  document.getElementById('planProfitHint').textContent = p.missingCostSales
+    ? `⚠️ ${p.missingCostSales} ta sotilgan donaning tannarxi kiritilmagan — ular 0 deb hisoblandi, foyda haqiqatdan ko'p ko'rinadi. Tannarxni "Rejalar" bo'limida kiriting.`
+    : 'Foyda = sotuv (chegirmadan keyin) − tannarx. Tannarx "Rejalar" bo\'limida kiritiladi.';
+  document.getElementById('planProfitList').innerHTML = rows.length
+    ? `<table><thead><tr><th>Reja</th><th>Sotildi</th><th>Sotuv</th><th>Tannarx</th><th>Foyda</th><th>Marja</th></tr></thead><tbody>${rows.map((r) => `
+      <tr>
+        <td>${esc(r.name)}${r.hasCost ? '' : ' <span class="badge" title="Tannarx kiritilmagan">tannarx yo\'q</span>'}</td>
+        <td>${esc(r.sold)}</td>
+        <td>${money(r.revenue)}</td>
+        <td>${money(r.cost)}</td>
+        <td${r.profit < 0 ? ' style="color:var(--danger)"' : ''}>${money(r.profit)}</td>
+        <td>${r.revenue > 0 ? Math.round((r.profit / r.revenue) * 100) : 0}%</td>
+      </tr>`).join('')}</tbody></table>`
+    : '<p class="detail-empty">Bu oraliqda to\'langan xarid yo\'q.</p>';
+}
+
 let revenueChartInstance = null;
-function renderRevenueChart(dailyRevenue) {
+function renderRevenueChart(dailyRevenue, withProfit = false) {
   const ctx = document.getElementById('revenueChart');
   if (!ctx) return;
   if (revenueChartInstance) revenueChartInstance.destroy();
   const labels = dailyRevenue.map((d) => d.date);
   const data = dailyRevenue.map((d) => d.revenue);
+  const datasets = [{ label: 'Tushum (UZS)', data, backgroundColor: '#2563eb', borderRadius: 8 }];
+  if (withProfit) {
+    datasets.push({ label: 'Sof foyda (UZS)', data: dailyRevenue.map((d) => d.profit || 0), backgroundColor: '#16a34a', borderRadius: 8 });
+  }
   revenueChartInstance = new Chart(ctx, {
     type: 'bar',
-    data: {
-      labels,
-      datasets: [{ label: 'Tushum (UZS)', data, backgroundColor: '#2563eb', borderRadius: 8 }],
-    },
+    data: { labels, datasets },
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
+      plugins: { legend: { display: withProfit } },
       scales: { y: { beginAtZero: true } },
     },
   });
@@ -216,15 +250,25 @@ function renderCategories() {
   categorySelect.innerHTML = state.categories.map((item) => `<option value="${esc(item.id)}">${esc(item.name)}</option>`).join('');
 }
 
+// Tannarx va marja (foyda / narx). Tannarx kiritilmagan bo'lsa — eslatma.
+function costCell(plan) {
+  if (plan.cost_price == null || plan.cost_price === '') return '<span class="hint">kiritilmagan</span>';
+  const price = Number(plan.price || 0);
+  const cost = Number(plan.cost_price);
+  const margin = price > 0 ? Math.round(((price - cost) / price) * 100) : 0;
+  return `${money(cost)} <span class="badge"${margin < 0 ? ' style="color:var(--danger)"' : ''}>${margin}%</span>`;
+}
+
 function renderPlans() {
   const root = document.getElementById('plansList');
-  root.innerHTML = `<table><thead><tr><th>Nomi</th><th>Plan ID</th><th>Sahifa</th><th>Kategoriya</th><th>Narx</th><th>Rasm</th><th>Tartib</th><th></th></tr></thead><tbody>${state.plans.map((item) => `
+  root.innerHTML = `<table><thead><tr><th>Nomi</th><th>Plan ID</th><th>Sahifa</th><th>Kategoriya</th><th>Narx</th><th>Tannarx / marja</th><th>Rasm</th><th>Tartib</th><th></th></tr></thead><tbody>${state.plans.map((item) => `
     <tr>
       <td>${esc(item.name)}${item.is_popular ? ' ⭐' : ''}</td>
       <td><code class="copy-id" data-id="${esc(item.id)}" title="Nusxalash uchun bosing">${esc(item.id)}</code></td>
       <td>${item.slug ? `<a href="/obuna/${esc(item.slug)}" target="_blank" rel="noopener">/${esc(item.slug)}</a>` : '<span class="hint">yo\'q</span>'}</td>
       <td>${esc(state.categories.find((category) => category.id === item.category_id)?.name || '-')}</td>
       <td>${money(item.price)} ${esc(item.currency)}</td>
+      <td>${costCell(item)}</td>
       <td>${item.image_url ? '<span class="badge">✓</span>' : '-'}</td>
       <td>${esc(item.sort_order)}</td>
       <td>
@@ -280,6 +324,7 @@ function fillPlanForm(item = {}) {
   document.getElementById('planPrice').value = item.price || '';
   document.getElementById('planCurrency').value = item.currency || 'UZS';
   document.getElementById('planOldPrice').value = item.old_price || '';
+  document.getElementById('planCostPrice').value = item.cost_price ?? '';
   document.getElementById('planOfficialPrice').value = item.official_price || '';
   document.getElementById('planIsPopular').checked = item.is_popular ?? false;
   document.getElementById('planTags').value = Array.isArray(item.tags) ? item.tags.join(',') : '';
@@ -1299,6 +1344,7 @@ onSubmit('planForm', async () => {
     button_label: document.getElementById('planButtonLabel').value,
     price: Number(document.getElementById('planPrice').value || 0),
     old_price: document.getElementById('planOldPrice').value ? Number(document.getElementById('planOldPrice').value) : null,
+    cost_price: document.getElementById('planCostPrice').value === '' ? null : Number(document.getElementById('planCostPrice').value),
     official_price: document.getElementById('planOfficialPrice').value ? Number(document.getElementById('planOfficialPrice').value) : null,
     is_popular: document.getElementById('planIsPopular').checked,
     tags: document.getElementById('planTags').value ? document.getElementById('planTags').value.split(',').map((t) => t.trim()).filter(Boolean) : [],
@@ -1315,7 +1361,8 @@ onSubmit('planForm', async () => {
     delivery_instructions: document.getElementById('planDeliveryInstructions').value,
     is_active: document.getElementById('planIsActive').checked,
   };
-  await api('admin-data', { method: item.id ? 'PUT' : 'POST', body: JSON.stringify({ type: 'plan', item }) });
+  const saved = await api('admin-data', { method: item.id ? 'PUT' : 'POST', body: JSON.stringify({ type: 'plan', item }) });
+  if (saved?.warning) alert(saved.warning);
   fillPlanForm();
   await loadData();
 });
@@ -2305,9 +2352,9 @@ backdropEl?.addEventListener('click', closeSidebar);
 
 // --- Yordam (Help) bo'limi: akkordeon ---
 const HELP_ITEMS = [
-  { icon: '📊', title: 'Dashboard', body: 'Umumiy statistika: foydalanuvchilar soni, buyurtmalar, tushum grafigi. Bu yerda hech narsa o’zgartirish mumkin emas, faqat ko’rish uchun.' },
+  { icon: '📊', title: 'Dashboard', body: 'Umumiy statistika: foydalanuvchilar soni, buyurtmalar, tushum grafigi. Egasi uchun “Tannarx” va “Sof foyda (marja)” kartalari, grafikdagi yashil foyda ustunlari va “Rejalar bo’yicha foyda” jadvali ham ko’rinadi (operator ko’rmaydi). Foyda = sotuv (chegirmadan keyin) − tannarx; tannarx “Rejalar” bo’limida kiritiladi. Bu yerda hech narsa o’zgartirish mumkin emas, faqat ko’rish uchun.' },
   { icon: '🗂️', title: 'Kategoriyalar', body: 'Mahsulotlar guruhlari. Masalan "Video tahrirlash", "AI asboblar". Kategoriya qo’shsangiz katalogda filtr sifatida chiqadi. Tartib raqami kichik bo’lgani birinchi ko’rinadi.' },
-  { icon: '📦', title: 'Rejalar (Mahsulotlar)', body: 'Sotiladigan obunalar. Har bir rejada: nomi, tavsifi, narxi, chegirma narxi, kategoriyasi, muddat (kunlarda), stok soni. Stok 0 bo’lsa "Tugagan" ko’rinadi. Rasm yuklash mumkin.' },
+  { icon: '📦', title: 'Rejalar (Mahsulotlar)', body: 'Sotiladigan obunalar. Har bir rejada: nomi, tavsifi, narxi, chegirma narxi, kategoriyasi, muddat (kunlarda), stok soni. Stok 0 bo’lsa "Tugagan" ko’rinadi. Rasm yuklash mumkin. “Tannarx (1 dona)” — reja sizga necha pulga tushishi; sof foyda shu bilan hisoblanadi, mijozlarga ko’rinmaydi.' },
   { icon: '🔑', title: 'Inventory', body: 'Avtomatik yetkaziladigan rejalar uchun akkaunt/kalitlar zaxirasi. Har bir sotuvda bittasi avtomatik foydalanuvchiga yuboriladi. Zaxira kamayganda ogohlantirish keladi.' },
   { icon: '🖼️', title: 'Bannerlar', body: 'Katalog tepasida aylanadigan reklama bannerlari. Sarlavha, matn, tugma, havola va gradient yoki rasm qo’shish mumkin. Havola sifatida ichki action (topup, catalog) yoki tashqi URL yozish mumkin.' },
   { icon: '❓', title: 'FAQ', body: 'Profil sahifasida ko’rinadigan savol-javoblar. Savol va javob yozing, tartibini (↑/↓) belgilang.' },

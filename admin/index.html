@@ -94,6 +94,11 @@
                 </div>
               </div>
               <div class="cards" id="pendingCards"></div>
+              <div class="card owner-only" id="planProfitCard" style="margin-bottom:1rem" hidden>
+                <h3>Rejalar bo'yicha foyda (tanlangan oraliq)</h3>
+                <p class="hint" id="planProfitHint"></p>
+                <div id="planProfitList" class="table-card"></div>
+              </div>
               <div class="card" style="margin-bottom:1rem">
                 <h3>So'nggi buyurtmalar</h3>
                 <div id="recentOrders" class="table-card"></div>
@@ -150,6 +155,7 @@
                   </label>
                   <label>Button label<input id="planButtonLabel" /></label>
                   <label>Narx<input id="planPrice" type="number" required /></label>
+                  <label title="Bitta dona sizga necha pulga tushadi. Sof foyda shu bilan hisoblanadi. Mijozlarga ko'rinmaydi.">Tannarx (1 dona)<input id="planCostPrice" type="number" min="0" placeholder="masalan 35000" /></label>
                   <label>Valyuta<input id="planCurrency" value="UZS" required /></label>
                   <label>Eski narx<input id="planOldPrice" type="number" /></label>
                   <label>Rasmiy narx<input id="planOfficialPrice" type="number" /></label>
