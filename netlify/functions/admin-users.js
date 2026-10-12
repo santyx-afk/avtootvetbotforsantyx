@@ -1,5 +1,5 @@
 const { requireAdmin, requireOwner } = require('../../shared/auth');
-const { getAdminClient, request, fetchAllRows, toQuery, addWalletTransaction, rpcRequest } = require('../../shared/db');
+const { getAdminClient, request, fetchAllRows, toQuery, addWalletTransaction, rpcRequest, isPaidPurchase, orderSaleValue } = require('../../shared/db');
 const { sendMessage } = require('../../shared/telegram');
 
 function json(sc, body) { return { statusCode: sc, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }; }
@@ -73,14 +73,17 @@ exports.handler = async (event) => {
     if (event.httpMethod === 'GET' && event.queryStringParameters?.user_id) {
       const uid = String(event.queryStringParameters.user_id).replace(/\D/g, '');
       if (!uid) return json(400, { ok: false, error: 'user_id noto‘g‘ri' });
-      const [userRes, walletRes, ordersRes, txRes, plansRes] = await Promise.all([
+      const [userRes, walletRes, ordersRes, txRes, plansRes, paidRows] = await Promise.all([
         request(db, 'users', { query: `select=telegram_id,username,full_name,phone,phone_verified_at,is_blocked,language_code,created_at,updated_at,admin_note,tags&telegram_id=eq.${uid}&limit=1` })
           .catch(() => request(db, 'users', { query: `select=telegram_id,username,full_name,phone,phone_verified_at,is_blocked,language_code,created_at,updated_at&telegram_id=eq.${uid}&limit=1` }).catch(() => ({ data: [] }))),
         request(db, 'user_wallets', { query: `select=balance&user_telegram_id=eq.${uid}&limit=1` }).catch(() => ({ data: [] })),
         request(db, 'orders', { query: `select=order_number,created_at,unique_price,amount,status,order_type,promo_code,payment_method,plan_id&user_telegram_id=eq.${uid}&order=created_at.desc&limit=100` }).catch(() => ({ data: [] })),
         request(db, 'wallet_transactions', { query: `select=amount,type,description,created_at&user_telegram_id=eq.${uid}&order=created_at.desc&limit=100` }).catch(() => ({ data: [] })),
         request(db, 'plans', { query: 'select=id,name' }).catch(() => ({ data: [] })),
+        fetchAllRows(db, 'orders', `select=order_type,status,base_price,amount,discount_amount&user_telegram_id=eq.${uid}&order=created_at.asc,id.asc`).catch(() => []),
       ]);
+      const paidPurchases = paidRows.filter(isPaidPurchase);
+      const totalSpent = paidPurchases.reduce((sum, o) => sum + orderSaleValue(o), 0);
       const planMap = {};
       for (const p of plansRes.data || []) planMap[p.id] = p.name;
       const balance = Number(walletRes.data?.[0]?.balance || 0);
@@ -99,7 +102,7 @@ exports.handler = async (event) => {
         amount: Number(t.amount), type: t.type, description: t.description, created_at: t.created_at,
       }));
       const user = userRes.data?.[0] || { telegram_id: uid };
-      return json(200, { ok: true, user, balance, purchases, balanceHistory });
+      return json(200, { ok: true, user, balance, total_spent: totalSpent, paid_purchases: paidPurchases.length, purchases, balanceHistory });
     }
 
     // --- Foydalanuvchilar ro'yxati (balans + xaridlar soni + oxirgi faollik) ---
@@ -116,21 +119,35 @@ exports.handler = async (event) => {
         fetchAllRows(db, 'users', `select=${cols}&${usersOrder}`)
           .catch(() => fetchAllRows(db, 'users', `select=telegram_id,username,full_name,phone,language_code,created_at&${usersOrder}`)),
         fetchAllRows(db, 'user_wallets', 'select=user_telegram_id,balance&order=user_telegram_id.asc').catch(() => []),
-        fetchAllRows(db, 'orders', 'select=user_telegram_id,created_at,order_type&order=created_at.asc,id.asc').catch(() => []),
+        fetchAllRows(db, 'orders', 'select=user_telegram_id,created_at,order_type,status,base_price,amount,discount_amount&order=created_at.asc,id.asc').catch(() => []),
       ]);
       const balanceMap = {};
       for (const w of walletRows) balanceMap[String(w.user_telegram_id)] = Number(w.balance || 0);
+      // Xaridlar soni va "jami sarflagan" — faqat pul tushgan xaridlar (dashboard
+      // tushumi bilan bir xil qoida). Ilgari muddati o'tgan/rad etilgan
+      // buyurtmalar ham "xarid" sanalardi.
       const purchaseMap = {};
+      const spentMap = {};
       const lastMap = {};
       for (const o of orderRows) {
         const id = String(o.user_telegram_id);
-        if (String(o.order_type || 'purchase') !== 'topup') purchaseMap[id] = (purchaseMap[id] || 0) + 1;
+        if (isPaidPurchase(o)) {
+          purchaseMap[id] = (purchaseMap[id] || 0) + 1;
+          spentMap[id] = (spentMap[id] || 0) + orderSaleValue(o);
+        }
         lastMap[id] = o.created_at; // o'sish tartibi — oxirgisi eng yangi
       }
       // Panel uchun eng yangilari tepada
       const users = userRows.reverse().map((u) => {
         const id = String(u.telegram_id);
-        return { ...u, tags: Array.isArray(u.tags) ? u.tags : [], balance: balanceMap[id] || 0, purchases: purchaseMap[id] || 0, last_activity: lastMap[id] || u.updated_at || u.created_at };
+        return {
+          ...u,
+          tags: Array.isArray(u.tags) ? u.tags : [],
+          balance: balanceMap[id] || 0,
+          purchases: purchaseMap[id] || 0,
+          total_spent: spentMap[id] || 0,
+          last_activity: lastMap[id] || u.updated_at || u.created_at,
+        };
       });
       // Raqam bermaganlar "foydalanuvchi safida" emas — panel ularni sukut
       // bo'yicha yashiradi; sonlar alohida ko'rsatiladi.

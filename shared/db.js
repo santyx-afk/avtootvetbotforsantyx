@@ -51,6 +51,21 @@ async function fetchAllRows(client, table, baseQuery, { pageSize = 1000, maxRows
   return out;
 }
 
+// Pul tushgan buyurtma holatlari — dashboard tushumi va mijoz statistikasi
+// uchun yagona ta'rif (biri boshqacha sanasa, raqamlar mos kelmay qoladi).
+const PAID_ORDER_STATUSES = new Set(['completed', 'approved', 'payment_detected', 'delivering']);
+
+// Sotilgan tovar qiymati: base_price − chegirma. Balansdan to'langan qism ham
+// kiradi — mijoz uni ham sarflagan.
+function orderSaleValue(o) {
+  const base = o.base_price != null ? Number(o.base_price) : Number(o.amount || 0);
+  return Math.max(0, base - Number(o.discount_amount || 0));
+}
+
+function isPaidPurchase(o) {
+  return String(o.order_type || 'purchase') !== 'topup' && PAID_ORDER_STATUSES.has(o.status);
+}
+
 async function rpcRequest(client, fnName, body = {}) {
   const url = `${client.url}/rest/v1/rpc/${fnName}`;
   const response = await fetch(url, {
@@ -1259,6 +1274,9 @@ module.exports = {
   getAdminClient,
   request,
   fetchAllRows,
+  PAID_ORDER_STATUSES,
+  orderSaleValue,
+  isPaidPurchase,
   fetchSettings,
   fetchCategories,
   fetchPlansByCategory,

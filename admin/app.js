@@ -429,6 +429,7 @@ const USER_FILTERS = {
 };
 
 const USER_SORTS = {
+  spent: (a, b) => Number(b.total_spent || 0) - Number(a.total_spent || 0),
   balance: (a, b) => Number(b.balance || 0) - Number(a.balance || 0),
   purchases: (a, b) => Number(b.purchases || 0) - Number(a.purchases || 0),
   activity: (a, b) => new Date(b.last_activity || 0) - new Date(a.last_activity || 0),
@@ -461,13 +462,14 @@ function renderUsers(filter = '') {
   // Ilgari qat'iy 100 ta ko'rsatilib "+N ta yana..." deb yozilardi va qolganiga
   // yetib bo'lmasdi. Endi "Yana ko'rsatish" tugmasi bilan ochiladi.
   const shown = filtered.slice(0, state.usersShown);
-  root.innerHTML = `<table><thead><tr><th>Telegram ID</th><th>Username</th><th>Ism</th><th>Telefon</th><th>Balans</th><th>Xaridlar</th><th>Faollik</th><th>Teglar</th><th>Blocked</th><th></th></tr></thead><tbody>${shown.map((u) => `
+  root.innerHTML = `<table><thead><tr><th>Telegram ID</th><th>Username</th><th>Ism</th><th>Telefon</th><th>Balans</th><th>Sarflagan</th><th>Xaridlar</th><th>Faollik</th><th>Teglar</th><th>Blocked</th><th></th></tr></thead><tbody>${shown.map((u) => `
     <tr>
       <td>${userLinkHtml(u.telegram_id)}</td>
       <td>${u.username ? `@${esc(u.username)}` : '-'}</td>
       <td>${esc(u.full_name || '-')}${u.admin_note ? ` <span title="${esc(u.admin_note)}">📝</span>` : ''}</td>
       <td>${u.phone ? `${esc(u.phone)}${u.phone_verified_at ? ' <span title="Telegram orqali tasdiqlangan">✅</span>' : ''}` : '<span class="hint">yo\'q</span>'}</td>
       <td>${money(u.balance)}</td>
+      <td>${money(u.total_spent)}</td>
       <td>${esc(u.purchases || 0)}</td>
       <td>${u.last_activity ? esc(new Date(u.last_activity).toLocaleDateString('uz-UZ')) : '-'}</td>
       <td>${(u.tags || []).map((t) => `<span class="badge">${esc(t)}</span>`).join(' ') || '-'}</td>
@@ -1578,6 +1580,8 @@ const PURCHASE_STATUS = { completed: 'Tasdiqlangan', approved: 'Tasdiqlangan', p
 
 function renderUserDetail(data) {
   document.getElementById('userBalance').textContent = Number(data.balance || 0).toLocaleString('uz-UZ');
+  const spentEl = document.getElementById('userTotalSpent');
+  if (spentEl) spentEl.textContent = `${money(data.total_spent || 0)} UZS · ${Number(data.paid_purchases || 0)} ta to'langan xarid`;
   const purchases = data.purchases || [];
   document.getElementById('userPurchases').innerHTML = purchases.length
     ? `<table><thead><tr><th>Sana</th><th>№</th><th>Obuna</th><th>Narx</th><th>Status</th><th>Promo</th></tr></thead><tbody>${purchases.map((p) => `<tr><td>${dt(p.created_at)}</td><td>${esc(p.order_number || '-')}</td><td>${esc(p.plan_name)}</td><td>${money(p.amount)}</td><td><span class="badge">${esc(PURCHASE_STATUS[p.status] || p.status)}</span></td><td>${esc(p.promo_code || '-')}</td></tr>`).join('')}</tbody></table>`
@@ -1601,6 +1605,7 @@ async function openUserModal(userId) {
   document.getElementById('balanceAmount').value = '';
   document.getElementById('balanceReason').value = '';
   document.getElementById('userPurchases').innerHTML = '';
+  document.getElementById('userTotalSpent').textContent = '…';
   document.getElementById('userBalanceHistory').innerHTML = '';
   document.getElementById('userModal').hidden = false;
   document.getElementById('userNote').value = '';
@@ -2308,7 +2313,7 @@ const HELP_ITEMS = [
   { icon: '❓', title: 'FAQ', body: 'Profil sahifasida ko’rinadigan savol-javoblar. Savol va javob yozing, tartibini (↑/↓) belgilang.' },
   { icon: '🎟️', title: 'Promokodlar', body: 'Chegirma kodlari. Kod, chegirma turi (foiz/summa), qiymati, minimal buyurtma summasi, amal muddati. Foydalanuvchi checkout’da kiritadi.' },
   { icon: '⭐', title: 'Sharhlar', body: 'Foydalanuvchilar yozgan sharhlar. Tasdiqlash, rad etish yoki o’chirish mumkin. Faqat tasdiqlangan sharhlar mahsulotda ko’rinadi.' },
-  { icon: '👥', title: 'Foydalanuvchilar', body: 'Ro’yxatdan o’tgan barcha foydalanuvchilar. Qidiruv, bloklash/blokdan chiqarish mumkin. Bloklangan foydalanuvchi botni ham, Mini App’ni ham ishlata olmaydi.' },
+  { icon: '👥', title: 'Foydalanuvchilar', body: 'Ro’yxatdan o’tgan barcha foydalanuvchilar. Qidiruv, bloklash/blokdan chiqarish mumkin. Bloklangan foydalanuvchi botni ham, Mini App’ni ham ishlata olmaydi. “Sarflagan” — mijozning pul tushgan xaridlari summasi (chegirmadan keyin). “Ko’p sarflaganlar” saralashi eng sodiq mijozlarni tepaga chiqaradi.' },
   { icon: '🛒', title: 'Buyurtmalar', body: 'Barcha xaridlar. Statuslar: kutilmoqda, tasdiqlangan, rad etilgan, tugallangan. Admin approve/reject qiladi. "Batafsil" tugmasi qaysi akkaunt kimga va qachon ketganini, promokod va chegirmani ko’rsatadi. Qidiruv buyurtma raqami yoki Telegram ID bo’yicha. CSV export mumkin.' },
   { icon: '📥', title: 'Leadlar', body: 'Saytdagi "Izlagan obunangiz yo’qmi?" formasidan kelgan so’rovlar. Har biri adminga Telegram xabari sifatida ham keladi. Bajarilganini belgilash yoki o’chirish mumkin.' },
   { icon: '✉️', title: 'Xabar yuborish', body: 'Bitta foydalanuvchiga, matnli broadcast (segment bo’yicha) yoki «Admin xabari»: tugmani bossangiz bot sizga Telegram’da «xabar kutilyapti» deb yozadi, unga rasm/video/fayl/matn yuborasiz, bot ko’rsatib tasdiq so’raydi, tasdiqlagach hammaga ketadi. Yuborish fon rejimida, jarayon tarixda ko’rinadi, istalgan payt to’xtatish mumkin.' },

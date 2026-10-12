@@ -1,8 +1,7 @@
 const { requireAdmin } = require('../../shared/auth');
-const { getAdminClient, countRows, listRecentEvents, listEventsByType, listTable, request, toQuery } = require('../../shared/db');
+const { getAdminClient, countRows, listRecentEvents, listEventsByType, listTable, request, toQuery, PAID_ORDER_STATUSES: PAID, orderSaleValue: value } = require('../../shared/db');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const PAID = new Set(['completed', 'approved', 'payment_detected', 'delivering']);
 
 function aggregate(rows, key) {
   const counts = new Map();
@@ -46,10 +45,6 @@ function summarizeOrders(orders, { from, to }) {
   const topups = orders.filter((o) => String(o.order_type || '') === 'topup');
   const paidPurchases = purchases.filter((o) => PAID.has(o.status));
   const paidTopups = topups.filter((o) => PAID.has(o.status));
-  const value = (o) => {
-    const base = o.base_price != null ? Number(o.base_price) : Number(o.amount || 0);
-    return Math.max(0, base - Number(o.discount_amount || 0));
-  };
   const sales = paidPurchases.reduce((s, o) => s + value(o), 0);
   const cardIncome = [...paidPurchases, ...paidTopups].reduce((s, o) => s + Math.max(0, Number(o.unique_price || 0)), 0);
   const balancePaid = paidPurchases.reduce((s, o) => s + Number(o.balance_used || 0), 0);
