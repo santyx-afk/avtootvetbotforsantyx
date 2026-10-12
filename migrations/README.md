@@ -35,6 +35,7 @@ frontend murojaat qilib krash bo'lgani). Endi tartib quyidagicha.
 | [2026-09-05_admins-roles-waitlist.sql](2026-09-05_admins-roles-waitlist.sql) | 2026-09-05 | `admins` rollari (operator login/parol), `stock_waitlist` unique indeks |
 | [2026-09-23_stage2-hardening.sql](2026-09-23_stage2-hardening.sql) | ⏳ **kutilmoqda** | `orders.unique_price` partial unique index (to'lov to'qnashuvi) + `processed_updates` jadvali (takroriy Telegram update idempotentligi). Ixtiyoriy — kod migratsiyasiz ham ishlaydi, lekin himoyani kuchaytiradi. |
 | [2026-10-12_plans-cost-price.sql](2026-10-12_plans-cost-price.sql) | ⏳ **kutilmoqda** | Rejalarga `cost_price` (tannarx) — dashboard'da sof foyda. Xavfsiz, faqat bo'sh ustun qo'shadi. Qo'llanmaguncha foyda "tannarx kiritilmagan" deb ko'rsatiladi. |
+| [2026-10-12_credit-users.sql](2026-10-12_credit-users.sql) | ⏳ **kutilmoqda** | `credit_users()` — tanlangan guruhga (segment/teg) balans qo'shish, bitta tranzaksiyada; `admin_bulk_credits` — takroriy bosish himoyasi va tarix. Qo'llanmaguncha faqat "Hamma" guruhi ishlaydi. |
 
 ## BASELINE.md haqida
 

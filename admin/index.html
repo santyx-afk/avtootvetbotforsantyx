@@ -390,7 +390,7 @@
                   <input type="checkbox" id="userShowNoPhone" /> Raqamsizlarni ham ko'rsatish
                 </label>
                 <button id="reloadUsersButton">Yangilash</button>
-                <button id="creditAllButton" class="ghost owner-only">💸 Hammaga pul qo'shish</button>
+                <button id="creditAllButton" class="ghost owner-only">💸 Guruhga pul qo'shish</button>
               </div>
               <div id="usersCount" class="hint"></div>
               <div id="usersList" class="table-card"></div>
@@ -594,18 +594,23 @@
             <div id="creditAllModal" class="modal-overlay" hidden>
               <div class="modal-card">
                 <div class="modal-head">
-                  <h3>Hammaga pul qo'shish</h3>
+                  <h3>Guruhga pul qo'shish</h3>
                   <button type="button" id="creditAllClose" class="ghost">✕</button>
                 </div>
                 <p class="hint">
-                  Summa <strong>barcha bloklanmagan</strong> foydalanuvchilar balansiga
-                  qo'shiladi va ularga Telegram orqali xabar boradi.
+                  Summa tanlangan guruhdagi <strong>bloklanmagan</strong> foydalanuvchilar
+                  balansiga qo'shiladi va ularga Telegram orqali xabar boradi.
                   Bu amalni orqaga qaytarib bo'lmaydi.
                 </p>
                 <div class="grid-form">
+                  <label>Kimga
+                    <select id="creditGroup"><option value="all">Hamma (bloklanmaganlar)</option></select>
+                  </label>
+                  <label id="creditTagWrap" hidden>Teg<input id="creditTag" placeholder="masalan: vip" /></label>
                   <label>Summa (UZS)<input id="creditAllAmount" type="number" min="1" placeholder="10000" /></label>
                   <label>Sabab<input id="creditAllReason" placeholder="Masalan: Bayram sovg'asi" /></label>
                 </div>
+                <p id="creditPreview" class="hint"></p>
                 <p id="creditAllMsg" class="success-text"></p>
                 <div class="actions">
                   <button type="button" id="creditAllSubmit">Tasdiqlash va qo'shish</button>

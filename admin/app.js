@@ -1564,34 +1564,113 @@ document.getElementById('userModalMsg')?.addEventListener('click', () => {
   syncMessageForm();
 });
 
-// --- Hammaga pul qo'shish ---
+// --- Guruhga pul qo'shish ---
+// "Hamma" — eski credit-all; boshqa guruhlar (ommaviy xabar segmentlari yoki
+// teg) — credit-segment. Har oyna ochilganda yangi request_id: tarmoq xatosidan
+// keyin qayta bosilsa server uni takror deb rad etadi, pul ikki marta qo'shilmaydi.
+let creditRequestId = '';
+let creditPreviewCount = null;
+let creditPreviewTimer = null;
+
+function newCreditRequestId() {
+  return (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`).replace(/[^A-Za-z0-9-]/g, '');
+}
+
+function creditGroupBody() {
+  const segment = document.getElementById('creditGroup').value;
+  return { segment, tag: document.getElementById('creditTag').value.trim() };
+}
+
+function renderCreditPreview() {
+  const el = document.getElementById('creditPreview');
+  const amount = Number(document.getElementById('creditAllAmount').value || 0);
+  if (creditPreviewCount === null) { el.textContent = ''; return; }
+  el.textContent = `👥 ${creditPreviewCount} ta foydalanuvchi`
+    + (amount > 0 ? ` · jami ${money(amount * creditPreviewCount)} UZS` : '');
+}
+
+async function refreshCreditPreview() {
+  const { segment, tag } = creditGroupBody();
+  document.getElementById('creditTagWrap').hidden = segment !== 'tag';
+  creditPreviewCount = null;
+  const el = document.getElementById('creditPreview');
+  if (segment === 'all') {
+    // Hamma: ro'yxatdagi bloklanmaganlar (taxminiy — server aniq sanaydi)
+    creditPreviewCount = state.users.filter((u) => !u.is_blocked).length;
+    renderCreditPreview();
+    return;
+  }
+  if (segment === 'tag' && !tag) { el.textContent = 'Teg kiriting'; return; }
+  el.textContent = 'Sanalmoqda…';
+  try {
+    const res = await api('admin-users', { method: 'POST', body: JSON.stringify({ action: 'credit-segment', preview: true, segment, tag }) });
+    creditPreviewCount = Number(res.count || 0);
+    renderCreditPreview();
+  } catch (error) {
+    el.textContent = error.message || 'Sanab bo\'lmadi';
+  }
+}
+
+async function fillCreditGroups() {
+  if (!state.broadcastSegments) {
+    try {
+      const data = await api('admin-messages');
+      state.broadcastSegments = data.segments || null;
+    } catch { /* segmentlarsiz ham "Hamma" va "Teg" ishlaydi */ }
+  }
+  const segs = Object.entries(state.broadcastSegments || {}).filter(([k]) => k !== 'all');
+  document.getElementById('creditGroup').innerHTML = [
+    '<option value="all">Hamma (bloklanmaganlar)</option>',
+    ...segs.map(([k, v]) => `<option value="${esc(k)}">${esc(v)}</option>`),
+    '<option value="tag">Teg bo\'yicha…</option>',
+  ].join('');
+}
+
 bindModal('creditAllModal', 'creditAllClose');
-document.getElementById('creditAllButton')?.addEventListener('click', () => {
+document.getElementById('creditAllButton')?.addEventListener('click', async () => {
   document.getElementById('creditAllAmount').value = '';
   document.getElementById('creditAllReason').value = '';
+  document.getElementById('creditTag').value = '';
   document.getElementById('creditAllMsg').textContent = '';
+  creditRequestId = newCreditRequestId();
   document.getElementById('creditAllModal').hidden = false;
+  await fillCreditGroups();
+  refreshCreditPreview();
 });
+document.getElementById('creditGroup')?.addEventListener('change', () => refreshCreditPreview());
+document.getElementById('creditTag')?.addEventListener('input', () => {
+  clearTimeout(creditPreviewTimer);
+  creditPreviewTimer = setTimeout(refreshCreditPreview, 400);
+});
+document.getElementById('creditAllAmount')?.addEventListener('input', renderCreditPreview);
 document.getElementById('creditAllSubmit')?.addEventListener('click', async () => {
   const btn = document.getElementById('creditAllSubmit');
   const msg = document.getElementById('creditAllMsg');
   const amount = Number(document.getElementById('creditAllAmount').value || 0);
   const reason = document.getElementById('creditAllReason').value.trim();
+  const { segment, tag } = creditGroupBody();
   if (!(amount > 0)) {
     msg.style.color = 'var(--danger)';
     msg.textContent = 'Summa kiriting';
     return;
   }
+  const groupName = document.getElementById('creditGroup').selectedOptions[0]?.textContent || '';
+  const who = segment === 'tag' ? `"${tag}" tegli` : `"${groupName}" guruhidagi`;
+  const count = creditPreviewCount !== null ? ` (${creditPreviewCount} ta, jami ${money(amount * creditPreviewCount)} UZS)` : '';
   // Qaytarib bo'lmaydigan amal — aniq tasdiq so'raymiz.
-  if (!confirm(`Barcha bloklanmagan foydalanuvchilar balansiga ${money(amount)} UZS qo'shilsinmi? Bu amalni orqaga qaytarib bo'lmaydi.`)) return;
+  if (!confirm(`${who} bloklanmagan foydalanuvchilar balansiga ${money(amount)} UZS qo'shilsinmi${count}? Bu amalni orqaga qaytarib bo'lmaydi.`)) return;
 
   btn.disabled = true;
   msg.style.color = '';
   msg.textContent = 'Bajarilmoqda…';
   try {
-    const res = await api('admin-users', { method: 'POST', body: JSON.stringify({ action: 'credit-all', amount, reason }) });
+    const body = segment === 'all'
+      ? { action: 'credit-all', amount, reason }
+      : { action: 'credit-segment', segment, tag, amount, reason, request_id: creditRequestId };
+    const res = await api('admin-users', { method: 'POST', body: JSON.stringify(body) });
     msg.style.color = 'var(--success, #16a34a)';
     msg.textContent = res.message || 'Bajarildi';
+    creditRequestId = newCreditRequestId(); // keyingi amal — yangi ID
     await loadUsers();
   } catch (error) {
     msg.style.color = 'var(--danger)';
@@ -2360,7 +2439,7 @@ const HELP_ITEMS = [
   { icon: '❓', title: 'FAQ', body: 'Profil sahifasida ko’rinadigan savol-javoblar. Savol va javob yozing, tartibini (↑/↓) belgilang.' },
   { icon: '🎟️', title: 'Promokodlar', body: 'Chegirma kodlari. Kod, chegirma turi (foiz/summa), qiymati, minimal buyurtma summasi, amal muddati. Foydalanuvchi checkout’da kiritadi.' },
   { icon: '⭐', title: 'Sharhlar', body: 'Foydalanuvchilar yozgan sharhlar. Tasdiqlash, rad etish yoki o’chirish mumkin. Faqat tasdiqlangan sharhlar mahsulotda ko’rinadi.' },
-  { icon: '👥', title: 'Foydalanuvchilar', body: 'Ro’yxatdan o’tgan barcha foydalanuvchilar. Qidiruv, bloklash/blokdan chiqarish mumkin. Bloklangan foydalanuvchi botni ham, Mini App’ni ham ishlata olmaydi. “Sarflagan” — mijozning pul tushgan xaridlari summasi (chegirmadan keyin). “Ko’p sarflaganlar” saralashi eng sodiq mijozlarni tepaga chiqaradi.' },
+  { icon: '👥', title: 'Foydalanuvchilar', body: 'Ro’yxatdan o’tgan barcha foydalanuvchilar. Qidiruv, bloklash/blokdan chiqarish mumkin. Bloklangan foydalanuvchi botni ham, Mini App’ni ham ishlata olmaydi. “Sarflagan” — mijozning pul tushgan xaridlari summasi (chegirmadan keyin). “Ko’p sarflaganlar” saralashi eng sodiq mijozlarni tepaga chiqaradi. “💸 Guruhga pul qo’shish” — hammaga, ommaviy xabar segmentiga (xarid qilganlar, balansi borlar, 30 kun faol bo’lmaganlar, til…) yoki teg bo’yicha (masalan “vip”) pul qo’shadi; oldin nechta odamga va jami qancha ketishi ko’rsatiladi. Tugma ikki marta bosilsa ham pul bir marta qo’shiladi.' },
   { icon: '🛒', title: 'Buyurtmalar', body: 'Barcha xaridlar. Statuslar: kutilmoqda, tasdiqlangan, rad etilgan, tugallangan. Admin approve/reject qiladi. "Batafsil" tugmasi qaysi akkaunt kimga va qachon ketganini, promokod va chegirmani ko’rsatadi. Qidiruv buyurtma raqami yoki Telegram ID bo’yicha. CSV export mumkin.' },
   { icon: '📥', title: 'Leadlar', body: 'Saytdagi "Izlagan obunangiz yo’qmi?" formasidan kelgan so’rovlar. Har biri adminga Telegram xabari sifatida ham keladi. Bajarilganini belgilash yoki o’chirish mumkin.' },
   { icon: '✉️', title: 'Xabar yuborish', body: 'Bitta foydalanuvchiga, matnli broadcast (segment bo’yicha) yoki «Admin xabari»: tugmani bossangiz bot sizga Telegram’da «xabar kutilyapti» deb yozadi, unga rasm/video/fayl/matn yuborasiz, bot ko’rsatib tasdiq so’raydi, tasdiqlagach hammaga ketadi. Yuborish fon rejimida, jarayon tarixda ko’rinadi, istalgan payt to’xtatish mumkin.' },
