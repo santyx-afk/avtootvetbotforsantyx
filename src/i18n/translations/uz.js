@@ -255,6 +255,13 @@ export default {
     purchased: 'Olingan',
     expires: 'Tugaydi',
     period: 'Amal qilish muddati',
+    reveal: 'Login va parolni ko\'rsatish',
+    revealLoading: 'Yuklanmoqda...',
+    hide: 'Yashirish',
+    revealWarning: 'Bu ma\'lumotlarni hech kimga bermang. 2 daqiqadan keyin o\'zi yashiriladi.',
+    revealNone: 'Bu buyurtma uchun saqlangan ma\'lumot topilmadi — botdagi xabarga qarang yoki qo\'llab-quvvatlashga yozing.',
+    revealError: 'Ma\'lumotni olib bo\'lmadi. Keyinroq urinib ko\'ring.',
+    revealTooMany: 'Juda ko\'p so\'rov. 10 daqiqadan keyin urinib ko\'ring.',
   },
   wishlist: {
     priceDropped: 'Narx tushdi',

@@ -255,6 +255,13 @@ export default {
     purchased: 'Purchased',
     expires: 'Expires',
     period: 'Validity period',
+    reveal: 'Show login and password',
+    revealLoading: 'Loading...',
+    hide: 'Hide',
+    revealWarning: 'Never share these details. They hide automatically after 2 minutes.',
+    revealNone: 'No saved details for this order — check the bot message or contact support.',
+    revealError: 'Could not load the details. Please try again later.',
+    revealTooMany: 'Too many requests. Please try again in 10 minutes.',
   },
   wishlist: {
     priceDropped: 'Price dropped',

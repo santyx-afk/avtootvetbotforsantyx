@@ -14,7 +14,9 @@ const {
   setUserAwaitingReceipt,
   getOrderById,
   getOrderItems,
-  getInventoryItemById,
+  fetchPlan,
+  createAuditLog,
+  toQuery,
   createOrder,
   isUniqueViolation,
   generateUniquePrice,
@@ -62,31 +64,60 @@ async function orderRateLimit(supabase, telegramId) {
 }
 
 
-// Yetkazilgan buyurtma elementlaridan kredensiallarni (deshifrlangan) chiqaradi.
-async function collectDeliveries(supabase, orderId) {
-  const items = await getOrderItems(supabase, orderId);
+// Kredensial ko'rsatiladigan yetkazish turlari ("Mening akkauntlarim").
+const REVEALABLE_TYPES = new Set(['auto_account', 'license_key', 'instruction_only']);
+
+// Buyurtmaga yetkazilgan kredensiallar (deshifrlangan). Chaqiruvchi buyurtma
+// egasini OLDIN tekshiradi; bu yerda ham inventar faqat shu buyurtma VA shu
+// egasiga biriktirilgani bo'yicha olinadi (ikki qavat himoya).
+//
+// Manba — inventory_items.assigned_order_id: zaxiradan olishda (claim RPC)
+// aynan shu to'ldiriladi. Ilgari order_items.inventory_item_id ishlatilardi,
+// lekin uni hech qaysi kod to'ldirmaydi — shuning uchun to'lovdan keyingi
+// ekranda login/parol umuman chiqmasdi.
+async function collectDeliveries(supabase, order) {
+  const [items, invRes] = await Promise.all([
+    getOrderItems(supabase, order.id).catch(() => []),
+    request(supabase, 'inventory_items', {
+      query: toQuery({
+        select: '*',
+        assigned_order_id: `eq.${order.id}`,
+        assigned_user_telegram_id: `eq.${order.user_telegram_id}`,
+        status: 'in.(sold,delivered)',
+        order: 'sold_at.asc.nullslast,id.asc',
+      }),
+    }).catch(() => ({ data: [] })),
+  ]);
+  const lines = items.length
+    ? items.map((it) => it.plan)
+    : [await fetchPlan(supabase, order.plan_id).catch(() => null)];
+  const inventory = invRes.data || [];
+  const used = new Set();
   const out = [];
-  for (const it of items) {
-    const plan = it.plan;
+  for (const plan of lines) {
     const dtype = plan?.delivery_type || 'manual';
     let credential = null;
-    if (it.inventory_item_id) {
-      const inv = await getInventoryItemById(supabase, it.inventory_item_id).catch(() => null);
-      if (inv && dtype === 'auto_account') {
-        const { login, password } = resolveAutoAccount(inv);
-        if (login || password) credential = { type: 'account', login, password };
-      } else if (inv && dtype === 'license_key') {
-        const key = resolveLicenseKey(inv);
-        if (key) credential = { type: 'key', key };
+    if (dtype === 'auto_account' || dtype === 'license_key') {
+      const inv = inventory.find((x) => !used.has(x.id) && String(x.plan_id) === String(plan.id));
+      if (inv) {
+        used.add(inv.id);
+        if (dtype === 'auto_account') {
+          const { login, password } = resolveAutoAccount(inv);
+          if (login || password) credential = { type: 'account', login, password };
+        } else {
+          const key = resolveLicenseKey(inv);
+          if (key) credential = { type: 'key', key, instructions: plan.deliveryInstructions || '' };
+        }
       }
-    }
-    if (!credential && dtype === 'instruction_only') {
+    } else if (dtype === 'instruction_only') {
       credential = { type: 'instruction', text: plan?.deliveryInstructions || '' };
     }
     out.push({ plan_name: plan?.name || '', delivery_type: dtype, credential });
   }
   return out;
 }
+
+const isDeliveredOrder = (order) => order.delivery_status === 'delivered' || order.status === 'completed';
 
 // Mini App (React) uchun asosiy API.
 // Har bir so'rov Telegram initData (X-Telegram-Init-Data header) bilan tasdiqlanadi.
@@ -1066,7 +1097,7 @@ exports.handler = async (event) => {
           new Date(order.expires_at).getTime() < Date.now());
       const paid = ['payment_detected', 'delivering', 'completed'].includes(order.status);
       const delivered = order.delivery_status === 'delivered' || order.status === 'completed';
-      const deliveries = delivered ? await collectDeliveries(supabase, orderId).catch(() => []) : [];
+      const deliveries = delivered ? await collectDeliveries(supabase, order).catch(() => []) : [];
       return json(200, {
         ok: true,
         status: order.status,
@@ -1083,6 +1114,37 @@ exports.handler = async (event) => {
       });
     }
 
+    // "Mening akkauntlarim": yetkazilgan login/parol/kalitni qayta ko'rsatish.
+    // Faqat buyurtma egasiga, faqat so'ralganda; har ko'rish audit_logs ga
+    // yoziladi va chastotasi cheklangan (bitta hisobdan ko'plab so'rov — shubhali).
+    if (body.action === 'my-credentials') {
+      const orderId = String(body.orderId || '');
+      if (!/^[0-9a-f-]{36}$/i.test(orderId)) return json(400, { ok: false, error: 'bad_order_id' });
+      const gate = await rateLimit.hit(supabase, {
+        scope: 'credentials_view',
+        key: telegramId,
+        limit: 20,
+        windowSeconds: 600,
+        blockSeconds: 600,
+      });
+      if (!gate.allowed) {
+        return json(429, { ok: false, error: 'too_many_requests', retry_after: gate.retryAfter }, { 'Retry-After': String(gate.retryAfter) });
+      }
+      const order = await getOrderById(supabase, orderId);
+      // Begona buyurtma — "topilmadi" (borligini ham oshkor qilmaymiz)
+      if (!order || String(order.user_telegram_id) !== telegramId) return json(404, { ok: false, error: 'not_found' });
+      if (!isDeliveredOrder(order)) return json(409, { ok: false, error: 'not_delivered' });
+      const deliveries = await collectDeliveries(supabase, order);
+      await createAuditLog(supabase, {
+        order_id: order.id,
+        user_telegram_id: telegramId,
+        action: 'credentials_viewed',
+        status: order.status,
+        metadata: { source: auth.source, shown: deliveries.filter((d) => d.credential).length },
+      });
+      return json(200, { ok: true, order_number: order.order_number, deliveries }, { 'Cache-Control': 'no-store' });
+    }
+
     if (body.action === 'history') {
       const ordersRes = await request(supabase, 'orders', {
         query: `select=*&user_telegram_id=eq.${telegramId}&order=created_at.desc&limit=50`,
@@ -1097,7 +1159,7 @@ exports.handler = async (event) => {
         const inList = `(${purchases.map((o) => o.id).join(',')})`;
         const [oiRes, subsRes] = await Promise.all([
           request(supabase, 'order_items', {
-            query: `select=order_id,quantity,unit_price,plans(name)&order_id=in.${inList}`,
+            query: `select=order_id,quantity,unit_price,plans(name,delivery_type)&order_id=in.${inList}`,
           }).catch(() => ({ data: [] })),
           request(supabase, 'subscriptions', {
             query: `select=order_id,started_at,expires_at&order_id=in.${inList}`,
@@ -1108,6 +1170,7 @@ exports.handler = async (event) => {
             name: it.plans?.name || '—',
             quantity: Number(it.quantity || 1),
             price: Number(it.unit_price || 0),
+            delivery_type: it.plans?.delivery_type || 'manual',
           });
         }
         for (const s of subsRes.data || []) {
@@ -1115,16 +1178,33 @@ exports.handler = async (event) => {
         }
       }
 
-      const orders = purchases.map((o) => ({
-        id: o.id,
-        order_number: o.order_number,
-        status: statusCategory(o.status),
-        amount: Number(o.unique_price ?? o.amount ?? 0),
-        currency: 'UZS',
-        created_at: o.created_at,
-        items: itemsByOrder[o.id] || [],
-        subscription: subsByOrder[o.id] || null,
-      }));
+      // Elementsiz (eski/bot) buyurtmalar uchun reja turi orders.plan_id dan
+      const legacyPlanIds = [...new Set(purchases.filter((o) => !itemsByOrder[o.id] && o.plan_id).map((o) => o.plan_id))];
+      const planTypes = {};
+      if (legacyPlanIds.length) {
+        const { data: planRows } = await request(supabase, 'plans', {
+          query: `select=id,delivery_type&id=in.(${legacyPlanIds.join(',')})`,
+        }).catch(() => ({ data: [] }));
+        for (const p of planRows || []) planTypes[p.id] = p.delivery_type;
+      }
+
+      const orders = purchases.map((o) => {
+        const items = itemsByOrder[o.id] || [];
+        const types = items.length ? items.map((it) => it.delivery_type) : [planTypes[o.plan_id] || 'manual'];
+        return {
+          id: o.id,
+          order_number: o.order_number,
+          status: statusCategory(o.status),
+          amount: Number(o.unique_price ?? o.amount ?? 0),
+          currency: 'UZS',
+          created_at: o.created_at,
+          items: items.map(({ delivery_type: _omit, ...it }) => it),
+          subscription: subsByOrder[o.id] || null,
+          // "👁 Ko'rsatish" tugmasi: yetkazilgan va avtomatik ma'lumotli bo'lsa.
+          // Kredensialning o'zi bu yerda YUBORILMAYDI — faqat tugma bosilganda.
+          can_reveal: isDeliveredOrder(o) && types.some((t) => REVEALABLE_TYPES.has(t)),
+        };
+      });
 
       return json(200, { ok: true, orders });
     }
