@@ -110,6 +110,7 @@ export default {
       title: 'Профиль',
       language: 'Язык',
       support: 'Поддержка',
+      supportChat: 'Написать админу в боте',
       settings: 'Настройки',
     },
   },

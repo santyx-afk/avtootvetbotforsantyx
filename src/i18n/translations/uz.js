@@ -110,6 +110,7 @@ export default {
       title: 'Profil',
       language: 'Til',
       support: 'Qo\'llab-quvvatlash',
+      supportChat: 'Adminga bot orqali yozish',
       settings: 'Sozlamalar',
     },
   },

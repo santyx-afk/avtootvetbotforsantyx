@@ -1211,6 +1211,9 @@ async function setUserAwaitingReceipt(client, telegramId, patchState = {}) {
   const next = {
     ...current,
     awaiting_receipt: true,
+    // Yangi to'lov boshlandi — murojaat rejimi yopiladi, aks holda chek
+    // rasmi chek emas, murojaat deb qabul qilinardi.
+    support_mode: false,
     ...patchState,
   };
   await saveUserState(client, telegramId, next);

@@ -37,6 +37,7 @@ frontend murojaat qilib krash bo'lgani). Endi tartib quyidagicha.
 | [2026-10-12_plans-cost-price.sql](2026-10-12_plans-cost-price.sql) | ⏳ **kutilmoqda** | Rejalarga `cost_price` (tannarx) — dashboard'da sof foyda. Xavfsiz, faqat bo'sh ustun qo'shadi. Qo'llanmaguncha foyda "tannarx kiritilmagan" deb ko'rsatiladi. |
 | [2026-10-12_credit-users.sql](2026-10-12_credit-users.sql) | ⏳ **kutilmoqda** | `credit_users()` — tanlangan guruhga (segment/teg) balans qo'shish, bitta tranzaksiyada; `admin_bulk_credits` — takroriy bosish himoyasi va tarix. Qo'llanmaguncha faqat "Hamma" guruhi ishlaydi. |
 | [2026-10-12_broadcast-scheduled.sql](2026-10-12_broadcast-scheduled.sql) | ⏳ **kutilmoqda** | `broadcast_jobs.scheduled_at` + `scheduled` holati — ommaviy xabarni keyinroq yuborish. Qo'llanmaguncha faqat darhol yuborish ishlaydi. |
+| [2026-10-12_support-messages.sql](2026-10-12_support-messages.sql) | ⏳ **kutilmoqda** | `support_messages` — bot ichidagi murojaatlar va admin javoblari (panel → «💬 Murojaatlar»). Qo'llanmaguncha bot eski "Admin bilan bog'lanish" havolasini beradi. |
 
 ## BASELINE.md haqida
 

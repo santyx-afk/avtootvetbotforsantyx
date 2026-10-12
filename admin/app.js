@@ -64,6 +64,7 @@ const views = {
   faq: document.getElementById('faqView'),
   users: document.getElementById('usersView'),
   leads: document.getElementById('leadsView'),
+  support: document.getElementById('supportView'),
   referrals: document.getElementById('referralsView'),
   subscriptions: document.getElementById('subscriptionsView'),
   wallet: document.getElementById('walletView'),
@@ -878,6 +879,111 @@ async function loadFaq() {
   } catch { state.faq = []; }
 }
 
+// --- Murojaatlar (bot ichidagi qo'llab-quvvatlash) ---
+let supportCountTimer = null;
+let supportCurrentId = null;
+
+async function loadSupportCount() {
+  try {
+    const { unread = 0 } = await api('admin-support?count=1');
+    const badge = document.getElementById('supportBadge');
+    if (badge) {
+      badge.textContent = String(unread);
+      badge.hidden = !unread;
+    }
+  } catch { /* nishon muhim emas */ }
+}
+
+async function loadSupport() {
+  const root = document.getElementById('supportList');
+  if (!root) return;
+  try {
+    const data = await api('admin-support');
+    if (data.migrationMissing) {
+      root.innerHTML = `<p class="detail-empty">${esc(data.hint)}</p>`;
+      return;
+    }
+    const convs = data.conversations || [];
+    root.innerHTML = convs.length
+      ? `<table><thead><tr><th>Mijoz</th><th>Oxirgi xabar</th><th>Buyurtma</th><th>Vaqt</th><th></th></tr></thead><tbody>${convs.map((c) => {
+        const last = c.last || {};
+        const preview = last.text ? String(last.text).slice(0, 80) + (last.text.length > 80 ? '…' : '') : (last.file_type ? '📎 fayl' : '—');
+        return `<tr>
+          <td>${userLinkHtml(c.telegram_id, userLabel(c.user || { telegram_id: c.telegram_id }))}${c.unread ? ` <span class="badge">${esc(c.unread)} yangi</span>` : ''}</td>
+          <td>${last.direction === 'out' ? '↩️ ' : ''}${esc(preview)}</td>
+          <td>${c.order_number ? `#${esc(c.order_number)}` : '-'}</td>
+          <td>${dt(last.created_at)}</td>
+          <td><button class="ghost support-open" data-id="${esc(c.telegram_id)}">Ochish</button></td>
+        </tr>`;
+      }).join('')}</tbody></table>`
+      : '<p class="detail-empty">Hozircha murojaat yo\'q.</p>';
+  } catch (error) {
+    root.innerHTML = `<p class="detail-empty">${esc(error.message || 'Yuklanmadi')}</p>`;
+  }
+}
+
+function renderSupportThread(data) {
+  const u = data.user || {};
+  document.getElementById('supportThreadTitle').textContent = `Suhbat: ${userLabel(u)}${u.phone ? ` · ${u.phone}` : ''}`;
+  const FILE = { photo: '🖼 Rasm', document: '📎 Fayl', video: '🎬 Video', voice: '🎤 Ovozli xabar' };
+  const root = document.getElementById('supportThread');
+  root.innerHTML = (data.messages || []).map((m) => [
+    `<div class="support-msg ${m.direction === 'out' ? 'out' : ''}">`,
+    `<div class="support-meta">${m.direction === 'out' ? esc(m.admin_name || 'Admin') : 'Mijoz'} · ${dt(m.created_at)}${m.order_number ? ` · #${esc(m.order_number)}` : ''}</div>`,
+    m.file_type ? `<div>${esc(FILE[m.file_type] || '📎 Fayl')} <span class="hint">(nusxasi Telegram'da adminlarga yuborilgan)</span></div>` : '',
+    m.text ? `<div class="support-text">${esc(m.text)}</div>` : '',
+    '</div>',
+  ].join('')).join('') || '<p class="detail-empty">Xabar yo\'q.</p>';
+  root.scrollTop = root.scrollHeight;
+}
+
+async function openSupportThread(userId) {
+  supportCurrentId = userId;
+  const card = document.getElementById('supportThreadCard');
+  card.hidden = false;
+  document.getElementById('supportReplyMsg').textContent = '';
+  document.getElementById('supportThread').innerHTML = '<p class="detail-empty">Yuklanmoqda…</p>';
+  const data = await api(`admin-support?user_id=${encodeURIComponent(userId)}`);
+  renderSupportThread(data);
+  card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  loadSupportCount();
+  loadSupport();
+}
+
+document.getElementById('supportRefresh')?.addEventListener('click', () => loadSupport());
+document.getElementById('supportList')?.addEventListener('click', (event) => {
+  const btn = event.target.closest('.support-open');
+  if (btn) openSupportThread(btn.dataset.id).catch((e) => alert(e.message));
+});
+document.getElementById('supportThreadClose')?.addEventListener('click', () => {
+  document.getElementById('supportThreadCard').hidden = true;
+  supportCurrentId = null;
+});
+document.getElementById('supportReplySend')?.addEventListener('click', async () => {
+  if (!supportCurrentId) return;
+  const textEl = document.getElementById('supportReplyText');
+  const msg = document.getElementById('supportReplyMsg');
+  const btn = document.getElementById('supportReplySend');
+  const text = textEl.value.trim();
+  if (!text) { msg.style.color = 'var(--danger)'; msg.textContent = 'Javob yozing'; return; }
+  btn.disabled = true;
+  msg.style.color = '';
+  msg.textContent = 'Yuborilmoqda…';
+  try {
+    await api('admin-support', { method: 'POST', body: JSON.stringify({ telegram_id: supportCurrentId, text }) });
+    textEl.value = '';
+    msg.style.color = 'var(--success, #16a34a)';
+    msg.textContent = 'Yuborildi';
+    renderSupportThread(await api(`admin-support?user_id=${encodeURIComponent(supportCurrentId)}`));
+    loadSupport();
+  } catch (error) {
+    msg.style.color = 'var(--danger)';
+    msg.textContent = error.message || 'Xatolik';
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 // --- Leadlar (saytdagi forma) ---
 function renderLeads() {
   const root = document.getElementById('leadsList');
@@ -1056,7 +1162,10 @@ async function initApp() {
   document.body.classList.add('authed');
   document.getElementById('loginView').hidden = true;
   document.getElementById('appView').hidden = false;
-  const loaders = [loadDashboard(), loadData(), loadReviews(), loadUsers(), loadLeads(), loadBroadcasts(), loadSubscriptions()];
+  const loaders = [loadDashboard(), loadData(), loadReviews(), loadUsers(), loadLeads(), loadBroadcasts(), loadSubscriptions(), loadSupportCount()];
+  // Yangi murojaatlar nishoni minutiga bir yangilanadi
+  clearInterval(supportCountTimer);
+  supportCountTimer = setInterval(() => loadSupportCount(), 60000);
   if (state.role === 'owner') loaders.push(loadSettings(), loadBanners(), loadPromos(), loadFaq(), loadReferrals(), loadAdmins());
   await Promise.all(loaders);
 }
@@ -1228,6 +1337,7 @@ document.querySelectorAll('.nav-link').forEach((button) => button.addEventListen
   // Og'ir hisobotlar faqat bo'lim ochilganda yuklanadi
   if (button.dataset.view === 'wallet') loadWallet();
   if (button.dataset.view === 'audit') loadAudit();
+  if (button.dataset.view === 'support') loadSupport();
 }));
 document.getElementById('newCategoryButton').addEventListener('click', () => fillCategoryForm());
 document.getElementById('newPlanButton').addEventListener('click', () => fillPlanForm());
@@ -2472,6 +2582,7 @@ const HELP_ITEMS = [
   { icon: '👥', title: 'Foydalanuvchilar', body: 'Ro’yxatdan o’tgan barcha foydalanuvchilar. Qidiruv, bloklash/blokdan chiqarish mumkin. Bloklangan foydalanuvchi botni ham, Mini App’ni ham ishlata olmaydi. “Sarflagan” — mijozning pul tushgan xaridlari summasi (chegirmadan keyin). “Ko’p sarflaganlar” saralashi eng sodiq mijozlarni tepaga chiqaradi. “💸 Guruhga pul qo’shish” — hammaga, ommaviy xabar segmentiga (xarid qilganlar, balansi borlar, 30 kun faol bo’lmaganlar, til…) yoki teg bo’yicha (masalan “vip”) pul qo’shadi; oldin nechta odamga va jami qancha ketishi ko’rsatiladi. Tugma ikki marta bosilsa ham pul bir marta qo’shiladi.' },
   { icon: '🛒', title: 'Buyurtmalar', body: 'Barcha xaridlar. Statuslar: kutilmoqda, tasdiqlangan, rad etilgan, tugallangan. Admin approve/reject qiladi. "Batafsil" tugmasi qaysi akkaunt kimga va qachon ketganini, promokod va chegirmani ko’rsatadi. Qidiruv buyurtma raqami yoki Telegram ID bo’yicha. CSV export mumkin.' },
   { icon: '📥', title: 'Leadlar', body: 'Saytdagi "Izlagan obunangiz yo’qmi?" formasidan kelgan so’rovlar. Har biri adminga Telegram xabari sifatida ham keladi. Bajarilganini belgilash yoki o’chirish mumkin.' },
+  { icon: '💬', title: 'Murojaatlar', body: 'Mijozlar botda «💬 Admin bilan yozishish» tugmasi (bosh menyu, to’lov ekrani, Mini App → Profil) orqali yozgan xabarlar. Oxirgi buyurtma raqami avtomatik biriktiriladi; har xabar nusxasi Telegram’da adminlarga ham boradi. “Ochish” — suhbat; pastda javob yozasiz, u mijozga bot orqali ketadi. Menyudagi raqam — o’qilmagan murojaatlar.' },
   { icon: '✉️', title: 'Xabar yuborish', body: 'Bitta foydalanuvchiga, matnli broadcast (segment bo’yicha) yoki «Admin xabari»: tugmani bossangiz bot sizga Telegram’da «xabar kutilyapti» deb yozadi, unga rasm/video/fayl/matn yuborasiz, bot ko’rsatib tasdiq so’raydi, tasdiqlagach hammaga ketadi. Yuborish fon rejimida, jarayon tarixda ko’rinadi, istalgan payt to’xtatish mumkin. “⏰ Keyinroq yuborish” belgisi bilan matnli broadcast yoki Admin xabarini kerakli vaqtga (Toshkent vaqti, 5 daqiqa aniqlik bilan) rejalashtirish mumkin; qabul qiluvchilar ro’yxati yuborish paytida yangilanadi. Rejalashtirilgan xabarni tarixdagi “Bekor qilish” tugmasi bilan bekor qilasiz.' },
   { icon: '📅', title: 'Obunalar', body: 'Faol, 7 kun ichida tugaydigan va tugagan obunalar. Qo’lda uzaytirish (+30 yoki +N kun, mijozga xabar ketadi), eslatmani hozir yuborish, bekor qilish. Avtomatik eslatmalar har kuni 09:00 da.' },
   { icon: '👛', title: 'Balans harakatlari', body: 'Barcha balans o’zgarishlari: to’ldirish, xarid, cashback, referal, admin qo’shgan/yechgan. Oraliq, tur va mijoz bo’yicha filtr; tur bo’yicha jamlanma.' },

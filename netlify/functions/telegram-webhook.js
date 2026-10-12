@@ -3,6 +3,7 @@ const { getAdminClient, request } = require('../../shared/db');
 const { handleStart, handleCallback, handleReceipt, handleTextCommand } = require('../../shared/bot-service');
 const { handleHumoPaymentNotification } = require('../../shared/humo-payment-service');
 const { handleAdminBroadcastMessage } = require('../../shared/broadcast-service');
+const { handleSupportMessage } = require('../../shared/support-service');
 
 // Maxfiy tokenlarni doimiy vaqtda solishtirish (timing attack'dan himoya).
 function secretEquals(a, b) {
@@ -177,6 +178,10 @@ exports.handler = async (event) => {
         return { statusCode: 200, body: 'OK' };
       }
       const payment = await handleHumoPaymentNotification({ supabase, message: update.message });
+      // Murojaat rejimidagi mijoz xabari — qo'llab-quvvatlashga (chek emas).
+      if (!payment.handled && await handleSupportMessage({ supabase, message: update.message })) {
+        return { statusCode: 200, body: 'OK' };
+      }
       if (!payment.handled) {
         const commandHandled = update.message.text ? await handleTextCommand({ supabase, message: update.message }) : false;
         if (!commandHandled) await handleReceipt({ supabase, message: update.message });

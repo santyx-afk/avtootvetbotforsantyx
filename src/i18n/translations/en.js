@@ -110,6 +110,7 @@ export default {
       title: 'Profile',
       language: 'Language',
       support: 'Support',
+      supportChat: 'Message admin in the bot',
       settings: 'Settings',
     },
   },

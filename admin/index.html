@@ -29,6 +29,7 @@
           <button data-view="wallet" class="nav-link owner-only"><span class="nav-ico">👛</span> Balans harakatlari</button>
           <button data-view="audit" class="nav-link"><span class="nav-ico">📜</span> Jurnal</button>
           <button data-view="leads" class="nav-link"><span class="nav-ico">📥</span> Leadlar <span id="leadsNewBadge" class="nav-badge" hidden></span></button>
+          <button data-view="support" class="nav-link"><span class="nav-ico">💬</span> Murojaatlar <span id="supportBadge" class="nav-badge" hidden></span></button>
           <button data-view="referrals" class="nav-link owner-only"><span class="nav-ico">🤝</span> Referallar</button>
           <button data-view="messages" class="nav-link"><span class="nav-ico">✉️</span> Xabar yuborish</button>
           <button data-view="settings" class="nav-link owner-only"><span class="nav-ico">⚙️</span> Sozlamalar</button>
@@ -283,6 +284,27 @@
               </div>
               <p class="hint">Saytdagi &laquo;Izlagan obunangiz yo&apos;qmi?&raquo; formasi orqali kelgan so&apos;rovlar. Yangi lead kelganda botga ham xabar boradi.</p>
               <div id="leadsList" class="table-card"></div>
+            </section>
+
+            <section id="supportView" class="view" hidden>
+              <div class="toolbar">
+                <h2>Murojaatlar</h2>
+                <button id="supportRefresh" class="ghost">Yangilash</button>
+              </div>
+              <p class="hint" id="supportHint">Mijozlar botda «💬 Admin bilan yozishish» orqali yozgan xabarlar (oxirgi buyurtma raqami avtomatik biriktiriladi). Javobingiz mijozga bot orqali boradi.</p>
+              <div id="supportList" class="table-card"></div>
+              <div id="supportThreadCard" class="card" style="margin-top:1rem" hidden>
+                <div class="toolbar" style="margin:0 0 .5rem">
+                  <h3 id="supportThreadTitle" style="margin:0">Suhbat</h3>
+                  <button id="supportThreadClose" class="ghost" type="button">✕</button>
+                </div>
+                <div id="supportThread" class="support-thread"></div>
+                <div class="grid-form" style="margin-top:.75rem">
+                  <label class="full">Javob<textarea id="supportReplyText" rows="3" placeholder="Javobingizni yozing..."></textarea></label>
+                  <div class="actions full"><button id="supportReplySend" type="button">Yuborish</button></div>
+                </div>
+                <p id="supportReplyMsg" class="success-text"></p>
+              </div>
             </section>
 
             <section id="referralsView" class="view" hidden>
