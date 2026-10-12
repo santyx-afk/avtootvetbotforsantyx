@@ -437,9 +437,10 @@ const USER_SORTS = {
 function renderUsers(filter = '') {
   const q = filter.toLowerCase();
   const qDigits = q.replace(/\D/g, '');
-  // Raqam bermaganlar "foydalanuvchi safida" emas: sukut bo'yicha yashirin,
-  // faqat belgi qo'yilsa ko'rinadi.
-  const showNoPhone = Boolean(document.getElementById('userShowNoPhone')?.checked);
+  // Raqam bermaganlar "foydalanuvchi safida" emas: ro'yxatda sukut bo'yicha
+  // yashirin, faqat belgi qo'yilsa ko'rinadi. Lekin qidiruvda HAMMA qidiriladi —
+  // aks holda raqamsiz odamni ID/username bo'yicha topib, balans qo'shib bo'lmasdi.
+  const showNoPhone = Boolean(document.getElementById('userShowNoPhone')?.checked) || Boolean(q);
   const base = showNoPhone ? state.users : state.users.filter((u) => u.phone);
   let filtered = q ? base.filter((u) =>
     String(u.telegram_id).includes(q) ||

@@ -34,6 +34,23 @@ async function request(client, table, { method = 'GET', query = '', body, header
   };
 }
 
+// PostgREST "max-rows" (Supabase'da sukut bo'yicha 1000) tufayli bitta so'rov
+// `limit=5000` bo'lsa ham jimgina eng ko'pi 1000 qator qaytaradi. Bu yordamchi
+// offset bilan sahifalab HAMMA qatorni oladi; faqat bo'sh sahifada to'xtaydi
+// (max-rows < pageSize bo'lsa ham to'g'ri). baseQuery'da barqaror `order`
+// bo'lishi shart. Xato bo'lsa tashlaydi — qisman ro'yxat jimgina qaytmasin.
+async function fetchAllRows(client, table, baseQuery, { pageSize = 1000, maxRows = 500000 } = {}) {
+  const out = [];
+  for (;;) {
+    const { data } = await request(client, table, { query: `${baseQuery}&limit=${pageSize}&offset=${out.length}` });
+    const rows = data || [];
+    if (rows.length === 0) break;
+    out.push(...rows);
+    if (out.length >= maxRows) break;
+  }
+  return out;
+}
+
 async function rpcRequest(client, fnName, body = {}) {
   const url = `${client.url}/rest/v1/rpc/${fnName}`;
   const response = await fetch(url, {
@@ -1241,6 +1258,7 @@ function parseDurationToDays(duration = '') {
 module.exports = {
   getAdminClient,
   request,
+  fetchAllRows,
   fetchSettings,
   fetchCategories,
   fetchPlansByCategory,
