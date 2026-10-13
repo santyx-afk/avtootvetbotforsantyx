@@ -46,6 +46,19 @@ function normalizeSegment(segment) {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// "13.10 10:00" — Toshkent vaqti (rejalashtirilgan xabarlar uchun)
+function formatTashkent(iso) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Tashkent', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(new Date(iso)).map((x) => [x.type, x.value]));
+  return `${parts.day}.${parts.month} ${parts.hour}:${parts.minute}`;
+}
+
+// Rejalashtirilgan vaqt hali kelmaganmi (1 daqiqa zaxira bilan)
+function isFutureSchedule(job) {
+  return Boolean(job?.scheduled_at) && Date.parse(job.scheduled_at) > Date.now() + 60 * 1000;
+}
+
 // PostgREST server "max-rows" cheklovi (ko'pincha 1000) tufayli bitta so'rov
 // `limit=10000` bo'lsa ham eng ko'pi bilan max-rows qator qaytaradi. Shu sabab
 // 1000+ foydalanuvchida broadcast hammaga bormasdi (1000-dan keyingilar jimgina
@@ -152,29 +165,35 @@ async function cachedSettings(supabase) {
   return settingsCache.value;
 }
 
-async function createJob(supabase, { kind, segment, adminTelegramId, text = null, status }) {
+// scheduledAt — rejalashtirilgan vaqt (ISO). Ro'yxat hozir ham olinadi (soni
+// ko'rinsin), lekin yuborish paytida qayta olinadi (releaseScheduledBroadcasts).
+async function createJob(supabase, { kind, segment, adminTelegramId, text = null, status, scheduledAt = null }) {
   const seg = normalizeSegment(segment);
   const recipients = await resolveSegment(supabase, seg);
+  const body = {
+    kind,
+    status: status || (kind === 'copy' ? 'awaiting_message' : 'queued'),
+    segment: seg,
+    admin_telegram_id: adminTelegramId ? String(adminTelegramId) : null,
+    text,
+    recipients,
+    total: recipients.length,
+  };
+  // Ustun faqat kerak bo'lganda yuboriladi — migratsiyasiz oddiy broadcast buzilmasin
+  if (scheduledAt) body.scheduled_at = scheduledAt;
   const { data } = await request(supabase, 'broadcast_jobs', {
     method: 'POST',
     headers: { Prefer: 'return=representation' },
-    body: {
-      kind,
-      status: status || (kind === 'copy' ? 'awaiting_message' : 'queued'),
-      segment: seg,
-      admin_telegram_id: adminTelegramId ? String(adminTelegramId) : null,
-      text,
-      recipients,
-      total: recipients.length,
-    },
+    body,
   });
   return data?.[0] || null;
 }
 
 async function listJobs(supabase, limit = 30) {
-  const { data } = await request(supabase, 'broadcast_jobs', {
-    query: toQuery({ select: 'id,kind,status,segment,admin_telegram_id,text,total,cursor,sent,failed,error,created_at,started_at,finished_at', order: 'created_at.desc', limit }),
-  });
+  const cols = 'id,kind,status,segment,admin_telegram_id,text,total,cursor,sent,failed,error,created_at,started_at,finished_at';
+  const query = (select) => request(supabase, 'broadcast_jobs', { query: toQuery({ select, order: 'created_at.desc', limit }) });
+  // scheduled_at — migratsiyadan keyin; bo'lmasa tarix baribir ko'rinsin
+  const { data } = await query(`${cols},scheduled_at`).catch(() => query(cols));
   return data || [];
 }
 
@@ -196,10 +215,10 @@ function cancelKeyboard(jobId) {
 }
 
 // 1-qadam (panel): ish yaratiladi, adminga bot orqali "xabar kutilyapti".
-async function startAdminBroadcast(supabase, { segment }) {
+async function startAdminBroadcast(supabase, { segment, scheduledAt = null }) {
   const adminId = await primaryAdminId(supabase);
   if (!adminId) throw new Error('Admin Telegram ID sozlanmagan (Sozlamalar → Admin Telegram ID)');
-  const job = await createJob(supabase, { kind: 'copy', segment, adminTelegramId: adminId });
+  const job = await createJob(supabase, { kind: 'copy', segment, adminTelegramId: adminId, scheduledAt });
   if (!job) throw new Error('Broadcast ishini yaratib bo‘lmadi');
 
   const text = [
@@ -208,6 +227,7 @@ async function startAdminBroadcast(supabase, { segment }) {
     'Yubormoqchi bo‘lgan xabaringizni shu chatga jo‘nating: matn, rasm, video, fayl — emoji va formatlash saqlanadi.',
     '',
     `👥 Qabul qiluvchilar: ${escapeHtml(segmentLabel(job.segment))} — <b>${job.total}</b> kishi`,
+    ...(scheduledAt ? [`⏰ Yuborish vaqti: <b>${formatTashkent(scheduledAt)}</b> (Toshkent)`] : []),
     '',
     'Yuborishdan oldin men xabarni ko‘rsatib, tasdiq so‘rayman.',
   ].join('\n');
@@ -263,11 +283,15 @@ async function handleAdminBroadcastMessage({ supabase, message }) {
       '👆 Shu xabar yuboriladi.',
       '',
       `👥 ${escapeHtml(segmentLabel(job.segment))} — <b>${job.total}</b> kishi`,
+      ...(isFutureSchedule(job) ? [`⏰ ${formatTashkent(job.scheduled_at)} da yuboriladi (Toshkent)`] : []),
       '',
       'Tasdiqlaysizmi?',
     ].join('\n'),
     inlineKeyboard([
-      [{ text: `✅ Hammaga yuborish (${job.total})`, callback_data: `bc:send:${jobId}` }],
+      [{
+        text: isFutureSchedule(job) ? `✅ ${formatTashkent(job.scheduled_at)} da yuborish (${job.total})` : `✅ Hammaga yuborish (${job.total})`,
+        callback_data: `bc:send:${jobId}`,
+      }],
       [{ text: '❌ Bekor qilish', callback_data: `bc:cancel:${jobId}` }],
     ]),
   );
@@ -313,6 +337,17 @@ async function notifyAdminProgress(supabase, job, text, keyboard = null) {
 // Telegram callback'ni qayta yuborsa) ikkinchi chaqiruv null oladi va
 // ikkinchi yuboruvchi ishga tushmaydi.
 async function queueJob(supabase, jobId, { fromStatus = 'awaiting_confirm' } = {}) {
+  // Rejalashtirilgan "Admin xabari": tasdiqdan keyin vaqtini kutadi (cron chiqaradi)
+  if (fromStatus === 'awaiting_confirm') {
+    const pending = await getJob(supabase, jobId).catch(() => null);
+    if (isFutureSchedule(pending)) {
+      const scheduled = await patchJob(supabase, jobId, { status: 'scheduled' }, { status: 'eq.awaiting_confirm' });
+      if (scheduled) {
+        await notifyAdminProgress(supabase, scheduled, `⏰ Rejalashtirildi: <b>${formatTashkent(scheduled.scheduled_at)}</b> da yuboriladi (Toshkent).`, cancelKeyboard(jobId));
+      }
+      return scheduled;
+    }
+  }
   const job = await patchJob(
     supabase,
     jobId,
@@ -358,7 +393,7 @@ async function handleBroadcastCallback({ supabase, callbackQuery }) {
     return true;
   }
   if (action === 'send') {
-    await answerCallbackQuery(callbackQuery.id, 'Yuborish boshlandi').catch(() => {});
+    await answerCallbackQuery(callbackQuery.id, 'Tasdiqlandi').catch(() => {});
     const queued = await queueJob(supabase, jobId);
     if (!queued) {
       const job = await getJob(supabase, jobId).catch(() => null);
@@ -419,6 +454,25 @@ async function processJob(supabase, jobInput, { budgetMs = 13 * 60 * 1000 } = {}
   return job; // budjet tugadi — 'sending' holatida, cron davom ettiradi
 }
 
+// Vaqti kelgan rejalashtirilgan ishlarni navbatga qo'yadi (maintenance cron,
+// har 5 daqiqada). Ro'yxat shu paytda qayta olinadi — rejalashtirilgandan
+// keyin qo'shilganlar ham xabar oladi. Har o'tish atomik: bekor qilingan ish
+// (status endi 'scheduled' emas) chiqarilmaydi.
+async function releaseScheduledBroadcasts(supabase, { limit = 3 } = {}) {
+  const { data } = await request(supabase, 'broadcast_jobs', {
+    query: toQuery({ select: 'id,segment', status: 'eq.scheduled', scheduled_at: `lte.${new Date().toISOString()}`, order: 'scheduled_at.asc', limit }),
+  }).catch(() => ({ data: [] })); // migratsiyasiz — rejalashtirilgan ish yo'q
+  const results = [];
+  for (const j of data || []) {
+    const recipients = await resolveSegment(supabase, j.segment);
+    const refreshed = await patchJob(supabase, j.id, { recipients, total: recipients.length, cursor: 0 }, { status: 'eq.scheduled' });
+    if (!refreshed) continue;
+    const queued = await queueJob(supabase, j.id, { fromStatus: 'scheduled' });
+    results.push({ id: j.id, status: queued ? 'queued' : 'skipped' });
+  }
+  return results;
+}
+
 // Uzilib qolgan ishlarni davom ettirish (maintenance cron). Faqat 3 daqiqadan
 // beri yangilanmaganlar — hozir background ishlayotganini bezovta qilmaymiz.
 async function resumeStalledBroadcasts(supabase, { budgetMs = 5000 } = {}) {
@@ -458,6 +512,8 @@ module.exports = {
   cancelJob,
   processJob,
   resumeStalledBroadcasts,
+  releaseScheduledBroadcasts,
+  formatTashkent,
   broadcastSecret,
   primaryAdminId,
   STATE_KEY,

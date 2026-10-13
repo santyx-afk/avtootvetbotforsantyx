@@ -64,6 +64,7 @@ const views = {
   faq: document.getElementById('faqView'),
   users: document.getElementById('usersView'),
   leads: document.getElementById('leadsView'),
+  support: document.getElementById('supportView'),
   referrals: document.getElementById('referralsView'),
   subscriptions: document.getElementById('subscriptionsView'),
   wallet: document.getElementById('walletView'),
@@ -122,6 +123,13 @@ function renderStats(stats) {
     ['Referallar', stats.totalReferrals || 0],
     ['Referal bonuslari', `${money(stats.referralBonusTotal)} UZS`],
   ];
+  // Sof foyda — server faqat egasiga yuboradi (operator uchun profit = null)
+  const p = stats.profit;
+  if (p) {
+    cards.splice(1, 0,
+      ['Tannarx', `${money(p.cost)} UZS`],
+      ['Sof foyda (marja)', `${money(p.profit)} UZS (${p.margin}%)`]);
+  }
   document.getElementById('statsCards').innerHTML = cards.map(([label, value]) => `<div class="card"><h3>${esc(label)}</h3><strong>${esc(value ?? 0)}</strong></div>`).join('');
   const label = document.getElementById('dashRangeLabel');
   if (label && stats.range) label.textContent = `${stats.range.from} — ${stats.range.to} (Toshkent)`;
@@ -162,29 +170,56 @@ function renderStats(stats) {
   document.getElementById('topPayments').innerHTML = list(stats.mostPaymentClicks, (item) => `<li>${esc(item.name)}: ${esc(item.total)}</li>`);
   document.getElementById('eventLogs').innerHTML = list(stats.eventLogs, (item) => `<li><strong>${esc(item.event_type)}</strong> — ${dt(item.created_at)}</li>`);
 
+  renderPlanProfit(p);
+
   // Revenue chart
   if (typeof Chart !== 'undefined' && stats.dailyRevenue) {
-    renderRevenueChart(stats.dailyRevenue);
+    renderRevenueChart(stats.dailyRevenue, Boolean(p));
   }
 }
 
+// Rejalar kesimida foyda. Tannarxi kiritilmagan rejalar alohida belgilanadi —
+// ularning foydasi oshirib ko'rsatilgan (tannarx 0 deb olingan).
+function renderPlanProfit(p) {
+  const card = document.getElementById('planProfitCard');
+  if (!card) return;
+  card.hidden = !p;
+  if (!p) return;
+  const rows = p.plansProfit || [];
+  document.getElementById('planProfitHint').textContent = p.missingCostSales
+    ? `⚠️ ${p.missingCostSales} ta sotilgan donaning tannarxi kiritilmagan — ular 0 deb hisoblandi, foyda haqiqatdan ko'p ko'rinadi. Tannarxni "Rejalar" bo'limida kiriting.`
+    : 'Foyda = sotuv (chegirmadan keyin) − tannarx. Tannarx "Rejalar" bo\'limida kiritiladi.';
+  document.getElementById('planProfitList').innerHTML = rows.length
+    ? `<table><thead><tr><th>Reja</th><th>Sotildi</th><th>Sotuv</th><th>Tannarx</th><th>Foyda</th><th>Marja</th></tr></thead><tbody>${rows.map((r) => `
+      <tr>
+        <td>${esc(r.name)}${r.hasCost ? '' : ' <span class="badge" title="Tannarx kiritilmagan">tannarx yo\'q</span>'}</td>
+        <td>${esc(r.sold)}</td>
+        <td>${money(r.revenue)}</td>
+        <td>${money(r.cost)}</td>
+        <td${r.profit < 0 ? ' style="color:var(--danger)"' : ''}>${money(r.profit)}</td>
+        <td>${r.revenue > 0 ? Math.round((r.profit / r.revenue) * 100) : 0}%</td>
+      </tr>`).join('')}</tbody></table>`
+    : '<p class="detail-empty">Bu oraliqda to\'langan xarid yo\'q.</p>';
+}
+
 let revenueChartInstance = null;
-function renderRevenueChart(dailyRevenue) {
+function renderRevenueChart(dailyRevenue, withProfit = false) {
   const ctx = document.getElementById('revenueChart');
   if (!ctx) return;
   if (revenueChartInstance) revenueChartInstance.destroy();
   const labels = dailyRevenue.map((d) => d.date);
   const data = dailyRevenue.map((d) => d.revenue);
+  const datasets = [{ label: 'Tushum (UZS)', data, backgroundColor: '#2563eb', borderRadius: 8 }];
+  if (withProfit) {
+    datasets.push({ label: 'Sof foyda (UZS)', data: dailyRevenue.map((d) => d.profit || 0), backgroundColor: '#16a34a', borderRadius: 8 });
+  }
   revenueChartInstance = new Chart(ctx, {
     type: 'bar',
-    data: {
-      labels,
-      datasets: [{ label: 'Tushum (UZS)', data, backgroundColor: '#2563eb', borderRadius: 8 }],
-    },
+    data: { labels, datasets },
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
+      plugins: { legend: { display: withProfit } },
       scales: { y: { beginAtZero: true } },
     },
   });
@@ -216,15 +251,25 @@ function renderCategories() {
   categorySelect.innerHTML = state.categories.map((item) => `<option value="${esc(item.id)}">${esc(item.name)}</option>`).join('');
 }
 
+// Tannarx va marja (foyda / narx). Tannarx kiritilmagan bo'lsa — eslatma.
+function costCell(plan) {
+  if (plan.cost_price == null || plan.cost_price === '') return '<span class="hint">kiritilmagan</span>';
+  const price = Number(plan.price || 0);
+  const cost = Number(plan.cost_price);
+  const margin = price > 0 ? Math.round(((price - cost) / price) * 100) : 0;
+  return `${money(cost)} <span class="badge"${margin < 0 ? ' style="color:var(--danger)"' : ''}>${margin}%</span>`;
+}
+
 function renderPlans() {
   const root = document.getElementById('plansList');
-  root.innerHTML = `<table><thead><tr><th>Nomi</th><th>Plan ID</th><th>Sahifa</th><th>Kategoriya</th><th>Narx</th><th>Rasm</th><th>Tartib</th><th></th></tr></thead><tbody>${state.plans.map((item) => `
+  root.innerHTML = `<table><thead><tr><th>Nomi</th><th>Plan ID</th><th>Sahifa</th><th>Kategoriya</th><th>Narx</th><th>Tannarx / marja</th><th>Rasm</th><th>Tartib</th><th></th></tr></thead><tbody>${state.plans.map((item) => `
     <tr>
       <td>${esc(item.name)}${item.is_popular ? ' ⭐' : ''}</td>
       <td><code class="copy-id" data-id="${esc(item.id)}" title="Nusxalash uchun bosing">${esc(item.id)}</code></td>
       <td>${item.slug ? `<a href="/obuna/${esc(item.slug)}" target="_blank" rel="noopener">/${esc(item.slug)}</a>` : '<span class="hint">yo\'q</span>'}</td>
       <td>${esc(state.categories.find((category) => category.id === item.category_id)?.name || '-')}</td>
       <td>${money(item.price)} ${esc(item.currency)}</td>
+      <td>${costCell(item)}</td>
       <td>${item.image_url ? '<span class="badge">✓</span>' : '-'}</td>
       <td>${esc(item.sort_order)}</td>
       <td>
@@ -280,6 +325,7 @@ function fillPlanForm(item = {}) {
   document.getElementById('planPrice').value = item.price || '';
   document.getElementById('planCurrency').value = item.currency || 'UZS';
   document.getElementById('planOldPrice').value = item.old_price || '';
+  document.getElementById('planCostPrice').value = item.cost_price ?? '';
   document.getElementById('planOfficialPrice').value = item.official_price || '';
   document.getElementById('planIsPopular').checked = item.is_popular ?? false;
   document.getElementById('planTags').value = Array.isArray(item.tags) ? item.tags.join(',') : '';
@@ -429,6 +475,7 @@ const USER_FILTERS = {
 };
 
 const USER_SORTS = {
+  spent: (a, b) => Number(b.total_spent || 0) - Number(a.total_spent || 0),
   balance: (a, b) => Number(b.balance || 0) - Number(a.balance || 0),
   purchases: (a, b) => Number(b.purchases || 0) - Number(a.purchases || 0),
   activity: (a, b) => new Date(b.last_activity || 0) - new Date(a.last_activity || 0),
@@ -461,13 +508,14 @@ function renderUsers(filter = '') {
   // Ilgari qat'iy 100 ta ko'rsatilib "+N ta yana..." deb yozilardi va qolganiga
   // yetib bo'lmasdi. Endi "Yana ko'rsatish" tugmasi bilan ochiladi.
   const shown = filtered.slice(0, state.usersShown);
-  root.innerHTML = `<table><thead><tr><th>Telegram ID</th><th>Username</th><th>Ism</th><th>Telefon</th><th>Balans</th><th>Xaridlar</th><th>Faollik</th><th>Teglar</th><th>Blocked</th><th></th></tr></thead><tbody>${shown.map((u) => `
+  root.innerHTML = `<table><thead><tr><th>Telegram ID</th><th>Username</th><th>Ism</th><th>Telefon</th><th>Balans</th><th>Sarflagan</th><th>Xaridlar</th><th>Faollik</th><th>Teglar</th><th>Blocked</th><th></th></tr></thead><tbody>${shown.map((u) => `
     <tr>
       <td>${userLinkHtml(u.telegram_id)}</td>
       <td>${u.username ? `@${esc(u.username)}` : '-'}</td>
       <td>${esc(u.full_name || '-')}${u.admin_note ? ` <span title="${esc(u.admin_note)}">📝</span>` : ''}</td>
       <td>${u.phone ? `${esc(u.phone)}${u.phone_verified_at ? ' <span title="Telegram orqali tasdiqlangan">✅</span>' : ''}` : '<span class="hint">yo\'q</span>'}</td>
       <td>${money(u.balance)}</td>
+      <td>${money(u.total_spent)}</td>
       <td>${esc(u.purchases || 0)}</td>
       <td>${u.last_activity ? esc(new Date(u.last_activity).toLocaleDateString('uz-UZ')) : '-'}</td>
       <td>${(u.tags || []).map((t) => `<span class="badge">${esc(t)}</span>`).join(' ') || '-'}</td>
@@ -831,6 +879,111 @@ async function loadFaq() {
   } catch { state.faq = []; }
 }
 
+// --- Murojaatlar (bot ichidagi qo'llab-quvvatlash) ---
+let supportCountTimer = null;
+let supportCurrentId = null;
+
+async function loadSupportCount() {
+  try {
+    const { unread = 0 } = await api('admin-support?count=1');
+    const badge = document.getElementById('supportBadge');
+    if (badge) {
+      badge.textContent = String(unread);
+      badge.hidden = !unread;
+    }
+  } catch { /* nishon muhim emas */ }
+}
+
+async function loadSupport() {
+  const root = document.getElementById('supportList');
+  if (!root) return;
+  try {
+    const data = await api('admin-support');
+    if (data.migrationMissing) {
+      root.innerHTML = `<p class="detail-empty">${esc(data.hint)}</p>`;
+      return;
+    }
+    const convs = data.conversations || [];
+    root.innerHTML = convs.length
+      ? `<table><thead><tr><th>Mijoz</th><th>Oxirgi xabar</th><th>Buyurtma</th><th>Vaqt</th><th></th></tr></thead><tbody>${convs.map((c) => {
+        const last = c.last || {};
+        const preview = last.text ? String(last.text).slice(0, 80) + (last.text.length > 80 ? '…' : '') : (last.file_type ? '📎 fayl' : '—');
+        return `<tr>
+          <td>${userLinkHtml(c.telegram_id, userLabel(c.user || { telegram_id: c.telegram_id }))}${c.unread ? ` <span class="badge">${esc(c.unread)} yangi</span>` : ''}</td>
+          <td>${last.direction === 'out' ? '↩️ ' : ''}${esc(preview)}</td>
+          <td>${c.order_number ? `#${esc(c.order_number)}` : '-'}</td>
+          <td>${dt(last.created_at)}</td>
+          <td><button class="ghost support-open" data-id="${esc(c.telegram_id)}">Ochish</button></td>
+        </tr>`;
+      }).join('')}</tbody></table>`
+      : '<p class="detail-empty">Hozircha murojaat yo\'q.</p>';
+  } catch (error) {
+    root.innerHTML = `<p class="detail-empty">${esc(error.message || 'Yuklanmadi')}</p>`;
+  }
+}
+
+function renderSupportThread(data) {
+  const u = data.user || {};
+  document.getElementById('supportThreadTitle').textContent = `Suhbat: ${userLabel(u)}${u.phone ? ` · ${u.phone}` : ''}`;
+  const FILE = { photo: '🖼 Rasm', document: '📎 Fayl', video: '🎬 Video', voice: '🎤 Ovozli xabar' };
+  const root = document.getElementById('supportThread');
+  root.innerHTML = (data.messages || []).map((m) => [
+    `<div class="support-msg ${m.direction === 'out' ? 'out' : ''}">`,
+    `<div class="support-meta">${m.direction === 'out' ? esc(m.admin_name || 'Admin') : 'Mijoz'} · ${dt(m.created_at)}${m.order_number ? ` · #${esc(m.order_number)}` : ''}</div>`,
+    m.file_type ? `<div>${esc(FILE[m.file_type] || '📎 Fayl')} <span class="hint">(nusxasi Telegram'da adminlarga yuborilgan)</span></div>` : '',
+    m.text ? `<div class="support-text">${esc(m.text)}</div>` : '',
+    '</div>',
+  ].join('')).join('') || '<p class="detail-empty">Xabar yo\'q.</p>';
+  root.scrollTop = root.scrollHeight;
+}
+
+async function openSupportThread(userId) {
+  supportCurrentId = userId;
+  const card = document.getElementById('supportThreadCard');
+  card.hidden = false;
+  document.getElementById('supportReplyMsg').textContent = '';
+  document.getElementById('supportThread').innerHTML = '<p class="detail-empty">Yuklanmoqda…</p>';
+  const data = await api(`admin-support?user_id=${encodeURIComponent(userId)}`);
+  renderSupportThread(data);
+  card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  loadSupportCount();
+  loadSupport();
+}
+
+document.getElementById('supportRefresh')?.addEventListener('click', () => loadSupport());
+document.getElementById('supportList')?.addEventListener('click', (event) => {
+  const btn = event.target.closest('.support-open');
+  if (btn) openSupportThread(btn.dataset.id).catch((e) => alert(e.message));
+});
+document.getElementById('supportThreadClose')?.addEventListener('click', () => {
+  document.getElementById('supportThreadCard').hidden = true;
+  supportCurrentId = null;
+});
+document.getElementById('supportReplySend')?.addEventListener('click', async () => {
+  if (!supportCurrentId) return;
+  const textEl = document.getElementById('supportReplyText');
+  const msg = document.getElementById('supportReplyMsg');
+  const btn = document.getElementById('supportReplySend');
+  const text = textEl.value.trim();
+  if (!text) { msg.style.color = 'var(--danger)'; msg.textContent = 'Javob yozing'; return; }
+  btn.disabled = true;
+  msg.style.color = '';
+  msg.textContent = 'Yuborilmoqda…';
+  try {
+    await api('admin-support', { method: 'POST', body: JSON.stringify({ telegram_id: supportCurrentId, text }) });
+    textEl.value = '';
+    msg.style.color = 'var(--success, #16a34a)';
+    msg.textContent = 'Yuborildi';
+    renderSupportThread(await api(`admin-support?user_id=${encodeURIComponent(supportCurrentId)}`));
+    loadSupport();
+  } catch (error) {
+    msg.style.color = 'var(--danger)';
+    msg.textContent = error.message || 'Xatolik';
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 // --- Leadlar (saytdagi forma) ---
 function renderLeads() {
   const root = document.getElementById('leadsList');
@@ -1009,7 +1162,10 @@ async function initApp() {
   document.body.classList.add('authed');
   document.getElementById('loginView').hidden = true;
   document.getElementById('appView').hidden = false;
-  const loaders = [loadDashboard(), loadData(), loadReviews(), loadUsers(), loadLeads(), loadBroadcasts(), loadSubscriptions()];
+  const loaders = [loadDashboard(), loadData(), loadReviews(), loadUsers(), loadLeads(), loadBroadcasts(), loadSubscriptions(), loadSupportCount()];
+  // Yangi murojaatlar nishoni minutiga bir yangilanadi
+  clearInterval(supportCountTimer);
+  supportCountTimer = setInterval(() => loadSupportCount(), 60000);
   if (state.role === 'owner') loaders.push(loadSettings(), loadBanners(), loadPromos(), loadFaq(), loadReferrals(), loadAdmins());
   await Promise.all(loaders);
 }
@@ -1181,6 +1337,7 @@ document.querySelectorAll('.nav-link').forEach((button) => button.addEventListen
   // Og'ir hisobotlar faqat bo'lim ochilganda yuklanadi
   if (button.dataset.view === 'wallet') loadWallet();
   if (button.dataset.view === 'audit') loadAudit();
+  if (button.dataset.view === 'support') loadSupport();
 }));
 document.getElementById('newCategoryButton').addEventListener('click', () => fillCategoryForm());
 document.getElementById('newPlanButton').addEventListener('click', () => fillPlanForm());
@@ -1297,6 +1454,7 @@ onSubmit('planForm', async () => {
     button_label: document.getElementById('planButtonLabel').value,
     price: Number(document.getElementById('planPrice').value || 0),
     old_price: document.getElementById('planOldPrice').value ? Number(document.getElementById('planOldPrice').value) : null,
+    cost_price: document.getElementById('planCostPrice').value === '' ? null : Number(document.getElementById('planCostPrice').value),
     official_price: document.getElementById('planOfficialPrice').value ? Number(document.getElementById('planOfficialPrice').value) : null,
     is_popular: document.getElementById('planIsPopular').checked,
     tags: document.getElementById('planTags').value ? document.getElementById('planTags').value.split(',').map((t) => t.trim()).filter(Boolean) : [],
@@ -1313,7 +1471,8 @@ onSubmit('planForm', async () => {
     delivery_instructions: document.getElementById('planDeliveryInstructions').value,
     is_active: document.getElementById('planIsActive').checked,
   };
-  await api('admin-data', { method: item.id ? 'PUT' : 'POST', body: JSON.stringify({ type: 'plan', item }) });
+  const saved = await api('admin-data', { method: item.id ? 'PUT' : 'POST', body: JSON.stringify({ type: 'plan', item }) });
+  if (saved?.warning) alert(saved.warning);
   fillPlanForm();
   await loadData();
 });
@@ -1515,34 +1674,113 @@ document.getElementById('userModalMsg')?.addEventListener('click', () => {
   syncMessageForm();
 });
 
-// --- Hammaga pul qo'shish ---
+// --- Guruhga pul qo'shish ---
+// "Hamma" — eski credit-all; boshqa guruhlar (ommaviy xabar segmentlari yoki
+// teg) — credit-segment. Har oyna ochilganda yangi request_id: tarmoq xatosidan
+// keyin qayta bosilsa server uni takror deb rad etadi, pul ikki marta qo'shilmaydi.
+let creditRequestId = '';
+let creditPreviewCount = null;
+let creditPreviewTimer = null;
+
+function newCreditRequestId() {
+  return (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`).replace(/[^A-Za-z0-9-]/g, '');
+}
+
+function creditGroupBody() {
+  const segment = document.getElementById('creditGroup').value;
+  return { segment, tag: document.getElementById('creditTag').value.trim() };
+}
+
+function renderCreditPreview() {
+  const el = document.getElementById('creditPreview');
+  const amount = Number(document.getElementById('creditAllAmount').value || 0);
+  if (creditPreviewCount === null) { el.textContent = ''; return; }
+  el.textContent = `👥 ${creditPreviewCount} ta foydalanuvchi`
+    + (amount > 0 ? ` · jami ${money(amount * creditPreviewCount)} UZS` : '');
+}
+
+async function refreshCreditPreview() {
+  const { segment, tag } = creditGroupBody();
+  document.getElementById('creditTagWrap').hidden = segment !== 'tag';
+  creditPreviewCount = null;
+  const el = document.getElementById('creditPreview');
+  if (segment === 'all') {
+    // Hamma: ro'yxatdagi bloklanmaganlar (taxminiy — server aniq sanaydi)
+    creditPreviewCount = state.users.filter((u) => !u.is_blocked).length;
+    renderCreditPreview();
+    return;
+  }
+  if (segment === 'tag' && !tag) { el.textContent = 'Teg kiriting'; return; }
+  el.textContent = 'Sanalmoqda…';
+  try {
+    const res = await api('admin-users', { method: 'POST', body: JSON.stringify({ action: 'credit-segment', preview: true, segment, tag }) });
+    creditPreviewCount = Number(res.count || 0);
+    renderCreditPreview();
+  } catch (error) {
+    el.textContent = error.message || 'Sanab bo\'lmadi';
+  }
+}
+
+async function fillCreditGroups() {
+  if (!state.broadcastSegments) {
+    try {
+      const data = await api('admin-messages');
+      state.broadcastSegments = data.segments || null;
+    } catch { /* segmentlarsiz ham "Hamma" va "Teg" ishlaydi */ }
+  }
+  const segs = Object.entries(state.broadcastSegments || {}).filter(([k]) => k !== 'all');
+  document.getElementById('creditGroup').innerHTML = [
+    '<option value="all">Hamma (bloklanmaganlar)</option>',
+    ...segs.map(([k, v]) => `<option value="${esc(k)}">${esc(v)}</option>`),
+    '<option value="tag">Teg bo\'yicha…</option>',
+  ].join('');
+}
+
 bindModal('creditAllModal', 'creditAllClose');
-document.getElementById('creditAllButton')?.addEventListener('click', () => {
+document.getElementById('creditAllButton')?.addEventListener('click', async () => {
   document.getElementById('creditAllAmount').value = '';
   document.getElementById('creditAllReason').value = '';
+  document.getElementById('creditTag').value = '';
   document.getElementById('creditAllMsg').textContent = '';
+  creditRequestId = newCreditRequestId();
   document.getElementById('creditAllModal').hidden = false;
+  await fillCreditGroups();
+  refreshCreditPreview();
 });
+document.getElementById('creditGroup')?.addEventListener('change', () => refreshCreditPreview());
+document.getElementById('creditTag')?.addEventListener('input', () => {
+  clearTimeout(creditPreviewTimer);
+  creditPreviewTimer = setTimeout(refreshCreditPreview, 400);
+});
+document.getElementById('creditAllAmount')?.addEventListener('input', renderCreditPreview);
 document.getElementById('creditAllSubmit')?.addEventListener('click', async () => {
   const btn = document.getElementById('creditAllSubmit');
   const msg = document.getElementById('creditAllMsg');
   const amount = Number(document.getElementById('creditAllAmount').value || 0);
   const reason = document.getElementById('creditAllReason').value.trim();
+  const { segment, tag } = creditGroupBody();
   if (!(amount > 0)) {
     msg.style.color = 'var(--danger)';
     msg.textContent = 'Summa kiriting';
     return;
   }
+  const groupName = document.getElementById('creditGroup').selectedOptions[0]?.textContent || '';
+  const who = segment === 'tag' ? `"${tag}" tegli` : `"${groupName}" guruhidagi`;
+  const count = creditPreviewCount !== null ? ` (${creditPreviewCount} ta, jami ${money(amount * creditPreviewCount)} UZS)` : '';
   // Qaytarib bo'lmaydigan amal — aniq tasdiq so'raymiz.
-  if (!confirm(`Barcha bloklanmagan foydalanuvchilar balansiga ${money(amount)} UZS qo'shilsinmi? Bu amalni orqaga qaytarib bo'lmaydi.`)) return;
+  if (!confirm(`${who} bloklanmagan foydalanuvchilar balansiga ${money(amount)} UZS qo'shilsinmi${count}? Bu amalni orqaga qaytarib bo'lmaydi.`)) return;
 
   btn.disabled = true;
   msg.style.color = '';
   msg.textContent = 'Bajarilmoqda…';
   try {
-    const res = await api('admin-users', { method: 'POST', body: JSON.stringify({ action: 'credit-all', amount, reason }) });
+    const body = segment === 'all'
+      ? { action: 'credit-all', amount, reason }
+      : { action: 'credit-segment', segment, tag, amount, reason, request_id: creditRequestId };
+    const res = await api('admin-users', { method: 'POST', body: JSON.stringify(body) });
     msg.style.color = 'var(--success, #16a34a)';
     msg.textContent = res.message || 'Bajarildi';
+    creditRequestId = newCreditRequestId(); // keyingi amal — yangi ID
     await loadUsers();
   } catch (error) {
     msg.style.color = 'var(--danger)';
@@ -1578,6 +1816,8 @@ const PURCHASE_STATUS = { completed: 'Tasdiqlangan', approved: 'Tasdiqlangan', p
 
 function renderUserDetail(data) {
   document.getElementById('userBalance').textContent = Number(data.balance || 0).toLocaleString('uz-UZ');
+  const spentEl = document.getElementById('userTotalSpent');
+  if (spentEl) spentEl.textContent = `${money(data.total_spent || 0)} UZS · ${Number(data.paid_purchases || 0)} ta to'langan xarid`;
   const purchases = data.purchases || [];
   document.getElementById('userPurchases').innerHTML = purchases.length
     ? `<table><thead><tr><th>Sana</th><th>№</th><th>Obuna</th><th>Narx</th><th>Status</th><th>Promo</th></tr></thead><tbody>${purchases.map((p) => `<tr><td>${dt(p.created_at)}</td><td>${esc(p.order_number || '-')}</td><td>${esc(p.plan_name)}</td><td>${money(p.amount)}</td><td><span class="badge">${esc(PURCHASE_STATUS[p.status] || p.status)}</span></td><td>${esc(p.promo_code || '-')}</td></tr>`).join('')}</tbody></table>`
@@ -1601,6 +1841,7 @@ async function openUserModal(userId) {
   document.getElementById('balanceAmount').value = '';
   document.getElementById('balanceReason').value = '';
   document.getElementById('userPurchases').innerHTML = '';
+  document.getElementById('userTotalSpent').textContent = '…';
   document.getElementById('userBalanceHistory').innerHTML = '';
   document.getElementById('userModal').hidden = false;
   document.getElementById('userNote').value = '';
@@ -1843,6 +2084,7 @@ async function openOrderDetail(id) {
 const BC_STATUS = {
   awaiting_message: '📣 Xabar kutilyapti (botda)',
   awaiting_confirm: '👀 Tasdiq kutilyapti (botda)',
+  scheduled: '⏰ Rejalashtirilgan',
   queued: '⏳ Navbatda',
   sending: '📤 Yuborilmoqda',
   done: '✅ Yakunlandi',
@@ -1850,6 +2092,29 @@ const BC_STATUS = {
   failed: '⚠️ Xato',
 };
 const BC_ACTIVE = new Set(['awaiting_message', 'awaiting_confirm', 'queued', 'sending']);
+// To'xtatish/bekor qilish mumkin bo'lganlar (rejalashtirilgan ham). Tarix faqat
+// BC_ACTIVE uchun 5 soniyada yangilanadi — soatlab kutadigan ish uchun emas.
+const BC_CANCELLABLE = new Set([...BC_ACTIVE, 'scheduled']);
+
+// datetime-local qiymati Toshkent vaqti deb olinadi (UTC+5, yozgi vaqt yo'q) —
+// admin brauzeri qaysi mintaqada bo'lishidan qat'i nazar.
+function tashkentLocalToIso(value) {
+  return value ? new Date(`${value}:00+05:00`).toISOString() : null;
+}
+
+function syncScheduleFields() {
+  const type = document.getElementById('messageType')?.value || 'individual';
+  const on = Boolean(document.getElementById('messageScheduleOn')?.checked);
+  document.getElementById('messageScheduleLabel').hidden = type === 'individual';
+  document.getElementById('messageScheduleAtLabel').hidden = type === 'individual' || !on;
+  const at = document.getElementById('messageScheduleAt');
+  if (on && at && !at.value) {
+    // Sukut: ertaga 10:00 (Toshkent)
+    const tomorrow = new Date(Date.now() + 5 * 3600 * 1000 + 24 * 3600 * 1000).toISOString().slice(0, 10);
+    at.value = `${tomorrow}T10:00`;
+  }
+}
+document.getElementById('messageScheduleOn')?.addEventListener('change', syncScheduleFields);
 
 // Tur o'zgarganda kerakli maydonlar ko'rinadi: ID (individual), segment
 // (broadcast/admin), matn (individual/broadcast).
@@ -1864,6 +2129,7 @@ function syncMessageForm() {
   if (text) text.required = type !== 'admin';
   const btn = document.getElementById('messageSubmit');
   if (btn) btn.textContent = type === 'admin' ? '📣 Botda xabar kutilsin' : 'Yuborish';
+  syncScheduleFields();
 }
 document.getElementById('messageType')?.addEventListener('change', syncMessageForm);
 
@@ -1880,11 +2146,11 @@ function renderBroadcasts(jobs = []) {
       <td>${dt(j.created_at)}</td>
       <td>${j.kind === 'copy' ? '📣 Admin xabari' : 'Matn'}</td>
       <td>${esc(segName(j.segment))} (${esc(j.total)})</td>
-      <td><span class="badge">${esc(BC_STATUS[j.status] || j.status)}</span>${j.status === 'sending' ? ` <span class="hint">${esc(j.cursor)}/${esc(j.total)}</span>` : ''}</td>
+      <td><span class="badge">${esc(BC_STATUS[j.status] || j.status)}</span>${j.status === 'sending' ? ` <span class="hint">${esc(j.cursor)}/${esc(j.total)}</span>` : ''}${j.scheduled_at && ['awaiting_message', 'awaiting_confirm', 'scheduled'].includes(j.status) ? `<div class="hint">⏰ ${dt(j.scheduled_at)}</div>` : ''}</td>
       <td>${esc(j.sent)}</td>
       <td>${esc(j.failed)}</td>
       <td>${j.text ? esc(String(j.text).slice(0, 60)) + (j.text.length > 60 ? '…' : '') : '—'}${j.error ? `<div class="hint">${esc(j.error)}</div>` : ''}</td>
-      <td>${BC_ACTIVE.has(j.status) ? `<button class="ghost danger bc-cancel" data-id="${esc(j.id)}">To'xtatish</button>` : ''}</td>
+      <td>${BC_CANCELLABLE.has(j.status) ? `<button class="ghost danger bc-cancel" data-id="${esc(j.id)}">${j.status === 'scheduled' ? 'Bekor qilish' : 'To\'xtatish'}</button>` : ''}</td>
     </tr>`).join('')}</tbody></table>`;
 }
 
@@ -1931,14 +2197,19 @@ document.getElementById('messageForm')?.addEventListener('submit', async (event)
   const segment = document.getElementById('messageSegment')?.value || 'all';
   if (type === 'individual' && !telegramId) { alert('Telegram ID kiriting'); return; }
   if (type !== 'admin' && !text.trim()) { alert('Xabar matnini yozing'); return; }
-  if (type === 'broadcast' && !confirm('Matn tanlangan segmentga yuborilsinmi?')) return;
+  const scheduleOn = type !== 'individual' && Boolean(document.getElementById('messageScheduleOn')?.checked);
+  const scheduledAt = scheduleOn ? tashkentLocalToIso(document.getElementById('messageScheduleAt')?.value) : null;
+  if (scheduleOn && !scheduledAt) { alert('Yuborish vaqtini tanlang'); return; }
+  if (type === 'broadcast' && !confirm(scheduledAt
+    ? `Matn ${document.getElementById('messageScheduleAt').value.replace('T', ' ')} (Toshkent) da tanlangan segmentga yuborilsinmi?`
+    : 'Matn tanlangan segmentga yuborilsinmi?')) return;
   const result = document.getElementById('messageResult');
   const btn = document.getElementById('messageSubmit');
   result.style.color = '';
   result.textContent = type === 'admin' ? 'Botga so\'rov yuborilmoqda...' : 'Yuborilmoqda...';
   btn.disabled = true;
   try {
-    const res = await api('admin-messages', { method: 'POST', body: JSON.stringify({ type, text, telegram_id: telegramId, segment }) });
+    const res = await api('admin-messages', { method: 'POST', body: JSON.stringify({ type, text, telegram_id: telegramId, segment, scheduled_at: scheduledAt }) });
     result.textContent = res.message || 'Yuborildi!';
     if (type !== 'admin') document.getElementById('messageText').value = '';
     await loadBroadcasts();
@@ -2300,18 +2571,19 @@ backdropEl?.addEventListener('click', closeSidebar);
 
 // --- Yordam (Help) bo'limi: akkordeon ---
 const HELP_ITEMS = [
-  { icon: '📊', title: 'Dashboard', body: 'Umumiy statistika: foydalanuvchilar soni, buyurtmalar, tushum grafigi. Bu yerda hech narsa o’zgartirish mumkin emas, faqat ko’rish uchun.' },
+  { icon: '📊', title: 'Dashboard', body: 'Umumiy statistika: foydalanuvchilar soni, buyurtmalar, tushum grafigi. Egasi uchun “Tannarx” va “Sof foyda (marja)” kartalari, grafikdagi yashil foyda ustunlari va “Rejalar bo’yicha foyda” jadvali ham ko’rinadi (operator ko’rmaydi). Foyda = sotuv (chegirmadan keyin) − tannarx; tannarx “Rejalar” bo’limida kiritiladi. Bu yerda hech narsa o’zgartirish mumkin emas, faqat ko’rish uchun.' },
   { icon: '🗂️', title: 'Kategoriyalar', body: 'Mahsulotlar guruhlari. Masalan "Video tahrirlash", "AI asboblar". Kategoriya qo’shsangiz katalogda filtr sifatida chiqadi. Tartib raqami kichik bo’lgani birinchi ko’rinadi.' },
-  { icon: '📦', title: 'Rejalar (Mahsulotlar)', body: 'Sotiladigan obunalar. Har bir rejada: nomi, tavsifi, narxi, chegirma narxi, kategoriyasi, muddat (kunlarda), stok soni. Stok 0 bo’lsa "Tugagan" ko’rinadi. Rasm yuklash mumkin.' },
+  { icon: '📦', title: 'Rejalar (Mahsulotlar)', body: 'Sotiladigan obunalar. Har bir rejada: nomi, tavsifi, narxi, chegirma narxi, kategoriyasi, muddat (kunlarda), stok soni. Stok 0 bo’lsa "Tugagan" ko’rinadi. Rasm yuklash mumkin. “Tannarx (1 dona)” — reja sizga necha pulga tushishi; sof foyda shu bilan hisoblanadi, mijozlarga ko’rinmaydi.' },
   { icon: '🔑', title: 'Inventory', body: 'Avtomatik yetkaziladigan rejalar uchun akkaunt/kalitlar zaxirasi. Har bir sotuvda bittasi avtomatik foydalanuvchiga yuboriladi. Zaxira kamayganda ogohlantirish keladi.' },
   { icon: '🖼️', title: 'Bannerlar', body: 'Katalog tepasida aylanadigan reklama bannerlari. Sarlavha, matn, tugma, havola va gradient yoki rasm qo’shish mumkin. Havola sifatida ichki action (topup, catalog) yoki tashqi URL yozish mumkin.' },
   { icon: '❓', title: 'FAQ', body: 'Profil sahifasida ko’rinadigan savol-javoblar. Savol va javob yozing, tartibini (↑/↓) belgilang.' },
   { icon: '🎟️', title: 'Promokodlar', body: 'Chegirma kodlari. Kod, chegirma turi (foiz/summa), qiymati, minimal buyurtma summasi, amal muddati. Foydalanuvchi checkout’da kiritadi.' },
   { icon: '⭐', title: 'Sharhlar', body: 'Foydalanuvchilar yozgan sharhlar. Tasdiqlash, rad etish yoki o’chirish mumkin. Faqat tasdiqlangan sharhlar mahsulotda ko’rinadi.' },
-  { icon: '👥', title: 'Foydalanuvchilar', body: 'Ro’yxatdan o’tgan barcha foydalanuvchilar. Qidiruv, bloklash/blokdan chiqarish mumkin. Bloklangan foydalanuvchi botni ham, Mini App’ni ham ishlata olmaydi.' },
+  { icon: '👥', title: 'Foydalanuvchilar', body: 'Ro’yxatdan o’tgan barcha foydalanuvchilar. Qidiruv, bloklash/blokdan chiqarish mumkin. Bloklangan foydalanuvchi botni ham, Mini App’ni ham ishlata olmaydi. “Sarflagan” — mijozning pul tushgan xaridlari summasi (chegirmadan keyin). “Ko’p sarflaganlar” saralashi eng sodiq mijozlarni tepaga chiqaradi. “💸 Guruhga pul qo’shish” — hammaga, ommaviy xabar segmentiga (xarid qilganlar, balansi borlar, 30 kun faol bo’lmaganlar, til…) yoki teg bo’yicha (masalan “vip”) pul qo’shadi; oldin nechta odamga va jami qancha ketishi ko’rsatiladi. Tugma ikki marta bosilsa ham pul bir marta qo’shiladi.' },
   { icon: '🛒', title: 'Buyurtmalar', body: 'Barcha xaridlar. Statuslar: kutilmoqda, tasdiqlangan, rad etilgan, tugallangan. Admin approve/reject qiladi. "Batafsil" tugmasi qaysi akkaunt kimga va qachon ketganini, promokod va chegirmani ko’rsatadi. Qidiruv buyurtma raqami yoki Telegram ID bo’yicha. CSV export mumkin.' },
   { icon: '📥', title: 'Leadlar', body: 'Saytdagi "Izlagan obunangiz yo’qmi?" formasidan kelgan so’rovlar. Har biri adminga Telegram xabari sifatida ham keladi. Bajarilganini belgilash yoki o’chirish mumkin.' },
-  { icon: '✉️', title: 'Xabar yuborish', body: 'Bitta foydalanuvchiga, matnli broadcast (segment bo’yicha) yoki «Admin xabari»: tugmani bossangiz bot sizga Telegram’da «xabar kutilyapti» deb yozadi, unga rasm/video/fayl/matn yuborasiz, bot ko’rsatib tasdiq so’raydi, tasdiqlagach hammaga ketadi. Yuborish fon rejimida, jarayon tarixda ko’rinadi, istalgan payt to’xtatish mumkin.' },
+  { icon: '💬', title: 'Murojaatlar', body: 'Mijozlar botda «💬 Admin bilan yozishish» tugmasi (bosh menyu, to’lov ekrani, Mini App → Profil) orqali yozgan xabarlar. Oxirgi buyurtma raqami avtomatik biriktiriladi; har xabar nusxasi Telegram’da adminlarga ham boradi. “Ochish” — suhbat; pastda javob yozasiz, u mijozga bot orqali ketadi. Menyudagi raqam — o’qilmagan murojaatlar.' },
+  { icon: '✉️', title: 'Xabar yuborish', body: 'Bitta foydalanuvchiga, matnli broadcast (segment bo’yicha) yoki «Admin xabari»: tugmani bossangiz bot sizga Telegram’da «xabar kutilyapti» deb yozadi, unga rasm/video/fayl/matn yuborasiz, bot ko’rsatib tasdiq so’raydi, tasdiqlagach hammaga ketadi. Yuborish fon rejimida, jarayon tarixda ko’rinadi, istalgan payt to’xtatish mumkin. “⏰ Keyinroq yuborish” belgisi bilan matnli broadcast yoki Admin xabarini kerakli vaqtga (Toshkent vaqti, 5 daqiqa aniqlik bilan) rejalashtirish mumkin; qabul qiluvchilar ro’yxati yuborish paytida yangilanadi. Rejalashtirilgan xabarni tarixdagi “Bekor qilish” tugmasi bilan bekor qilasiz.' },
   { icon: '📅', title: 'Obunalar', body: 'Faol, 7 kun ichida tugaydigan va tugagan obunalar. Qo’lda uzaytirish (+30 yoki +N kun, mijozga xabar ketadi), eslatmani hozir yuborish, bekor qilish. Avtomatik eslatmalar har kuni 09:00 da.' },
   { icon: '👛', title: 'Balans harakatlari', body: 'Barcha balans o’zgarishlari: to’ldirish, xarid, cashback, referal, admin qo’shgan/yechgan. Oraliq, tur va mijoz bo’yicha filtr; tur bo’yicha jamlanma.' },
   { icon: '📜', title: 'Jurnal', body: 'Tizimdagi barcha muhim amallar: to’lov aniqlandi, qo’lda tasdiqlandi, yetkazildi, muddat o’tdi, obuna uzaytirildi va h.k. Buyurtma raqami yoki Telegram ID bo’yicha qidiruv.' },

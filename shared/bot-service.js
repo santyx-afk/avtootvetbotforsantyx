@@ -40,6 +40,7 @@ const {
   helpText,
 } = require('./messages');
 const { processApprovedDelivery } = require('./delivery-service');
+const { startSupport, endSupport, supportStartKeyboard } = require('./support-service');
 
 function formatAmount(amount, currency = 'UZS') {
   return `${new Intl.NumberFormat('uz-UZ').format(Number(amount || 0))} ${currency}`;
@@ -146,6 +147,7 @@ async function showCategories({ supabase, chatId, messageId, asEdit = false }) {
     // Profil ichida qolib, hech kim ishlatmay qo'ygan edi (2026-08-04 dan
     // keyin birorta ham referal kirish bo'lmagan).
     [{ text: '🤝 Do\'st taklif qilish — bonus olish', callback_data: 'show_referral' }],
+    [{ text: '💬 Admin bilan yozishish', callback_data: 'support:start' }],
   ];
   if (asEdit && messageId) {
     return editMessage(chatId, messageId, text, inlineKeyboard(keyboardRows));
@@ -185,7 +187,9 @@ async function showPayment({ supabase, chatId, telegramId, planId }) {
 
   const rows = [
     [{ text: '📋 Kartani nusxalash', copy_text: { text: settings?.seller_card_number || process.env.PAYMENT_CARD_NUMBER || '' } }],
-    [{ text: '📨 Admin bilan bog‘lanish', url: settings?.support_link?.startsWith('http') ? settings.support_link : `https://t.me/${String(settings?.support_link || process.env.SUPPORT_USERNAME || '@support').replace('@', '')}` }],
+    // Bot ichida yozishish — shu buyurtma raqami avtomatik biriktiriladi
+    // (migratsiya bo'lmasa startSupport eski havolani beradi).
+    [{ text: '📨 Admin bilan bog‘lanish', callback_data: `support:start:${order.id}` }],
   ];
 
   await sendMessage(chatId, text, inlineKeyboard(rows));
@@ -198,7 +202,7 @@ async function handleReceipt({ supabase, message }) {
     fetchSettings(supabase),
   ]);
   if (!userState?.awaiting_receipt || !userState?.current_order_id) {
-    await sendMessage(message.chat.id, noActiveOrderForReceiptText(), null);
+    await sendMessage(message.chat.id, `${noActiveOrderForReceiptText()}\n\nSavolingiz bo‘lsa — adminga shu yerdan yozing 👇`, supportStartKeyboard());
     return;
   }
 
@@ -222,7 +226,7 @@ async function handleReceipt({ supabase, message }) {
     await sendMessage(
       message.chat.id,
       paidOrDone ? '✅ To‘lovingiz allaqachon qabul qilingan. Rahmat!' : noActiveOrderForReceiptText(),
-      null,
+      supportStartKeyboard(paidOrDone ? order.id : null),
     );
     return;
   }
@@ -308,6 +312,14 @@ async function handleCallback({ supabase, callbackQuery }) {
   if (!isAdminAction) answerCallbackQuery(callbackQuery.id).catch(() => {});
 
   try {
+    // Qo'llab-quvvatlash: support:start[:<orderId>] / support:end
+    if (data.startsWith('support:')) {
+      const [, action, orderId] = data.split(':');
+      if (action === 'start') await startSupport({ supabase, chatId, telegramId, orderId: orderId || null });
+      else if (action === 'end') await endSupport({ supabase, chatId, telegramId });
+      return;
+    }
+
     // Broadcast tugmalari (tasdiqlash / bekor qilish) — broadcast-service'da.
     if (data.startsWith('bc:')) {
       const { handleBroadcastCallback } = require('./broadcast-service');
@@ -578,6 +590,11 @@ async function handleStart({ supabase, message }) {
         )
         .catch((e) => console.warn('web_login code warn:', e?.message)),
     );
+  }
+
+  // Mini App "Bot orqali yozish" → t.me/<bot>?start=support
+  if (startPayload === 'support') {
+    tasks.push(startSupport({ supabase, chatId: message.chat.id, telegramId: message.from.id }).catch((e) => console.warn('support start warn:', e?.message)));
   }
 
   const ref = String(message.text || '').match(/^\/start\s+ref_(\d+)/);

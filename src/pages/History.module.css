@@ -124,3 +124,59 @@
   color: var(--app-hint);
   font-weight: 500;
 }
+
+/* "Mening akkauntlarim" — kredensiallarni ko'rsatish */
+.reveal {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.revealBtn {
+  align-self: flex-start;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: none;
+  background: color-mix(in srgb, var(--app-accent, #2481cc) 14%, transparent);
+  color: var(--app-accent, #2481cc);
+  cursor: pointer;
+}
+
+.revealBtn:disabled {
+  opacity: 0.6;
+}
+
+.revealWarn {
+  font-size: 13px;
+  color: #d9822b;
+}
+
+.revealError {
+  font-size: 13px;
+  color: var(--app-hint);
+}
+
+.credCard {
+  background: var(--app-bg, transparent);
+  border: 1px solid var(--app-separator);
+  border-radius: var(--app-radius);
+  padding: 12px;
+}
+
+.credName {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--app-text);
+  margin-bottom: 10px;
+}
+
+.instruction {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--app-text);
+  white-space: pre-wrap;
+  margin: 8px 0 0;
+}

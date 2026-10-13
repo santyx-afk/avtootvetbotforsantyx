@@ -33,7 +33,8 @@ test('admin-users: 1000+ foydalanuvchi ham to\'liq keladi, balansi bilan', async
   }));
   const wallets = users.map((u) => ({ user_telegram_id: u.telegram_id, balance: 100 }));
   const orders = Array.from({ length: 1500 }, (_, i) => ({
-    user_telegram_id: '7', order_type: 'purchase', created_at: new Date(Date.UTC(2026, 1, 1) + i * 1000).toISOString(),
+    user_telegram_id: '7', order_type: 'purchase', status: 'completed', base_price: 10000, discount_amount: 1000,
+    created_at: new Date(Date.UTC(2026, 1, 1) + i * 1000).toISOString(),
   }));
   installMock({ users, user_wallets: wallets, orders }, 1000);
 
@@ -48,5 +49,27 @@ test('admin-users: 1000+ foydalanuvchi ham to\'liq keladi, balansi bilan', async
 
   const buyer = body.users.find((u) => u.telegram_id === '7');
   assert.equal(buyer.purchases, 1500, 'xaridlar soni 1000 bilan kesilmaydi');
+  assert.equal(buyer.total_spent, 1500 * 9000, 'jami sarflagan: base_price − chegirma, hammasi');
   assert.equal(buyer.last_activity, orders[orders.length - 1].created_at, 'oxirgi faollik — eng yangi buyurtma');
+});
+
+test('admin-users: jami sarflagan faqat to\'langan xaridlardan', async () => {
+  const users = [{ telegram_id: '1', phone: '+998901234567', created_at: '2026-01-01T00:00:00Z' }];
+  const at = '2026-02-01T00:00:00Z';
+  const orders = [
+    { user_telegram_id: '1', order_type: 'purchase', status: 'completed', base_price: 50000, discount_amount: 5000, created_at: at },
+    { user_telegram_id: '1', order_type: 'purchase', status: 'approved', amount: 20000, created_at: at }, // base_price yo'q — amount
+    { user_telegram_id: '1', order_type: 'purchase', status: 'expired', base_price: 99000, created_at: at }, // to'lanmagan
+    { user_telegram_id: '1', order_type: 'purchase', status: 'rejected', base_price: 99000, created_at: at },
+    { user_telegram_id: '1', order_type: 'topup', status: 'completed', amount: 100000, created_at: at }, // to'ldirish — xarid emas
+  ];
+  installMock({ users, user_wallets: [], orders });
+
+  const list = JSON.parse((await handler({ httpMethod: 'GET', headers, queryStringParameters: {} })).body);
+  assert.equal(list.users[0].total_spent, 65000);
+  assert.equal(list.users[0].purchases, 2, 'muddati o\'tgan/rad etilgan xarid sanalmaydi');
+
+  const detail = JSON.parse((await handler({ httpMethod: 'GET', headers, queryStringParameters: { user_id: '1' } })).body);
+  assert.equal(detail.total_spent, 65000);
+  assert.equal(detail.paid_purchases, 2);
 });

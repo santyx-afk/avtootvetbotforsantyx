@@ -38,6 +38,20 @@ async function notifyPriceDrop(supabase, plan) {
 }
 
 // promo_codes da sort_order ustuni yo'q, shuning uchun listTable ishlamaydi
+// Tannarx ustuni (cost_price) migratsiyasi hali qo'llanmagan bo'lsa, PostgREST
+// "Could not find the 'cost_price' column" deb rad etadi. Shunda reja tannarxsiz
+// saqlanadi va admin ogohlantiriladi — reja saqlash buzilmaydi.
+const COST_MIGRATION_HINT = 'Tannarx saqlanmadi: migrations/2026-10-12_plans-cost-price.sql hali qo‘llanmagan. Qolgan maydonlar saqlandi.';
+async function saveWithoutMissingCost(save, row) {
+  try {
+    return { item: await save(row) };
+  } catch (error) {
+    if (!('cost_price' in row) || !/cost_price/.test(String(error?.message || ''))) throw error;
+    const { cost_price: _omit, ...rest } = row;
+    return { item: await save(rest), warning: COST_MIGRATION_HINT };
+  }
+}
+
 async function listPromoCodes(supabase) {
   const { data } = await request(supabase, 'promo_codes', { query: 'select=*&order=created_at.desc' });
   return data || [];
@@ -57,7 +71,10 @@ exports.handler = async (event) => {
           return [];
         }),
       ]);
-      return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ok: true, categories, plans, promos }) };
+      // Tannarx — faqat egasi uchun (operator foyda/marjani ko'rmaydi)
+      const isOwner = requireOwner(event.headers);
+      const visiblePlans = isOwner ? plans : plans.map(({ cost_price: _omit, ...p }) => p);
+      return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ok: true, categories, plans: visiblePlans, promos }) };
     }
 
     const payload = JSON.parse(event.body || '{}');
@@ -67,12 +84,15 @@ exports.handler = async (event) => {
       if (item.price !== undefined && Number.isNaN(Number(item.price))) throw badRequest('price numeric bo‘lishi kerak');
       if (item.old_price !== undefined && item.old_price !== null && item.old_price !== '' && Number.isNaN(Number(item.old_price))) throw badRequest('old_price numeric bo‘lishi kerak');
       if (item.delivery_type && !allowed.includes(item.delivery_type)) throw badRequest('delivery_type noto‘g‘ri');
+      if (item.cost_price !== undefined && item.cost_price !== null && item.cost_price !== ''
+        && !(Number(item.cost_price) >= 0)) throw badRequest('tannarx 0 yoki undan katta son bo‘lishi kerak');
       const out = {
         ...item,
         price: item.price !== undefined ? Number(item.price) : item.price,
         old_price: item.old_price === '' ? null : item.old_price === null || item.old_price === undefined ? item.old_price : Number(item.old_price),
         tags: Array.isArray(item.tags) ? item.tags : [],
       };
+      if (item.cost_price !== undefined) out.cost_price = item.cost_price === '' || item.cost_price === null ? null : Number(item.cost_price);
 
       // slug — ochiq sahifa manzili (/obuna/<slug>). Bo'sh bo'lsa sahifa
       // ochilmaydi. Yozilgan bo'lsa nomdan avtomatik tozalanadi, chunki
@@ -150,8 +170,8 @@ exports.handler = async (event) => {
     if (event.httpMethod !== 'GET' && !requireOwner(event.headers)) return { statusCode: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ok: false, error: 'Faqat egasi uchun' }) };
     if (event.httpMethod === 'POST') {
       const table = resolveTable(payload.type);
-      const item = await insertRow(supabase, table, sanitize(table, payload.item, { isCreate: true }));
-      return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ok: true, item }) };
+      const { item, warning } = await saveWithoutMissingCost((row) => insertRow(supabase, table, row), sanitize(table, payload.item, { isCreate: true }));
+      return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ok: true, item, warning }) };
     }
 
     if (event.httpMethod === 'PUT') {
@@ -164,13 +184,13 @@ exports.handler = async (event) => {
         oldPlan = await fetchPlan(supabase, id);
       }
 
-      const updated = await updateRow(supabase, table, id, sanitize(table, item));
+      const { item: updated, warning } = await saveWithoutMissingCost((row) => updateRow(supabase, table, id, row), sanitize(table, item));
 
       if (oldPlan && updated && Number(updated.price) < Number(oldPlan.price)) {
         notifyPriceDrop(supabase, updated).catch((e) => console.warn('price drop notify warn:', e?.message));
       }
 
-      return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ok: true, item: updated }) };
+      return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ok: true, item: updated, warning }) };
     }
 
     if (event.httpMethod === 'DELETE') {

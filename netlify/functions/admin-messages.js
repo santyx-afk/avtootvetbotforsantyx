@@ -10,9 +10,27 @@ const {
   listJobs,
   cancelJob,
   primaryAdminId,
+  formatTashkent,
 } = require('../../shared/broadcast-service');
 
 function json(sc, body) { return { statusCode: sc, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }; }
+
+const MAX_SCHEDULE_DAYS = 60;
+const SCHEDULE_MIGRATION_HINT = 'Rejalashtirish uchun migrations/2026-10-12_broadcast-scheduled.sql qo‘llanishi kerak.';
+
+// Rejalashtirilgan vaqt: bo'sh — darhol. Kamida 1 daqiqa keyin, 60 kundan uzoq emas.
+// Qaytaradi: { iso } yoki { error }.
+function parseSchedule(raw) {
+  if (!raw) return { iso: null };
+  const t = Date.parse(String(raw));
+  if (!Number.isFinite(t)) return { error: 'Yuborish vaqti noto‘g‘ri' };
+  if (t < Date.now() + 60 * 1000) return { error: 'Yuborish vaqti kamida 1 daqiqa keyin bo‘lishi kerak' };
+  if (t > Date.now() + MAX_SCHEDULE_DAYS * 24 * 60 * 60 * 1000) return { error: `${MAX_SCHEDULE_DAYS} kundan uzoqqa rejalashtirib bo‘lmaydi` };
+  return { iso: new Date(t).toISOString() };
+}
+
+// Migratsiya qo'llanmagan bo'lsa (scheduled_at ustuni / 'scheduled' holati yo'q)
+const isScheduleSchemaError = (error) => /scheduled_at|broadcast_jobs_status_check/.test(String(error?.message || ''));
 
 // Xabar yuborish:
 //   individual — bitta foydalanuvchiga hozir.
@@ -53,25 +71,46 @@ exports.handler = async (event) => {
       return json(200, { ok: true, message: `Xabar ${telegram_id} ga yuborildi` });
     }
 
+    const schedule = parseSchedule(body.scheduled_at);
+    if (schedule.error) return json(400, { ok: false, error: schedule.error });
+    const when = schedule.iso ? `${formatTashkent(schedule.iso)} (Toshkent)` : null;
+
     if (type === 'admin') {
-      const job = await startAdminBroadcast(db, { segment: normalizeSegment(body.segment) });
+      let job;
+      try {
+        job = await startAdminBroadcast(db, { segment: normalizeSegment(body.segment), scheduledAt: schedule.iso });
+      } catch (error) {
+        if (schedule.iso && isScheduleSchemaError(error)) return json(500, { ok: false, error: SCHEDULE_MIGRATION_HINT });
+        throw error;
+      }
       return json(200, {
         ok: true,
         job,
-        message: `Telegram'da botga xabaringizni yuboring — ${job.total} kishiga ketadi. Bot avval ko'rsatib, tasdiq so'raydi.`,
+        message: `Telegram'da botga xabaringizni yuboring — ${job.total} kishiga ketadi. Bot avval ko'rsatib, tasdiq so'raydi.`
+          + (when ? ` Tasdiqlagach ${when} da yuboriladi.` : ''),
       });
     }
 
     if (type === 'broadcast') {
       if (!text) return json(400, { ok: false, error: 'Xabar matni bo\'sh' });
-      const job = await createJob(db, {
-        kind: 'text',
-        segment: normalizeSegment(body.segment),
-        adminTelegramId: await primaryAdminId(db),
-        text: String(text).slice(0, 4000),
-        status: 'queued',
-      });
+      let job;
+      try {
+        job = await createJob(db, {
+          kind: 'text',
+          segment: normalizeSegment(body.segment),
+          adminTelegramId: await primaryAdminId(db),
+          text: String(text).slice(0, 4000),
+          status: schedule.iso ? 'scheduled' : 'queued',
+          scheduledAt: schedule.iso,
+        });
+      } catch (error) {
+        if (schedule.iso && isScheduleSchemaError(error)) return json(500, { ok: false, error: SCHEDULE_MIGRATION_HINT });
+        throw error;
+      }
       if (!job) return json(500, { ok: false, error: 'Navbatga qo\'yib bo\'lmadi' });
+      if (schedule.iso) {
+        return json(200, { ok: true, job, message: `⏰ Rejalashtirildi: ${when} da yuboriladi (hozir ${job.total} kishi; ro'yxat yuborish paytida yangilanadi).` });
+      }
       await queueJob(db, job.id, { fromStatus: 'queued' });
       return json(200, { ok: true, job, message: `Navbatga qo'yildi: ${job.total} kishi. Jarayon pastdagi tarixda ko'rinadi.` });
     }

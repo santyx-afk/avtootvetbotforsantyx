@@ -83,7 +83,12 @@ async function runMaintenance(supabase) {
   await updateMonitoringSnapshot(supabase);
   // Uzilib qolgan broadcast'lar (background funksiya ishlamagan/uzilgan)
   // cursor'dan davom ettiriladi — qisqa budjet bilan, cron 10 soniyaga sig'sin.
-  const { resumeStalledBroadcasts } = require('./broadcast-service');
+  const { resumeStalledBroadcasts, releaseScheduledBroadcasts } = require('./broadcast-service');
+  // Vaqti kelgan rejalashtirilgan xabarlar navbatga qo'yiladi (5 daqiqa aniqlik bilan).
+  const scheduled = await releaseScheduledBroadcasts(supabase, { limit: 2 }).catch((e) => {
+    console.warn('scheduled broadcast warn:', e?.message);
+    return [];
+  });
   const broadcasts = await resumeStalledBroadcasts(supabase, { budgetMs: 4000 }).catch((e) => {
     console.warn('broadcast resume warn:', e?.message);
     return [];
@@ -97,7 +102,7 @@ async function runMaintenance(supabase) {
   // "Kelganda xabar ber" navbati — inventar kelgan rejalar bo'yicha qolgan xabarlar.
   const { notifyPendingWaitlists } = require('./stock-waitlist');
   const waitlist = await notifyPendingWaitlists(supabase, { budgetMs: 3000 }).catch(() => 0);
-  return { expired: expired.length, resumed, retries: retries.length, broadcasts: broadcasts.length, lowStock, waitlist };
+  return { expired: expired.length, resumed, retries: retries.length, broadcasts: broadcasts.length, scheduledReleased: scheduled.length, lowStock, waitlist };
 }
 
 module.exports = { runMaintenance, processRetryQueue, resumeStuckDeliveries };

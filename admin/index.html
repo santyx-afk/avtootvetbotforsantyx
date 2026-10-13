@@ -29,6 +29,7 @@
           <button data-view="wallet" class="nav-link owner-only"><span class="nav-ico">👛</span> Balans harakatlari</button>
           <button data-view="audit" class="nav-link"><span class="nav-ico">📜</span> Jurnal</button>
           <button data-view="leads" class="nav-link"><span class="nav-ico">📥</span> Leadlar <span id="leadsNewBadge" class="nav-badge" hidden></span></button>
+          <button data-view="support" class="nav-link"><span class="nav-ico">💬</span> Murojaatlar <span id="supportBadge" class="nav-badge" hidden></span></button>
           <button data-view="referrals" class="nav-link owner-only"><span class="nav-ico">🤝</span> Referallar</button>
           <button data-view="messages" class="nav-link"><span class="nav-ico">✉️</span> Xabar yuborish</button>
           <button data-view="settings" class="nav-link owner-only"><span class="nav-ico">⚙️</span> Sozlamalar</button>
@@ -94,6 +95,11 @@
                 </div>
               </div>
               <div class="cards" id="pendingCards"></div>
+              <div class="card owner-only" id="planProfitCard" style="margin-bottom:1rem" hidden>
+                <h3>Rejalar bo'yicha foyda (tanlangan oraliq)</h3>
+                <p class="hint" id="planProfitHint"></p>
+                <div id="planProfitList" class="table-card"></div>
+              </div>
               <div class="card" style="margin-bottom:1rem">
                 <h3>So'nggi buyurtmalar</h3>
                 <div id="recentOrders" class="table-card"></div>
@@ -150,6 +156,7 @@
                   </label>
                   <label>Button label<input id="planButtonLabel" /></label>
                   <label>Narx<input id="planPrice" type="number" required /></label>
+                  <label title="Bitta dona sizga necha pulga tushadi. Sof foyda shu bilan hisoblanadi. Mijozlarga ko'rinmaydi.">Tannarx (1 dona)<input id="planCostPrice" type="number" min="0" placeholder="masalan 35000" /></label>
                   <label>Valyuta<input id="planCurrency" value="UZS" required /></label>
                   <label>Eski narx<input id="planOldPrice" type="number" /></label>
                   <label>Rasmiy narx<input id="planOfficialPrice" type="number" /></label>
@@ -279,6 +286,27 @@
               <div id="leadsList" class="table-card"></div>
             </section>
 
+            <section id="supportView" class="view" hidden>
+              <div class="toolbar">
+                <h2>Murojaatlar</h2>
+                <button id="supportRefresh" class="ghost">Yangilash</button>
+              </div>
+              <p class="hint" id="supportHint">Mijozlar botda «💬 Admin bilan yozishish» orqali yozgan xabarlar (oxirgi buyurtma raqami avtomatik biriktiriladi). Javobingiz mijozga bot orqali boradi.</p>
+              <div id="supportList" class="table-card"></div>
+              <div id="supportThreadCard" class="card" style="margin-top:1rem" hidden>
+                <div class="toolbar" style="margin:0 0 .5rem">
+                  <h3 id="supportThreadTitle" style="margin:0">Suhbat</h3>
+                  <button id="supportThreadClose" class="ghost" type="button">✕</button>
+                </div>
+                <div id="supportThread" class="support-thread"></div>
+                <div class="grid-form" style="margin-top:.75rem">
+                  <label class="full">Javob<textarea id="supportReplyText" rows="3" placeholder="Javobingizni yozing..."></textarea></label>
+                  <div class="actions full"><button id="supportReplySend" type="button">Yuborish</button></div>
+                </div>
+                <p id="supportReplyMsg" class="success-text"></p>
+              </div>
+            </section>
+
             <section id="referralsView" class="view" hidden>
               <div class="toolbar">
                 <h2>Referallar</h2>
@@ -375,6 +403,7 @@
                 </select>
                 <select id="userSort">
                   <option value="new">Yangi qo'shilgan</option>
+                  <option value="spent">Ko'p sarflaganlar (top mijozlar)</option>
                   <option value="balance">Balans (ko'pdan)</option>
                   <option value="purchases">Xaridlar (ko'pdan)</option>
                   <option value="activity">Oxirgi faollik</option>
@@ -383,7 +412,7 @@
                   <input type="checkbox" id="userShowNoPhone" /> Raqamsizlarni ham ko'rsatish
                 </label>
                 <button id="reloadUsersButton">Yangilash</button>
-                <button id="creditAllButton" class="ghost owner-only">💸 Hammaga pul qo'shish</button>
+                <button id="creditAllButton" class="ghost owner-only">💸 Guruhga pul qo'shish</button>
               </div>
               <div id="usersCount" class="hint"></div>
               <div id="usersList" class="table-card"></div>
@@ -475,6 +504,10 @@
                   </label>
                   <label id="messageTelegramIdLabel">Telegram ID<input id="messageTelegramId" /></label>
                   <label id="messageSegmentLabel" hidden>Kimga<select id="messageSegment"></select></label>
+                  <label id="messageScheduleLabel" class="inline-check" hidden>
+                    <input type="checkbox" id="messageScheduleOn" /> ⏰ Keyinroq yuborish
+                  </label>
+                  <label id="messageScheduleAtLabel" hidden>Yuborish vaqti (Toshkent)<input id="messageScheduleAt" type="datetime-local" /></label>
                   <label class="full" id="messageTextLabel">Xabar matni<textarea id="messageText" rows="5" required></textarea></label>
                   <p class="hint full" id="messageAdminHint" hidden>
                     Tugmani bosganingizdan keyin bot sizga Telegram'da «Xabar kutilyapti» deb yozadi.
@@ -553,6 +586,7 @@
                   <h3 id="userModalTitle">Foydalanuvchi</h3>
                   <button type="button" id="userModalClose" class="ghost">✕</button>
                 </div>
+                <div class="hint" style="margin:0 0 8px">Jami sarflagan: <strong id="userTotalSpent">—</strong></div>
                 <div class="user-balance-box owner-only">
                   <div class="balance-now">Joriy balans: <strong id="userBalance">0</strong> UZS</div>
                   <div class="balance-controls">
@@ -586,18 +620,23 @@
             <div id="creditAllModal" class="modal-overlay" hidden>
               <div class="modal-card">
                 <div class="modal-head">
-                  <h3>Hammaga pul qo'shish</h3>
+                  <h3>Guruhga pul qo'shish</h3>
                   <button type="button" id="creditAllClose" class="ghost">✕</button>
                 </div>
                 <p class="hint">
-                  Summa <strong>barcha bloklanmagan</strong> foydalanuvchilar balansiga
-                  qo'shiladi va ularga Telegram orqali xabar boradi.
+                  Summa tanlangan guruhdagi <strong>bloklanmagan</strong> foydalanuvchilar
+                  balansiga qo'shiladi va ularga Telegram orqali xabar boradi.
                   Bu amalni orqaga qaytarib bo'lmaydi.
                 </p>
                 <div class="grid-form">
+                  <label>Kimga
+                    <select id="creditGroup"><option value="all">Hamma (bloklanmaganlar)</option></select>
+                  </label>
+                  <label id="creditTagWrap" hidden>Teg<input id="creditTag" placeholder="masalan: vip" /></label>
                   <label>Summa (UZS)<input id="creditAllAmount" type="number" min="1" placeholder="10000" /></label>
                   <label>Sabab<input id="creditAllReason" placeholder="Masalan: Bayram sovg'asi" /></label>
                 </div>
+                <p id="creditPreview" class="hint"></p>
                 <p id="creditAllMsg" class="success-text"></p>
                 <div class="actions">
                   <button type="button" id="creditAllSubmit">Tasdiqlash va qo'shish</button>

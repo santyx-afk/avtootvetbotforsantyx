@@ -16,6 +16,7 @@ import { formatPrice, formatDate } from '../utils/format.js';
 import styles from './Profile.module.css';
 
 const SUPPORT = (import.meta.env.VITE_SUPPORT_USERNAME || 'santyx').replace('@', '');
+const BOT = (import.meta.env.VITE_BOT_USERNAME || 'santyxnarxbot').replace('@', '');
 
 function initials(user) {
   const a = user?.first_name?.[0] || '';
@@ -66,6 +67,13 @@ export default function Profile() {
     openTelegramLink(
       `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(t('profile.referralHint'))}`,
     );
+  };
+
+  // Bot ichida yozishish: xabar admin panelga tushadi, oxirgi buyurtma
+  // raqami avtomatik biriktiriladi (bot /start support).
+  const openBotSupport = () => {
+    haptic.impact('light');
+    openTelegramLink(`https://t.me/${BOT}?start=support`);
   };
 
   const openSupport = () => {
@@ -246,6 +254,15 @@ export default function Profile() {
         {/* Qo'llab-quvvatlash */}
         <div className={styles.sectionTitle}>{t('pages.profile.support')}</div>
         <ul className={styles.list}>
+          <li>
+            <button type="button" className={styles.row} onClick={openBotSupport}>
+              <span className={styles.rowIcon}>
+                <Icon name="chat" size={20} />
+              </span>
+              <span className={styles.rowLabel}>{t('pages.profile.supportChat')}</span>
+              <Icon name="chevronRight" size={18} className={styles.chevron} />
+            </button>
+          </li>
           <li>
             <button type="button" className={styles.row} onClick={openSupport}>
               <span className={styles.rowIcon}>
