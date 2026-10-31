@@ -17,6 +17,7 @@ const {
   request,
 } = require('./db');
 const { sendMessage } = require('./telegram');
+const { postPurchaseReferralText } = require('./messages');
 const { decryptText, isEncryptionKeyHealthy } = require('./encryption');
 const { nextRetryAt, hasRetriesLeft } = require('./retry-policy');
 const { processReferralPayout } = require('./referral-service');
@@ -402,6 +403,48 @@ async function processApprovedDelivery({ supabase, order, adminTelegramId = 'web
 }
 
 
+// Yetkazishdan KEYIN referal taklifi.
+//
+// Idempotentlik: audit_logs dagi 'referral_promo_sent' yozuvi orqali —
+// bitta buyurtma bo'yicha xabar faqat bir marta ketadi. Retry (yetkazish
+// qayta urinishi) yoki admin qo'lda "Yetkazish" ni ikki marta bossa, mijoz
+// ikkita bir xil reklama olmaydi.
+//
+// Xato bo'lsa jim o'tib ketadi: bu reklama, yetkazish emas — hech qanday
+// holatda buyurtma oqimini to'xtatmasligi kerak.
+async function sendPostPurchaseReferral(supabase, order) {
+  try {
+    if (!order?.id || !order?.user_telegram_id) return false;
+    const prior = await request(supabase, 'audit_logs', {
+      query: `select=id&order_id=eq.${order.id}&action=eq.referral_promo_sent&limit=1`,
+    }).then((r) => r.data).catch(() => []);
+    if (prior && prior[0]) return false;
+    // Guard'ni OLDIN yozamiz (loyihadagi releasePromoUse bilan bir xil naqsh):
+    // xabar yuborilgandan keyin jarayon uzilsa, takror yuborishdan ko'ra
+    // bir marta yuborilmagani yaxshiroq.
+    await createAuditLog(supabase, {
+      order_id: order.id,
+      user_telegram_id: order.user_telegram_id,
+      action: 'referral_promo_sent',
+      status: 'completed',
+    });
+    const settings = await fetchSettings(supabase).catch(() => null);
+    await sendMessage(
+      order.user_telegram_id,
+      postPurchaseReferralText({
+        telegramId: order.user_telegram_id,
+        botUsername: process.env.BOT_USERNAME || 'santyxnarxbot',
+        fixedBonus: settings?.referral_fixed_bonus,
+        percent: settings?.referral_percent,
+      }),
+    );
+    return true;
+  } catch (error) {
+    console.warn('post-purchase referral warn:', error?.message);
+    return false;
+  }
+}
+
 async function processOrderItemDelivery({ supabase, order, item, plan, adminTelegramId }) {
   const result = await processApprovedDelivery({ supabase, order: { ...order, plan_id: plan.id, inventory_item_id: item.inventory_item_id || null, delivery_status: 'waiting_approval' }, adminTelegramId });
   // Qo'lda ulanadigan reja: element hali yetkazilmagan — admin panelda
@@ -419,7 +462,11 @@ async function processApprovedOrderDelivery({ supabase, order, adminTelegramId =
   await updateOrderStatus(supabase, order.id, 'delivering', { delivery_status: 'waiting_approval' });
   await createAuditLog(supabase, { order_id: order.id, user_telegram_id: order.user_telegram_id, action: 'delivery_started', status: 'delivering' });
   const items = await getOrderItems(supabase, order.id);
-  if (!items.length) return processApprovedDelivery({ supabase, order, adminTelegramId });
+  if (!items.length) {
+    const single = await processApprovedDelivery({ supabase, order, adminTelegramId });
+    if (single.ok && single.code === 'DELIVERED') await sendPostPurchaseReferral(supabase, order);
+    return single;
+  }
   const results = [];
   for (const item of items) {
     if (item.delivery_status === 'delivered') {
@@ -458,8 +505,10 @@ async function processApprovedOrderDelivery({ supabase, order, adminTelegramId =
   await Promise.all([
     processReferralPayout(supabase, order).catch((e) => console.warn('referral payout warn:', e?.message)),
     creditOrderCashback(supabase, order).catch((e) => console.warn('cashback warn:', e?.message)),
+    // Referal taklifi — eng oxirida, mijoz mahsulotni olgandan keyin.
+    sendPostPurchaseReferral(supabase, order),
   ]);
   return { ok: true, code: 'DELIVERED', message: 'Barcha mahsulotlar yetkazildi', results };
 }
 
-module.exports = { processApprovedDelivery, processApprovedOrderDelivery, resolveAutoAccount, resolveLicenseKey };
+module.exports = { processApprovedDelivery, processApprovedOrderDelivery, sendPostPurchaseReferral, resolveAutoAccount, resolveLicenseKey };

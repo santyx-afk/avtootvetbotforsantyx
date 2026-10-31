@@ -16,7 +16,7 @@ const {
   createSubscriptionFromOrder,
   createAuditLog,
 } = require('../../shared/db');
-const { processApprovedDelivery } = require('../../shared/delivery-service');
+const { processApprovedDelivery, sendPostPurchaseReferral } = require('../../shared/delivery-service');
 const { settlePaidOrder } = require('../../shared/humo-payment-service');
 const { processReferralPayout } = require('../../shared/referral-service');
 const { sendMessage } = require('../../shared/telegram');
@@ -463,6 +463,9 @@ exports.handler = async (event) => {
         await request(supabase, 'delivery_retry_queue', { method: 'PATCH', query: `order_id=eq.${encodeURIComponent(orderId)}&status=eq.pending`, body: { status: 'completed', completed_at: now, updated_at: now } }).catch(() => {});
         await processReferralPayout(supabase, done).catch((e) => console.warn('referral payout warn:', e?.message));
         await creditOrderCashback(supabase, done).catch((e) => console.warn('cashback warn:', e?.message));
+        // Qo'lda yetkazishda ham xaridan keyingi referal taklifi ketadi —
+        // avtomatik oqimdagi bilan bir xil (ichida takrorlanishdan himoya bor).
+        await sendPostPurchaseReferral(supabase, done);
         await markOrderNotification(supabase, orderId, '📦 Qo‘lda yetkazildi (admin panel)').catch(() => {});
         return json(200, { ok: true, order: done });
       }

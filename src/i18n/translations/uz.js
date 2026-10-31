@@ -372,6 +372,45 @@ export default {
         },
       ],
     },
+    // ---- Ijtimoiy isbot: raqamlar BAZADAN keladi (public-stats), bu yerda
+    // faqat matn qoliplari. Shuning uchun "1000+ mijoz" hech qachon yolg'on
+    // bo'lmaydi — ko'rsatilgan son har doim haqiqatdan kichik yoki teng.
+    social: {
+      title: 'Bizga ishonadilar',
+      customers: 'mamnun mijoz',
+      delivered: 'yetkazilgan obuna',
+      rating: 'o\u2018rtacha reyting',
+      reviews: 'sharh',
+      note: 'Raqamlar bazadan real vaqtda olinadi.',
+    },
+    testimonials: {
+      title: 'Mijozlar nima deydi',
+      productPrefix: 'Obuna: ',
+    },
+    prices: {
+      title: 'Narxlar',
+      note: 'Barcha narxlar UZS da. Kafolat va muddat har bir obunada ko\u2018rsatilgan.',
+      colName: 'Obuna',
+      colDuration: 'Muddat',
+      colPrice: 'Narx',
+      bundleBadge: 'To\u2018plam',
+      bundleIncludes: 'Nima kiradi:',
+      saveLabel: 'tejaysiz',
+    },
+    referral: {
+      title: 'Do\u2018st taklif qiling \u2014 bonus oling',
+      textBoth: 'Har bir yangi do\u2018st raqamini tasdiqlaganda +{bonus} UZS, uning har bir xaridi uchun esa {percent}% balansingizga tushadi.',
+      textFixed: 'Har bir yangi do\u2018st raqamini tasdiqlaganda +{bonus} UZS balansingizga tushadi.',
+      textPercent: 'Taklif qilgan do\u2018stingizning har bir xaridi uchun {percent}% balansingizga tushadi.',
+      textPlain: 'Do\u2018stlaringizni taklif qiling va bonuslarga ega bo\u2018ling.',
+      steps: [
+        'Botda \u00ab🤝 Do\u2018st taklif qilish\u00bb tugmasini bosing',
+        'Shaxsiy havolangizni do\u2018stlaringizga yuboring',
+        'Ular raqamini tasdiqlagach bonus balansingizga tushadi',
+      ],
+      cta: 'Referal havolani olish',
+      note: 'Balansni keyingi xaridda to\u2018liq ishlatishingiz mumkin.',
+    },
     finalCta: {
       title: 'Bugun boshlang',
       text: 'Obunani tanlang — bir necha daqiqada tayyor bo‘ladi.',

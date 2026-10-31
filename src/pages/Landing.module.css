@@ -640,3 +640,286 @@
   opacity: 0.6;
   cursor: default;
 }
+
+/* ================================================================
+   IJTIMOIY ISBOT, NARXLAR JADVALI, SHARHLAR, REFERAL
+   ================================================================ */
+
+/* ---------- Ijtimoiy isbot bandi ---------- */
+/* Hero dan keyin darhol turadi: tashrifchi narxni ko'rishdan oldin
+   "bu kimlar?" degan savolga javob oladi. */
+.socialBand {
+  max-width: 1080px;
+  margin: 28px auto 0;
+  padding: 0 20px;
+}
+.socialTitle {
+  margin: 0 0 14px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--app-hint);
+}
+.socialGrid {
+  display: grid;
+  /* 2 ustun telefonda, 4 ustun kengda — auto-fit bilan o'z-o'zidan */
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+}
+.socialTile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 18px 12px;
+  border-radius: 16px;
+  border: 1px solid var(--app-separator);
+  background: color-mix(in srgb, var(--app-surface) 70%, transparent);
+  text-align: center;
+}
+.socialTile strong {
+  font-size: clamp(22px, 4vw, 30px);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.socialTile span {
+  font-size: 13px;
+  color: var(--app-hint);
+}
+
+/* ---------- To'plam belgisi (kartochkada) ---------- */
+.bundleBadge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 999px;
+}
+.bundleList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 6px;
+}
+.bundleList span {
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--app-separator);
+  font-size: 11.5px;
+  color: var(--app-hint);
+}
+
+/* ---------- Narxlar jadvali ---------- */
+/* <table> emas, grid: telefonda ustunlar bir-birining ostiga tushishi va
+   har bir qator bosiladigan havola bo'lishi kerak. */
+.priceTable {
+  border: 1px solid var(--app-separator);
+  border-radius: 18px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--app-surface) 70%, transparent);
+}
+.priceHead,
+.priceRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 92px 150px;
+  gap: 10px;
+  align-items: center;
+  padding: 14px 16px;
+}
+.priceHead {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--app-hint);
+  border-bottom: 1px solid var(--app-separator);
+}
+.priceRow {
+  border-top: 1px solid var(--app-separator);
+  color: inherit;
+  text-decoration: none;
+  transition: background 0.15s ease;
+}
+.priceRow:first-of-type {
+  border-top: none;
+}
+.priceRow:hover {
+  background: color-mix(in srgb, var(--app-text) 6%, transparent);
+}
+.priceName {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 15px;
+  font-weight: 600;
+  min-width: 0;
+}
+.priceName small {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--app-hint);
+}
+.priceTag {
+  align-self: flex-start;
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+  color: #fff;
+}
+.priceDuration {
+  font-size: 13.5px;
+  color: var(--app-hint);
+}
+.priceValue {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  text-align: right;
+}
+.priceValue b {
+  font-size: 16px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.priceValue s {
+  font-size: 12.5px;
+  color: var(--app-hint);
+}
+.priceValue em {
+  font-style: normal;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #4ade80;
+}
+@media (max-width: 560px) {
+  .priceHead {
+    display: none;
+  }
+  .priceRow {
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: 2px;
+  }
+  .priceDuration {
+    grid-column: 1;
+    grid-row: 2;
+    font-size: 12.5px;
+  }
+  .priceValue {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+}
+
+/* ---------- Mijoz sharhlari ---------- */
+.reviewGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+.reviewCard {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 18px;
+  border-radius: 18px;
+  border: 1px solid var(--app-separator);
+  background: color-mix(in srgb, var(--app-surface) 70%, transparent);
+}
+.reviewStars {
+  font-size: 14px;
+  letter-spacing: 2px;
+  color: #fbbf24;
+}
+/* To'ldirilmagan yulduzlar — xira */
+.reviewStars span {
+  color: var(--app-separator);
+}
+.reviewCard blockquote {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--app-text);
+}
+.reviewCard figcaption {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: auto;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--app-text);
+}
+.reviewCard figcaption small {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--app-hint);
+}
+
+/* ---------- Referal bo'limi ---------- */
+.referral {
+  max-width: 720px;
+  margin: 48px auto 0;
+  padding: 32px 24px;
+  border-radius: 24px;
+  border: 1px solid color-mix(in srgb, #8b5cf6 35%, var(--app-separator));
+  background:
+    radial-gradient(120% 140% at 50% 0%, color-mix(in srgb, #8b5cf6 16%, transparent), transparent 70%),
+    color-mix(in srgb, var(--app-surface) 70%, transparent);
+  text-align: center;
+}
+.referralSteps {
+  display: grid;
+  gap: 10px;
+  margin: 0 auto 22px;
+  padding: 0;
+  max-width: 460px;
+  list-style: none;
+  text-align: left;
+}
+.referralSteps li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 14.5px;
+  line-height: 1.45;
+  color: var(--app-text);
+}
+.referralSteps li span {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+/* Referal tugmasi <a> — .cta tugma uchun yozilgan, havolada tekstni
+   markazlash va pastki chiziqni olib tashlash kerak. */
+.referral .cta {
+  display: inline-block;
+  text-decoration: none;
+}
+.referralNote {
+  margin: 14px 0 0;
+  font-size: 13px;
+  color: var(--app-hint);
+}

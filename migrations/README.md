@@ -38,6 +38,7 @@ frontend murojaat qilib krash bo'lgani). Endi tartib quyidagicha.
 | [2026-10-12_credit-users.sql](2026-10-12_credit-users.sql) | 2026-10-13 | `credit_users()` — tanlangan guruhga (segment/teg) balans qo'shish, bitta tranzaksiyada; `admin_bulk_credits` — takroriy bosish himoyasi va tarix |
 | [2026-10-12_broadcast-scheduled.sql](2026-10-12_broadcast-scheduled.sql) | 2026-10-13 | `broadcast_jobs.scheduled_at` + `scheduled` holati — ommaviy xabarni keyinroq yuborish |
 | [2026-10-12_support-messages.sql](2026-10-12_support-messages.sql) | 2026-10-13 | `support_messages` — bot ichidagi murojaatlar va admin javoblari (panel → «💬 Murojaatlar») |
+| [2026-10-31_source-tracking-and-bundles.sql](2026-10-31_source-tracking-and-bundles.sql) | ⏳ **kutilmoqda** | Trafik manbasi (`users.source`, `users.source_first_at`, `orders.source`, `traffic_sources` lug'ati) va to'plamlar (`plans.is_bundle`, `plan_bundle_items`). Kod migratsiyasiz ham ishlaydi: manba bo'limi bo'sh turadi, to'plam esa oddiy reja kabi sotiladi. |
 
 ## BASELINE.md haqida
 

@@ -38,11 +38,12 @@ import {
   isContactSaved,
   setContactSaved,
 } from './utils/storage.js';
+import { captureSource } from './utils/source.js';
 
 const SUPPORT = `@${(import.meta.env.VITE_SUPPORT_USERNAME || 'santyx').replace(/^@/, '')}`;
 
 export default function App() {
-  const { isTelegram } = useTelegram();
+  const { isTelegram, startParam } = useTelegram();
   const { t, langChosen } = useI18n();
 
   // Ilova (to'liq funksiya) faqat Telegram Mini App'da YOKI brauzerda JWT bo'lsa ishlaydi.
@@ -66,7 +67,12 @@ export default function App() {
     prefetchCatalog();
     (async () => {
       try {
-        const res = await apiCall('init');
+        // Trafik manbasi: URL (?utm_source/?src) yoki Telegram startapp
+        // payload'i. Birinchi teginish localStorage'da saqlanadi, serverga
+        // esa har init bilan yuboriladi — server tomoni uni faqat BIR MARTA
+        // (users.source bo'sh bo'lsa) yozadi, shuning uchun takror yuborish
+        // xavfsiz va hech narsani buzmaydi.
+        const res = await apiCall('init', { source: captureSource({ startParam }) || undefined });
         if (active && res?.hasPhone) {
           setContactSaved(true);
           setContactSavedState(true);
@@ -91,7 +97,7 @@ export default function App() {
       active = false;
       clearTimeout(timer);
     };
-  }, [authed, isTelegram]);
+  }, [authed, isTelegram, startParam]);
 
   // Brauzer, hali login qilinmagan → Landing / Login / Maxfiylik sahifalari
   if (!authed) {

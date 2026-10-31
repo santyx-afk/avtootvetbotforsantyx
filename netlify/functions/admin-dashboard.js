@@ -1,4 +1,5 @@
 const { requireAdmin, requireOwner } = require('../../shared/auth');
+const { sourceLabel, sourceKind } = require('../../shared/source');
 const { getAdminClient, countRows, listRecentEvents, listEventsByType, listTable, request, fetchAllRows, toQuery, PAID_ORDER_STATUSES: PAID, orderSaleValue: value, isPaidPurchase } = require('../../shared/db');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -160,6 +161,124 @@ function summarizeProfit(orders, items, plans) {
   };
 }
 exports._summarizeProfit = summarizeProfit;
+
+// Buyurtmalarni oraliq bo'yicha oladi.
+//
+// `source` ustuni MIGRATSIYA qo'llangandan keyin paydo bo'ladi
+// (2026-10-31_source-tracking-and-bundles.sql). Migratsiya hali
+// ishga tushirilmagan bazada PostgREST noma'lum ustun uchun 400 qaytaradi —
+// bu butun dashboard'ni o'chirib qo'yardi. Shuning uchun: avval `source`
+// bilan, xato bo'lsa — usiz. Natijada migratsiyadan OLDIN panel ishlaydi
+// (manba bo'limi bo'sh), KEYIN esa o'z-o'zidan to'ladi.
+const ORDER_FIELDS = 'id,amount,base_price,unique_price,discount_amount,balance_used,status,delivery_status,plan_id,user_telegram_id,order_type,created_at';
+
+async function fetchOrdersInRange(supabase, range) {
+  const query = (select) => toQuery({
+    select,
+    and: `(created_at.gte.${range.fromIso},created_at.lte.${range.toIso})`,
+    order: 'created_at.asc,id.asc',
+  });
+  try {
+    return await fetchAllRows(supabase, 'orders', query(`${ORDER_FIELDS},source`));
+  } catch (error) {
+    console.warn('orders source select warn (migratsiya qo\u2018llanmagan?):', error?.message);
+    return fetchAllRows(supabase, 'orders', query(ORDER_FIELDS));
+  }
+}
+
+// Oraliqda ro'yxatdan o'tgan foydalanuvchilarning manbasi. Xuddi shu sabab
+// bilan xatoga chidamli — ustun yo'q bo'lsa bo'sh ro'yxat.
+async function fetchUserSourcesInRange(supabase, range) {
+  try {
+    return await fetchAllRows(supabase, 'users', toQuery({
+      select: 'source',
+      and: `(created_at.gte.${range.fromIso},created_at.lte.${range.toIso})`,
+      order: 'created_at.asc',
+    }));
+  } catch (error) {
+    console.warn('users source select warn:', error?.message);
+    return [];
+  }
+}
+
+// Manbalar lug'ati (traffic_sources) — o'qiydigan nomlar uchun.
+async function fetchSourceDictionary(supabase) {
+  try {
+    const { data } = await request(supabase, 'traffic_sources', { query: 'select=slug,label,kind' });
+    return Object.fromEntries((data || []).map((r) => [r.slug, r]));
+  } catch {
+    return {};
+  }
+}
+
+// Trafik manbalari kesimi (sof funksiya — testlanadi).
+//
+// Har bir manba uchun: oraliqda kelgan yangi foydalanuvchi, yaratilgan va
+// to'langan buyurtma, tushum, konversiya va o'rtacha chek.
+//
+// MUHIM nuance: `users` — oraliqda RO'YXATDAN O'TGANLAR, `orders` — oraliqda
+// YARATILGAN buyurtmalar. Mijoz martda kelib aprelda xarid qilsa, aprel
+// hisobotida uning buyurtmasi bor-u, "yangi foydalanuvchi" si yo'q — shuning
+// uchun konversiya 100% dan oshishi mumkin. Bu xato emas, shunday bo'lishi
+// kerak: manba o'z pulini keyin ham qaytarib beraveradi. `users` va `orders`
+// ustunlari shu sababli alohida ko'rsatiladi, bitta raqamga qo'shilmaydi.
+function summarizeSources(users, orders, dictionary = {}) {
+  const rows = new Map();
+  const row = (slug) => {
+    const key = slug || '(noma\u2019lum)';
+    if (!rows.has(key)) {
+      rows.set(key, {
+        slug: slug || null,
+        label: slug ? sourceLabel(slug, dictionary) : 'Manbasi yo\u2018q',
+        kind: slug ? sourceKind(slug) : 'other',
+        users: 0,
+        ordersCreated: 0,
+        ordersPaid: 0,
+        revenue: 0,
+      });
+    }
+    return rows.get(key);
+  };
+
+  for (const u of users) row(u.source || null).users += 1;
+  for (const o of orders) {
+    // To'ldirish (topup) — sotuv emas, manba hisobotini buzmasligi uchun
+    // chetga olinadi (dashboard'ning qolgan qismi ham shunday qiladi).
+    if (String(o.order_type || 'purchase') === 'topup') continue;
+    const r = row(o.source || null);
+    r.ordersCreated += 1;
+    if (isPaidPurchase(o)) {
+      r.ordersPaid += 1;
+      r.revenue += value(o);
+    }
+  }
+
+  const list = [...rows.values()]
+    .map((r) => ({
+      ...r,
+      revenue: Math.round(r.revenue),
+      avgCheck: r.ordersPaid > 0 ? Math.round(r.revenue / r.ordersPaid) : 0,
+      // Konversiya: shu manbadan kelganlarning necha foizi xarid qilgan.
+      conversion: r.users > 0 ? Math.round((r.ordersPaid / r.users) * 100) : null,
+    }))
+    .filter((r) => r.users > 0 || r.ordersCreated > 0)
+    // Tushum bo'yicha — "qaysi manba PUL keltirdi" degan savol asosiy.
+    .sort((a, b) => b.revenue - a.revenue || b.users - a.users);
+
+  return {
+    rows: list,
+    // Reels alohida: har bir ssenariy o'z kodi bilan ketadi (reels_01…reels_12),
+    // shuning uchun "qaysi video sotdi" degan savolga to'g'ridan-to'g'ri javob.
+    reels: list.filter((r) => r.kind === 'reels').sort((a, b) => b.revenue - a.revenue),
+    totals: {
+      users: list.reduce((n, r) => n + r.users, 0),
+      ordersPaid: list.reduce((n, r) => n + r.ordersPaid, 0),
+      revenue: list.reduce((n, r) => n + r.revenue, 0),
+      known: list.filter((r) => r.slug).reduce((n, r) => n + r.users, 0),
+    },
+  };
+}
+exports._summarizeSources = summarizeSources;
 exports._rangeBounds = rangeBounds;
 
 exports.handler = async (event) => {
@@ -177,6 +296,7 @@ exports.handler = async (event) => {
       totalClicks, totalPaymentOpens, categoryRows, planRows, paymentRows, eventLogs, categories, plans,
       ordersResp, inventoryResp, referralsResp,
       waitingPaymentCount, paymentUploadedCount, manualRequiredCount, waitingStockCount,
+      userSourceRows, sourceDictionary,
     ] = await Promise.all([
       // Raqam berganlar — haqiqiy foydalanuvchilar; raqamsizlar alohida sanaladi
       countRows(supabase, 'users', 'phone=not.is.null'),
@@ -194,11 +314,7 @@ exports.handler = async (event) => {
       // Tanlangan oraliqdagi HAMMA buyurtma. Ilgari `limit: 10000` edi, lekin
       // Supabase (PostgREST max-rows) baribir 1000 tadan ko'p qaytarmaydi —
       // band oylarda tushum kam ko'rsatilardi. Endi sahifalab olinadi.
-      fetchAllRows(supabase, 'orders', toQuery({
-        select: 'id,amount,base_price,unique_price,discount_amount,balance_used,status,delivery_status,plan_id,user_telegram_id,order_type,created_at',
-        and: `(created_at.gte.${range.fromIso},created_at.lte.${range.toIso})`,
-        order: 'created_at.asc,id.asc',
-      })),
+      fetchOrdersInRange(supabase, range),
       // Zaxira ham 1000 bilan kesilardi — "kam qoldi" ogohlantirishi noto'g'ri edi
       fetchAllRows(supabase, 'inventory_items', 'select=plan_id,status&order=id.asc'),
       request(supabase, 'referrals', { query: 'select=total_earned' }).catch(() => ({ data: [] })),
@@ -206,6 +322,8 @@ exports.handler = async (event) => {
       countRows(supabase, 'orders', 'status=in.(payment_uploaded,checking)'),
       countRows(supabase, 'orders', 'status=eq.approved&delivery_status=eq.manual_required'),
       countRows(supabase, 'orders', 'delivery_status=eq.waiting_stock&status=not.in.(completed,rejected,cancelled,expired)'),
+      fetchUserSourcesInRange(supabase, range),
+      fetchSourceDictionary(supabase),
     ]);
     const orders = ordersResp;
     const inventory = inventoryResp;
@@ -278,6 +396,8 @@ exports.handler = async (event) => {
           },
           dailyRevenue: summary.dailyRevenue,
           profit,
+          // Trafik manbalari — "qaysi reklama sotuv keltirdi"
+          sources: summarizeSources(userSourceRows, orders, sourceDictionary),
           // Global (oraliqqa bog'liq emas) — hozir nima kutib turibdi
           waitingPaymentCount,
           paymentUploadedCount,

@@ -171,6 +171,31 @@ function referralText({ telegramId, botUsername, fixedBonus = 0, percent = 0 }) 
   ].join('\n');
 }
 
+// Xaridan KEYIN yuboriladigan referal xabari.
+//
+// Nima uchun alohida xabar: kredensiallar xabari toza qolishi kerak —
+// mijoz undan login/parolni nusxalaydi, oxiriga reklama qo'shilsa chalkashadi.
+// Nima uchun aynan shu payt: odam hozirgina pul to'lab, mahsulotni olib,
+// mamnun — do'stiga aytishga eng tayyor lahza. Referal havolasi Profil
+// ichida kutib yotganda esa hech kim ochmaydi.
+function postPurchaseReferralText({ telegramId, botUsername, fixedBonus = 0, percent = 0 }) {
+  const username = String(botUsername || 'santyxnarxbot').replace('@', '');
+  const perks = [];
+  if (Number(fixedBonus) > 0) perks.push(`+${Number(fixedBonus).toLocaleString('uz-UZ')} UZS — do‘stingiz raqamini tasdiqlaganda`);
+  if (Number(percent) > 0) perks.push(`${Number(percent)}% — uning har bir xarididan`);
+  return [
+    '✅ Obunangizdan mamnunmisiz? Endi uni pulga aylantiring.',
+    '',
+    '🤝 <b>Do‘st taklif qiling — balansingizga pul tushadi:</b>',
+    ...(perks.length ? perks.map((p) => `• ${escapeHtml(p)}`) : ['• Har bir taklif uchun bonus']),
+    '',
+    'Shaxsiy havolangiz:',
+    `https://t.me/${escapeHtml(username)}?start=ref_${escapeHtml(telegramId)}`,
+    '',
+    'Balansni keyingi xaridda to‘liq ishlatasiz.',
+  ].join('\n');
+}
+
 function receiptAcceptedText(order) {
   return [
     'Chekingiz qabul qilindi ✅',
@@ -219,6 +244,7 @@ module.exports = {
   autoPaymentInstructionsText,
   balanceText,
   referralText,
+  postPurchaseReferralText,
   receiptAcceptedText,
   noActiveOrderForReceiptText,
   genericOrderErrorText,

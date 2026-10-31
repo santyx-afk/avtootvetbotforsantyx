@@ -100,6 +100,24 @@
                 <p class="hint" id="planProfitHint"></p>
                 <div id="planProfitList" class="table-card"></div>
               </div>
+              <div class="card" id="sourcesCard" style="margin-bottom:1rem">
+                <h3>📣 Trafik manbalari (tanlangan oraliq)</h3>
+                <p class="hint" id="sourcesHint"></p>
+                <div id="sourcesList" class="table-card"></div>
+                <h4 style="margin:1.1rem 0 .35rem">🎬 Reels bo'yicha</h4>
+                <p class="hint">Har bir Reels o'z kodi bilan ketadi (reels_01…reels_12) — qaysi video sotuv keltirgani shu jadvalda ko'rinadi.</p>
+                <div id="reelsList" class="table-card"></div>
+                <details style="margin-top:1rem">
+                  <summary style="cursor:pointer"><strong>🔗 Havola generatori</strong></summary>
+                  <div class="toolbar" style="margin-top:.6rem">
+                    <input id="srcGenSlug" type="text" placeholder="manba kodi: reels_01, instagram_bio…" />
+                    <input id="srcGenBot" type="text" value="santyxnarxbot" title="Bot username" />
+                    <input id="srcGenSite" type="text" value="https://santyx.uz" title="Sayt manzili" />
+                    <button id="srcGenButton" type="button">Havola yasash</button>
+                  </div>
+                  <div id="srcGenOut" class="table-card"></div>
+                </details>
+              </div>
               <div class="card" style="margin-bottom:1rem">
                 <h3>So'nggi buyurtmalar</h3>
                 <div id="recentOrders" class="table-card"></div>
@@ -180,6 +198,16 @@
                     </div>
                     <img id="planImagePreview" class="image-preview" alt="" />
                   </label>
+                  <label>To'plam (bundle)<input id="planIsBundle" type="checkbox" />
+                    <small class="hint">Belgilansa, bitta buyurtmada tarkibdagi barcha obunalar yetkaziladi.</small>
+                  </label>
+                  <div class="full" id="planBundleBox" hidden>
+                    <h4 style="margin:.2rem 0 .4rem">To'plam tarkibi</h4>
+                    <p class="hint">Mijoz TO'PLAM narxini to'laydi, tarkibdagi har bir obuna esa alohida akkaunt sifatida yetkaziladi. To'plam ichiga boshqa to'plam qo'shib bo'lmaydi.</p>
+                    <div id="planBundleRows"></div>
+                    <button type="button" id="planBundleAdd" class="ghost">+ Obuna qo'shish</button>
+                    <p class="hint" id="planBundleSummary"></p>
+                  </div>
                   <label class="full">Kafolat<textarea id="planWarrantyText" rows="2"></textarea></label>
                   <label class="full">Qoidalar<textarea id="planRulesText" rows="2"></textarea></label>
                   <label class="full">Qisqa tavsif<textarea id="planDescription" rows="3"></textarea></label>
