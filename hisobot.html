@@ -1,0 +1,1001 @@
+<!doctype html>
+<html lang="uz">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Santyx — 7 yo'nalish hisoboti</title>
+<style>
+  :root {
+    --bg: #0f141b;
+    --surface: #161c25;
+    --surface-2: #1c232e;
+    --line: rgba(255,255,255,.10);
+    --text: #eef2f7;
+    --muted: #93a1b1;
+    --accent: #3b82f6;
+    --accent-2: #8b5cf6;
+    --ok: #4ade80;
+    --warn: #fbbf24;
+    --maxw: 920px;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 76px; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.65 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 16px; }
+
+  /* ---- Sarlavha ---- */
+  header.top {
+    position: sticky; top: 0; z-index: 20;
+    background: rgba(15,20,27,.88);
+    backdrop-filter: saturate(180%) blur(12px);
+    border-bottom: 1px solid var(--line);
+  }
+  header.top .wrap { display: flex; align-items: center; gap: 14px; height: 56px; }
+  .logo { font-weight: 800; letter-spacing: .14em; font-size: 14px; }
+  nav.toc { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; }
+  nav.toc::-webkit-scrollbar { display: none; }
+  nav.toc a {
+    white-space: nowrap; padding: 6px 11px; border-radius: 999px;
+    font-size: 13px; color: var(--muted); text-decoration: none;
+  }
+  nav.toc a:hover { background: var(--surface-2); color: var(--text); }
+
+  .hero { padding: 48px 0 8px; }
+  h1 { font-size: clamp(28px, 5vw, 42px); line-height: 1.1; letter-spacing: -.03em; margin: 0 0 14px; font-weight: 800; }
+  .grad { background: linear-gradient(135deg, var(--accent), var(--accent-2));
+          -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .lede { font-size: 18px; color: var(--muted); max-width: 62ch; margin: 0 0 22px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+  .meta span { font-size: 12.5px; color: var(--muted); border: 1px solid var(--line);
+               border-radius: 999px; padding: 5px 12px; }
+
+  section { padding: 34px 0; border-top: 1px solid var(--line); }
+  section:first-of-type { border-top: none; }
+  h2 { font-size: clamp(21px, 3.4vw, 27px); letter-spacing: -.02em; margin: 0 0 6px; font-weight: 750; }
+  h2 .num { color: var(--muted); font-weight: 600; margin-right: 10px; font-variant-numeric: tabular-nums; }
+  h3 { font-size: 17px; margin: 26px 0 8px; font-weight: 700; }
+  h4 { font-size: 15px; margin: 18px 0 6px; font-weight: 700; color: var(--muted); }
+  p { margin: 0 0 12px; }
+  ul, ol { margin: 0 0 14px; padding-left: 20px; }
+  li { margin-bottom: 5px; }
+  a { color: #7dabff; }
+
+  .sub { color: var(--muted); margin: 0 0 18px; }
+
+  /* ---- Kartalar ---- */
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin: 18px 0; }
+  .card { border: 1px solid var(--line); border-radius: 14px; padding: 16px; background: var(--surface); }
+  .card strong { display: block; font-size: 24px; font-weight: 800; letter-spacing: -.02em;
+                 background: linear-gradient(135deg, var(--accent), var(--accent-2));
+                 -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .card span { font-size: 13px; color: var(--muted); }
+
+  /* ---- Jadval ---- */
+  .tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; margin: 14px 0 18px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; min-width: 460px; }
+  th, td { text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); font-weight: 600; }
+  tbody tr:last-child td { border-bottom: none; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  /* ---- Holat belgilari ---- */
+  .pill { display: inline-block; font-size: 11.5px; font-weight: 700; padding: 2px 9px;
+          border-radius: 999px; white-space: nowrap; }
+  .pill.done { background: rgba(74,222,128,.14); color: var(--ok); }
+  .pill.todo { background: rgba(251,191,36,.14); color: var(--warn); }
+
+  /* ---- Qutilar ---- */
+  .note, .warnbox {
+    border-radius: 14px; padding: 14px 16px; margin: 16px 0; font-size: 14.5px;
+    border: 1px solid var(--line); background: var(--surface);
+  }
+  .warnbox { border-color: rgba(251,191,36,.35); background: rgba(251,191,36,.07); }
+  .note p:last-child, .warnbox p:last-child { margin-bottom: 0; }
+  .note b, .warnbox b { color: var(--text); }
+
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px;
+         background: var(--surface-2); padding: 2px 6px; border-radius: 6px; }
+  pre { background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px;
+        padding: 14px 16px; overflow-x: auto; margin: 12px 0 16px; }
+  pre code { background: none; padding: 0; font-size: 13px; line-height: 1.6; white-space: pre; }
+
+  /* ---- Yig'iladigan bloklar ---- */
+  details { border: 1px solid var(--line); border-radius: 12px; margin-bottom: 8px; background: var(--surface); }
+  details[open] { background: var(--surface-2); }
+  summary { cursor: pointer; padding: 13px 16px; font-weight: 650; font-size: 15px; list-style: none; }
+  summary::-webkit-details-marker { display: none; }
+  summary::before { content: '▸'; display: inline-block; width: 18px; color: var(--muted); transition: transform .15s; }
+  details[open] summary::before { transform: rotate(90deg); }
+  summary .tag { font-family: ui-monospace, monospace; font-size: 11.5px; color: var(--muted); margin-left: 8px; }
+  .detbody { padding: 0 16px 14px; }
+  .detbody > :first-child { margin-top: 0; }
+
+  .msg { border-left: 3px solid var(--accent); background: var(--surface-2); border-radius: 0 10px 10px 0;
+         padding: 12px 16px; margin: 10px 0 14px; white-space: pre-wrap; font-size: 14.5px; }
+
+  footer { border-top: 1px solid var(--line); padding: 28px 0 56px; color: var(--muted); font-size: 13.5px; }
+
+  @media (max-width: 640px) {
+    nav.toc { display: none; }
+    .hero { padding-top: 32px; }
+  }
+  @media print {
+    header.top { display: none; }
+    body { background: #fff; color: #111; }
+    details { break-inside: avoid; }
+    details > .detbody { display: block !important; }
+  }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="logo">SANTYX</span>
+    <nav class="toc">
+      <a href="#xulosa">Xulosa</a>
+      <a href="#ishga">Ishga tushirish</a>
+      <a href="#manba">Manba</a>
+      <a href="#sahifa">Bosh sahifa</a>
+      <a href="#referal">Referal</a>
+      <a href="#reels">Reels</a>
+      <a href="#dm">Avto-DM</a>
+      <a href="#kafolat">Kafolat</a>
+      <a href="#toplam">To'plamlar</a>
+      <a href="#cheklov">Cheklovlar</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+
+<div class="hero">
+  <div class="meta">
+    <span>31-oktabr, 2026</span>
+    <span>Branch: claude/happy-curie-hitc52</span>
+    <span>7 yo'nalish</span>
+  </div>
+  <h1>Reklama qayerda ishlayotganini <span class="grad">ko'rsatadigan tizim</span></h1>
+  <p class="lede">
+    Yettita yo'nalish bo'yicha ish yakunlandi: uchtasi kodda ishlaydigan
+    funksiya, to'rttasi ishlatishga tayyor kontent va qaror. Quyida nima
+    qilingani, uni qanday ishga tushirish va har haftada nimani tekshirish
+    kerakligi bor.
+  </p>
+</div>
+
+<!-- ============ XULOSA ============ -->
+<section id="xulosa">
+  <h2>Qisqacha</h2>
+  <p class="sub">Eng muhim o'zgarish bitta: endi har bir sotuvning qayerdan kelgani ko'rinadi.</p>
+
+  <div class="cards">
+    <div class="card"><strong>7/7</strong><span>yo'nalish yakunlandi</span></div>
+    <div class="card"><strong>12</strong><span>Reels ssenariysi</span></div>
+    <div class="card"><strong>17</strong><span>yangi avtotest</span></div>
+    <div class="card"><strong>1</strong><span>qo'lda ishga tushiriladigan migratsiya</span></div>
+  </div>
+
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th>Yo'nalish</th><th>Natija</th><th>Holat</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>1. Bosh sahifada narx va ijtimoiy isbot</b></td>
+        <td>Mijozlar soni, yetkazilgan obunalar, reyting va sharhlar — bazadan real vaqtda. To'liq narxlar jadvali.</td>
+        <td><span class="pill done">Kodda</span></td>
+      </tr>
+      <tr>
+        <td><b>2. Manbani o'lchash</b></td>
+        <td><code>?start=</code> havolalari, sayt UTM, admin panelda manba va Reels kesimi.</td>
+        <td><span class="pill done">Kodda</span></td>
+      </tr>
+      <tr>
+        <td><b>3. Referal reklamasi</b></td>
+        <td>Xaridan keyin alohida xabar, bosh sahifada bo'lim, botda tugma.</td>
+        <td><span class="pill done">Kodda</span></td>
+      </tr>
+      <tr>
+        <td><b>4. Reels ssenariylari</b></td>
+        <td>4 hafta × 3 ta, har birining o'z manba kodi bilan.</td>
+        <td><span class="pill done">Tayyor</span></td>
+      </tr>
+      <tr>
+        <td><b>5. Avto-DM matni</b></td>
+        <td>4 xabarli ketma-ketlik + 6 ta javob qolipi + chatla sozlamalari.</td>
+        <td><span class="pill done">Tayyor</span></td>
+      </tr>
+      <tr>
+        <td><b>6. Kafolat sharti</b></td>
+        <td>Uch variant taqqoslandi, pog'onali shart tavsiya qilindi, matnlar yozildi.</td>
+        <td><span class="pill todo">Qaror sizda</span></td>
+      </tr>
+      <tr>
+        <td><b>7. To'plamlar</b></td>
+        <td>Kodda to'liq qo'llab-quvvatlash + 4 ta paket va narx formulasi.</td>
+        <td><span class="pill done">Kodda</span></td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="warnbox">
+    <p><b>Diqqat.</b> Kod tayyor va testdan o'tgan, lekin <b>baza migratsiyasi
+    qo'lda ishga tushiriladi</b> — bu loyihadagi qoida (migratsiyalar hech
+    qachon avtomatik qo'llanmaydi). Migratsiyasiz ham hamma narsa ishlayveradi:
+    manba bo'limi bo'sh turadi, to'plam esa oddiy reja kabi sotiladi. Ishga
+    tushirish bosqichlari keyingi bo'limda.</p>
+  </div>
+</section>
+
+<!-- ============ ISHGA TUSHIRISH ============ -->
+<section id="ishga">
+  <h2><span class="num">0</span>Ishga tushirish — 3 qadam</h2>
+  <p class="sub">Taxminan 20 daqiqa. Birinchi qadam majburiy, qolgani ketma-ket.</p>
+
+  <h3>1-qadam. Migratsiya (5 daqiqa, bir marta)</h3>
+  <p>Supabase → SQL Editor → quyidagi faylni to'liq nusxalab ishga tushiring:</p>
+  <pre><code>migrations/2026-10-31_source-tracking-and-bundles.sql</code></pre>
+  <p>Fayl ikki marta ishga tushirilsa ham buzilmaydi (idempotent). U nima qiladi:</p>
+  <ul>
+    <li><code>users.source</code>, <code>users.source_first_at</code> — foydalanuvchini qaysi havola olib kelgani</li>
+    <li><code>orders.source</code> — buyurtma yaratilgan paytdagi manba nusxasi</li>
+    <li><code>traffic_sources</code> — manbalar lug'ati, 17 ta boshlang'ich yozuv bilan (<code>reels_01</code>…<code>reels_12</code>, Instagram, Telegram, chatla, sayt)</li>
+    <li><code>plans.is_bundle</code> va <code>plan_bundle_items</code> — to'plamlar</li>
+  </ul>
+
+  <h3>2-qadam. Reklamadagi havolalarni almashtiring (10 daqiqa)</h3>
+  <p>Admin panel → Dashboard → <b>Trafik manbalari</b> → <i>Havola generatori</i>.
+  Manba kodini yozib «Havola yasash» tugmasini bosasiz — bot, Mini App va sayt
+  havolalari tayyor chiqadi.</p>
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th>Qayerda</th><th>Manba kodi</th><th>Havola</th></tr></thead>
+    <tbody>
+      <tr><td>Instagram bio</td><td><code>instagram_bio</code></td><td><code>t.me/santyxnarxbot?start=src_instagram_bio</code></td></tr>
+      <tr><td>Instagram story</td><td><code>instagram_story</code></td><td><code>t.me/santyxnarxbot?start=src_instagram_story</code></td></tr>
+      <tr><td>Telegram kanal</td><td><code>telegram_channel</code></td><td><code>t.me/santyxnarxbot?start=src_telegram_channel</code></td></tr>
+      <tr><td>chatla avto-DM</td><td><code>chatla_dm</code></td><td><code>t.me/santyxnarxbot?start=src_chatla_dm</code></td></tr>
+      <tr><td>Har bir Reels</td><td><code>reels_01</code>…<code>reels_12</code></td><td><code>t.me/santyxnarxbot?start=reels_07</code></td></tr>
+      <tr><td>Sayt reklamasi</td><td>istalgan</td><td><code>santyx.uz/?src=instagram_bio</code></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="note">
+    <p><b>Reels uchun qisqa shakl.</b> <code>?start=reels_07</code> — <code>src_</code>
+    prefiksisiz ishlaydi, chunki og'zaki aytishga va yozib olishga qulay.
+    <code>reels_7</code> va <code>reels_07</code> bitta manba deb hisoblanadi.</p>
+  </div>
+
+  <h3>3-qadam. To'plamlarni yarating (5 daqiqa har biri)</h3>
+  <p>Admin panel → Rejalar → Yangi reja → <b>To'plam (bundle)</b> belgisini
+  qo'ying → tarkibni tanlang. Narx kiritganingizda «Alohida / To'plam / Mijoz
+  tejaydi» qatori o'zi hisoblanadi. Tafsilot — <a href="#toplam">To'plamlar</a> bo'limida.</p>
+</section>
+
+<!-- ============ MANBA ============ -->
+<section id="manba">
+  <h2><span class="num">1</span>Manbani o'lchash</h2>
+  <p class="sub">«Qaysi Reels sotuv keltirdi?» — endi bu savolga javob bor.</p>
+
+  <h4>Muammo nima edi</h4>
+  <p>Bot <code>?start=</code> payload'ini faqat uchta holatda tanirdi:
+  <code>web_login</code>, <code>support</code> va <code>ref_&lt;id&gt;</code>.
+  Qolgan hamma narsa jimgina tashlab yuborilardi. <code>users</code> jadvalida
+  manba ustuni ham yo'q edi. Demak har qanday reklama — Reels, bio havolasi,
+  Telegram kanali — bir xil ko'rinardi: hech qanday.</p>
+
+  <h4>Qanday ishlaydi</h4>
+  <p><b>Birinchi teginish qoidasi.</b> Odam birinchi marta qaysi havola bilan
+  kelgan bo'lsa, o'sha manba yoziladi va keyin <b>o'zgarmaydi</b>. Keyin
+  boshqa havola bilan qaytsa ham, hissa birinchi havolaga qoladi.</p>
+  <p>Texnik tomoni: yozuv <code>source=is.null</code> filtri bilan atomik
+  <code>PATCH</code> orqali ketadi. Bu loyihadagi <code>welcome_bonus_at</code>
+  va <code>signup_bonus_at</code> bilan bir xil naqsh — ikkita parallel
+  <code>/start</code> kelsa ham faqat bittasi yozadi.</p>
+
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th>Kirish nuqtasi</th><th>Qanday uzatiladi</th><th>Nima yoziladi</th></tr></thead>
+    <tbody>
+      <tr><td>Bot deep-link</td><td><code>?start=src_instagram_bio</code></td><td><code>instagram_bio</code></td></tr>
+      <tr><td>Bot, Reels</td><td><code>?start=reels_7</code></td><td><code>reels_07</code></td></tr>
+      <tr><td>Referal</td><td><code>?start=ref_12345</code></td><td><code>referral</code></td></tr>
+      <tr><td>Sayt</td><td><code>?utm_source=instagram&amp;utm_content=reels_07</code></td><td><code>reels_07</code></td></tr>
+      <tr><td>Sayt, qisqa</td><td><code>?src=chatla_dm</code></td><td><code>chatla_dm</code></td></tr>
+      <tr><td>Mini App</td><td><code>?startapp=src_website</code></td><td><code>website</code></td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>Saytda manba <code>localStorage</code> ga yoziladi va <code>init</code>
+  so'rovi bilan serverga ketadi. Shuning uchun odam bir necha sahifa aylansa
+  yoki ertasi kuni qaytsa ham manba yo'qolmaydi. Mijoz yuborgan qiymatga
+  ishonilmaydi — server uni qayta tozalaydi (faqat <code>a-z 0-9 _ -</code>, 40 belgi).</p>
+
+  <h4>Buyurtmaga nusxa ko'chiriladi</h4>
+  <p>Buyurtma yaratilganda manba <code>orders.source</code> ga <b>nusxa</b>
+  qilinadi. Bu ataylab: foydalanuvchi qatori keyin o'zgarsa yoki o'chsa ham,
+  o'tgan oyning hisoboti o'zgarmasligi kerak.</p>
+
+  <h4>Admin panelda nima ko'rinadi</h4>
+  <p>Dashboard → <b>Trafik manbalari</b>. Tanlangan sana oralig'i bo'yicha:</p>
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th>Manba</th><th class="num">Yangi</th><th class="num">Buyurtma</th><th class="num">To'landi</th><th class="num">Tushum</th><th class="num">O'rt. chek</th><th class="num">Konv.</th></tr></thead>
+    <tbody>
+      <tr><td>Reels #07 <code>reels_07</code></td><td class="num">48</td><td class="num">14</td><td class="num">11</td><td class="num">429 000</td><td class="num">39 000</td><td class="num">23%</td></tr>
+      <tr><td>Instagram bio</td><td class="num">31</td><td class="num">6</td><td class="num">5</td><td class="num">195 000</td><td class="num">39 000</td><td class="num">16%</td></tr>
+      <tr><td>chatla.uz avto-DM</td><td class="num">22</td><td class="num">9</td><td class="num">7</td><td class="num">385 000</td><td class="num">55 000</td><td class="num">32%</td></tr>
+      <tr><td>Manbasi yo'q</td><td class="num">60</td><td class="num">12</td><td class="num">9</td><td class="num">351 000</td><td class="num">39 000</td><td class="num">15%</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p style="font-size:13.5px;color:var(--muted);margin-top:-6px">
+    Yuqoridagi jadval — <b>ko'rinish namunasi</b>, haqiqiy ma'lumot emas.
+    Reels bo'yicha alohida jadval ham bor.</p>
+
+  <div class="note">
+    <p><b>Konversiya 100% dan oshishi mumkin — bu xato emas.</b> «Yangi» ustuni
+    shu oraliqda ro'yxatdan o'tganlarni, «To'landi» esa shu oraliqda xarid
+    qilganlarni sanaydi. Martda kelgan mijoz aprelda xarid qilsa, aprel
+    hisobotida xaridi bor-u «yangi» si yo'q. Ya'ni yaxshi manba o'z pulini
+    keyingi oylarda ham qaytarib beraveradi.</p>
+  </div>
+</section>
+
+<!-- ============ BOSH SAHIFA ============ -->
+<section id="sahifa">
+  <h2><span class="num">2</span>Bosh sahifa: narx va ijtimoiy isbot</h2>
+  <p class="sub">Raqamlar bazadan keladi, shuning uchun hech qachon yolg'on bo'lmaydi.</p>
+
+  <h4>Ijtimoiy isbot bandi</h4>
+  <p>Hero'dan keyin darhol to'rtta plitka turadi: mamnun mijozlar, yetkazilgan
+  obunalar, o'rtacha reyting, sharhlar soni. Hammasi <code>public-stats</code>
+  endpointidan real vaqtda olinadi.</p>
+  <p><b>Raqamlar pastga yaxlitlanadi.</b> 1 247 mijoz bo'lsa «1 200+» deb
+  ko'rsatiladi. Ya'ni yozilgan son har doim haqiqatdan kichik yoki teng —
+  «1000+ mijoz» yozuvi bir oydan keyin ham, bir yildan keyin ham rost
+  bo'lib qolaveradi. Ma'lumot yo'q bo'lsa plitka umuman chizilmaydi: nol
+  raqam ishonchni oshirmaydi, pasaytiradi.</p>
+
+  <h4>To'liq narxlar jadvali</h4>
+  <p>Ilgari bosh sahifada faqat 8 ta mashhur mahsulot kartochkasi bor edi.
+  Endi alohida «Narxlar» bo'limida <b>butun katalog</b> turadi: nomi, muddati,
+  narxi, eski narxi va to'plamlar uchun «tejaysiz» yozuvi. Tashrifchi
+  «qanchadan?» degan savolga javobni botga kirmasdan oladi.</p>
+
+  <h4>Mijoz sharhlari</h4>
+  <p>Faqat 4–5 yulduzli va kamida 25 belgidan uzun sharhlar chiqadi — «zo'r»,
+  «rahmat» kabi sharhlar isbot bo'lmaydi. Ism qisqartiriladi («Jasur A.»),
+  bu server tomonida bajariladi: to'liq ism va sharh birgalikda odamni
+  tanitib qo'ymasligi uchun.</p>
+
+  <div class="note">
+    <p><b>Yo'l-yo'lakay topilgan xato.</b> Yangi bo'limlar birinchi
+    urinishda butunlay ko'rinmadi. Sabab: sahifadagi <code>reveal</code>
+    animatsiyasi bloklarni <code>opacity: 0</code> bilan boshlaydi va
+    kuzatuvchini faqat katalog yuklanganda ulaydi. Statistika so'rovi
+    katalogdan keyin kelgani uchun yangi bloklar kuzatuvsiz qolib,
+    doimiy ko'rinmas bo'lib qolardi. Tuzatildi va brauzerda tekshirildi.</p>
+  </div>
+</section>
+
+<!-- ============ REFERAL ============ -->
+<section id="referal">
+  <h2><span class="num">3</span>Referal reklamasi</h2>
+  <p class="sub">Tizim ishlayotgan edi, lekin uni hech kim ko'rmasdi.</p>
+
+  <p>Referal mexanizmi to'liq ishlaydi: bonus, foiz, nakrutkaga qarshi
+  himoya (bonus faqat raqam tasdiqlanganda to'lanadi). Muammo ko'rinishda
+  edi — havola Profil ichida kutib yotardi.</p>
+
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th>Joy</th><th>Oldin</th><th>Hozir</th></tr></thead>
+    <tbody>
+      <tr><td>Bot asosiy menyu</td><td>Tugma bor edi</td><td>O'zgarmadi</td></tr>
+      <tr><td><b>Xaridan keyin</b></td><td>Hech narsa</td><td>Alohida xabar: aniq bonus summasi va shaxsiy havola</td></tr>
+      <tr><td><b>Bosh sahifa</b></td><td>«Yana nimalar bor» ro'yxatida bitta satr</td><td>Alohida bo'lim: bonus summasi, 3 qadam, tugma</td></tr>
+      <tr><td>Mini App profili</td><td>Havola va statistika</td><td>O'zgarmadi</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h4>Xaridan keyingi xabar</h4>
+  <p>Kredensiallar xabaridan <b>keyin, alohida</b> yuboriladi — mijoz birinchi
+  xabardan login va parolni nusxalaydi, uning oxiriga reklama qo'shilsa
+  chalkashadi. Vaqt tanlovi ham ataylab: odam hozirgina pul to'lab,
+  mahsulotni olgan va mamnun — do'stiga aytishga eng tayyor lahza.</p>
+  <div class="msg">✅ Obunangizdan mamnunmisiz? Endi uni pulga aylantiring.
+
+🤝 Do'st taklif qiling — balansingizga pul tushadi:
+• +5 000 UZS — do'stingiz raqamini tasdiqlaganda
+• 10% — uning har bir xarididan
+
+Shaxsiy havolangiz:
+https://t.me/santyxnarxbot?start=ref_123456
+
+Balansni keyingi xaridda to'liq ishlatasiz.</div>
+  <p style="font-size:13.5px;color:var(--muted);margin-top:-6px">
+    Summalar Sozlamalardagi haqiqiy qiymatlardan olinadi. Takror yuborilmaydi
+    (<code>audit_logs</code> himoyasi), avtomatik va qo'lda yetkazishda ham ishlaydi.</p>
+</section>
+
+<!-- ============ REELS ============ -->
+<section id="reels">
+  <h2><span class="num">4</span>Reels ssenariylari — 12 ta</h2>
+  <p class="sub">Haftasiga 3 ta, kameraga gapiriladigan format. Har birining o'z manba kodi bor.</p>
+
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th>Hafta</th><th>Dushanba</th><th>Chorshanba</th><th>Juma</th></tr></thead>
+    <tbody>
+      <tr><td><b>1</b> Muammo va ishonch</td><td>Narx farqi</td><td>To'lov muammosi</td><td>CapCut cheklovlari</td></tr>
+      <tr><td><b>2</b> Qiymat</td><td>Canva funksiyalari</td><td>Crack xavfi</td><td>Jarayon (10 daqiqa)</td></tr>
+      <tr><td><b>3</b> E'tirozlar</td><td>«Haqiqiymi?»</td><td>Kafolat</td><td>Yillik hisob</td></tr>
+      <tr><td><b>4</b> Isbot va taklif</td><td>Mijoz hikoyasi</td><td>To'plam</td><td>Referal</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h4>Umumiy qoidalar</h4>
+  <ul>
+    <li><b>Uzunlik:</b> 20–35 soniya (yillik hisob 40 s gacha)</li>
+    <li><b>Birinchi 1 soniya:</b> vizual ilgak + og'zaki ilgak + ekran matni — uchtasi uch xil ish qiladi</li>
+    <li><b>3–15 soniya:</b> ilgakdagi va'dani davom ettiradi, reklamaga o'tmaydi</li>
+    <li><b>Ekran matni:</b> 2 qatordan oshmasin, qatorida 3–5 so'z</li>
+    <li><b>CTA:</b> «Izohga <b>PRO</b> deb yozing — narxlar ro'yxatini shaxsiyga tashlayman»</li>
+  </ul>
+
+  <h3>Ssenariylar</h3>
+
+  <details><summary>1. Narx farqi <span class="tag">reels_01 · 25 s</span></summary><div class="detbody">
+    <p><b>Format:</b> Muammo → Yechim. <b>Maqsad:</b> asosiy va'dani bir marta, aniq raqam bilan aytish.</p>
+    <div class="tablewrap"><table><tbody>
+      <tr><td class="num">0–3 s</td><td><b>Ilgak.</b> «CapCut Pro uchun oyiga 25 dollar to'layapsizmi? To'xtang.» Ekran matni: <code>25$ VS 39 000</code></td></tr>
+      <tr><td class="num">3–9 s</td><td>«Rasmiy narx — oyiga taxminan 25 dollar. Bu bizning pulda 300 mingdan oshadi.» B-roll: rasmiy narx sahifasi</td></tr>
+      <tr><td class="num">9–18 s</td><td>«Men o'sha bir xil Pro akkauntni 39 mingga beraman. Bir xil funksiya, bir xil eksport, suv belgisi yo'q.»</td></tr>
+      <tr><td class="num">18–22 s</td><td>«Farqi faqat bitta — to'lov yo'li. Men to'lovni o'zim hal qilaman, siz tayyor akkaunt olasiz.»</td></tr>
+      <tr><td class="num">22–25 s</td><td><b>CTA.</b> «Izohga PRO deb yozing.»</td></tr>
+    </tbody></table></div>
+    <p style="font-size:13.5px;color:var(--muted)"><b>Diqqat:</b> «eng arzon», «eng yaxshi» demang — raqamning o'zi gapiradi.</p>
+  </div></details>
+
+  <details><summary>2. Nega O'zbekistondan to'lab bo'lmaydi <span class="tag">reels_02 · 30 s</span></summary><div class="detbody">
+    <p><b>Format:</b> Muammo → Sabab → Yechim. <b>Maqsad:</b> muammoni nomlash — odam «men ayblimanmi?» degan o'ydan chiqadi.</p>
+    <div class="tablewrap"><table><tbody>
+      <tr><td class="num">0–3 s</td><td><b>Ilgak.</b> «Kartangiz ishlamayapti deb o'ylaysiz. Karta aybdor emas.» Ekran matni: <code>TO'LOV RAD ETILDI</code></td></tr>
+      <tr><td class="num">3–10 s</td><td>«Uzcard ham, Humo ham xalqaro obunalarga o'tmaydi. Visa ochsangiz ham ko'p xizmat O'zbekiston kartasini qabul qilmaydi.»</td></tr>
+      <tr><td class="num">10–20 s</td><td>«Shuning uchun odamlar VPN, chet el kartasi, qarindosh qidiradi. Hammasi vaqt va asab.»</td></tr>
+      <tr><td class="num">20–27 s</td><td>«Men buni allaqachon hal qilganman. Siz odatdagi kartangizdan to'laysiz, akkaunt 10–15 daqiqada keladi.»</td></tr>
+      <tr><td class="num">27–30 s</td><td><b>CTA.</b></td></tr>
+    </tbody></table></div>
+  </div></details>
+
+  <details><summary>3. Pro'siz qilib bo'lmaydigan 3 ta narsa <span class="tag">reels_03 · 30 s</span></summary><div class="detbody">
+    <p><b>Format:</b> Ro'yxat. <b>Maqsad:</b> foydali kontent — saqlash va ulashishga ketadi.</p>
+    <div class="tablewrap"><table><tbody>
+      <tr><td class="num">0–3 s</td><td><b>Ilgak.</b> «CapCut'ning bepul versiyasida 3 ta narsani umuman qila olmaysiz.» Ekran matni: <code>3 TA CHEKLOV</code></td></tr>
+      <tr><td class="num">3–11 s</td><td>«Birinchi — 4K eksport. Bepulda 1080p, Instagram'da sifat sezilarli tushadi.» Ikki videoni yonma-yon</td></tr>
+      <tr><td class="num">11–19 s</td><td>«Ikkinchi — suv belgisisiz shablonlar. Mijozga tayyor ish berolmaysiz.»</td></tr>
+      <tr><td class="num">19–26 s</td><td>«Uchinchi — fonni avtomatik olib tashlash. Qo'lda qilsangiz 40 daqiqa ketadi.»</td></tr>
+      <tr><td class="num">26–30 s</td><td><b>CTA.</b></td></tr>
+    </tbody></table></div>
+    <p style="font-size:13.5px;color:var(--muted)">Ekran yozuvi ustunlik qiladi, yuz faqat ilgak va CTA da.</p>
+  </div></details>
+
+  <details><summary>4. Canva Pro'dagi 5 ta funksiya <span class="tag">reels_04 · 32 s</span></summary><div class="detbody">
+    <p><b>Format:</b> Ro'yxat. 3-ssenariy bilan bir xil shakl, boshqa mahsulot — bu ataylab: ishlaydigan format takrorlanadi.</p>
+    <div class="tablewrap"><table><tbody>
+      <tr><td class="num">0–3 s</td><td><b>Ilgak.</b> «Canva'da pul to'lamay turib boy berayotgan 5 ta narsangiz.»</td></tr>
+      <tr><td class="num">3–9 s</td><td>1. Brend to'plami — logotip, rang, shrift bir bosishda</td></tr>
+      <tr><td class="num">9–14 s</td><td>2. Fonni olib tashlash — bitta tugma</td></tr>
+      <tr><td class="num">14–19 s</td><td>3. 100 mln+ premium rasm va shablon</td></tr>
+      <tr><td class="num">19–24 s</td><td>4. O'lchamni avtomatik o'zgartirish — bitta dizayn, 6 ta format</td></tr>
+      <tr><td class="num">24–28 s</td><td>5. Rejalashtirish — postlar o'zi chiqadi</td></tr>
+      <tr><td class="num">28–32 s</td><td><b>CTA.</b></td></tr>
+    </tbody></table></div>
+  </div></details>
+
+  <details><summary>5. Crack va APK haqida <span class="tag">reels_05 · 28 s</span></summary><div class="detbody">
+    <p><b>Format:</b> Qarama-qarshi fikr. <b>Maqsad:</b> asosiy raqobatchini (bepul «buzilgan» versiyalar) halol tarzda yopish.</p>
+    <div class="tablewrap"><table><tbody>
+      <tr><td class="num">0–3 s</td><td><b>Ilgak.</b> «Buzilgan CapCut APK yuklab oldingizmi? Telefoningizdagi hamma narsa endi meniki emas.» Ekran matni: <code>APK = XAVF</code></td></tr>
+      <tr><td class="num">3–12 s</td><td>«Bunday fayllar odatda ruxsat so'raydi: galereya, kontaktlar, SMS. Nima uchun montaj dasturiga SMS kerak?»</td></tr>
+      <tr><td class="num">12–20 s</td><td>«Ikkinchi muammo — ular bir-ikki haftada ishlamay qoladi. Loyihangiz o'rtasida.»</td></tr>
+      <tr><td class="num">20–24 s</td><td>«Rasmiy akkaunt bir oy barqaror ishlaydi va kafolati bor.»</td></tr>
+      <tr><td class="num">24–28 s</td><td><b>CTA.</b></td></tr>
+    </tbody></table></div>
+    <p style="font-size:13.5px;color:var(--muted)"><b>Diqqat:</b> qo'rqitmang, faktni ayting. «Hamma crack virus» — yolg'on. «Ruxsat so'raydi va tez ishlamay qoladi» — haqiqat.</p>
+  </div></details>
+
+  <details><summary>6. Jarayonni ko'rsatish <span class="tag">reels_06 · 35 s</span></summary><div class="detbody">
+    <p><b>Format:</b> Tutorial — oxirgi natija <b>boshida</b> ko'rsatiladi. <b>Maqsad:</b> «qanday ishlaydi?» savolini butunlay yopish.</p>
+    <div class="tablewrap"><table><tbody>
+      <tr><td class="num">0–3 s</td><td><b>Ilgak.</b> Tayyor login-parol xabari ekranda. «Bu xabar to'lovdan 9 daqiqa keyin keldi. Qanday bo'lganini ko'rsataman.»</td></tr>
+      <tr><td class="num">3–10 s</td><td>1-qadam: botni ochish, obunani tanlash</td></tr>
+      <tr><td class="num">10–18 s</td><td>2-qadam: «Tizim aniq summa beradi — masalan 39 014 so'm. Aynan shu summani yuborasiz, tizim to'lovni o'zi taniydi.»</td></tr>
+      <tr><td class="num">18–26 s</td><td>3-qadam: to'lov o'tdi → akkaunt keldi. Taymerni ko'rsatish</td></tr>
+      <tr><td class="num">26–31 s</td><td>«Chek yubormaysiz, hech kim bilan yozishmaysiz. Hammasi avtomatik.»</td></tr>
+      <tr><td class="num">31–35 s</td><td><b>CTA.</b></td></tr>
+    </tbody></table></div>
+    <p style="font-size:13.5px;color:var(--muted)">Haqiqiy buyurtmani yozib oling, raqamlarni xiralashtiring.</p>
+  </div></details>
+
+  <details><summary>7. «Bu haqiqiymi?» <span class="tag">reels_07 · 29 s</span></summary><div class="detbody">
+    <div class="tablewrap"><table><tbody>
+      <tr><td class="num">0–3 s</td><td><b>Ilgak.</b> «Eng ko'p keladigan savol: "aka, bu haqiqiymi yoki aldaysizmi?"»</td></tr>
+      <tr><td class="num">3–10 s</td><td>«Halol javob: men rasmiy kompaniya emasman. Men obunani siz uchun rasmiylashtirib beraman.»</td></tr>
+      <tr><td class="num">10–18 s</td><td>«Akkaunt rasmiy obuna asosida ishlaydi. Farqi faqat to'lov yo'lida va narxda.»</td></tr>
+      <tr><td class="num">18–25 s</td><td>«Ishonmasangiz — eng arzon obunadan boshlang. Ishlamasa almashtiraman yoki pulingizni balansga qaytaraman.»</td></tr>
+      <tr><td class="num">25–29 s</td><td><b>CTA.</b></td></tr>
+    </tbody></table></div>
+    <p style="font-size:13.5px;color:var(--muted)"><b>Nega ishlaydi:</b> o'zingizning zaif joyingizni birinchi bo'lib aytasiz. Mijoz buni «ochiq gapiryapti» deb o'qiydi.</p>
+  </div></details>
+
+  <details><summary>8. Kafolat qanday ishlaydi <span class="tag">reels_08 · 34 s</span></summary><div class="detbody">
+    <div class="tablewrap"><table><tbody>
+      <tr><td class="num">0–3 s</td><td><b>Ilgak.</b> «Akkaunt ishlamay qolsa nima bo'ladi? Aniq aytaman.» Ekran matni: <code>KAFOLAT</code></td></tr>
+      <tr><td class="num">3–10 s</td><td>«Birinchi — menga yozasiz. Javob 12/7 keladi, o'rtacha 10 daqiqada.»</td></tr>
+      <tr><td class="num">10–18 s</td><td>«Ikkinchi — akkauntni almashtiraman. Zaxirada bo'lsa 15 daqiqada.»</td></tr>
+      <tr><td class="num">18–25 s</td><td>«Uchinchi — zaxirada bo'lmasa, pulingiz balansga to'liq qaytadi va darhol boshqa obunaga ishlatasiz.»</td></tr>
+      <tr><td class="num">25–30 s</td><td>«Shart bitta: parolni o'zgartirmaysiz va akkauntni boshqaga bermaysiz.»</td></tr>
+      <tr><td class="num">30–34 s</td><td><b>CTA.</b></td></tr>
+    </tbody></table></div>
+    <p style="font-size:13.5px;color:var(--muted)">Bu ssenariy <a href="#kafolat">Kafolat</a> bo'limidagi yakuniy shartga moslangan. Shartni o'zgartirsangiz, matnni ham yangilang.</p>
+  </div></details>
+
+  <details><summary>9. Bir yilda qancha tejaysiz <span class="tag">reels_09 · 40 s</span></summary><div class="detbody">
+    <p><b>Format:</b> Raqamli hisob. Doskada yoki telefonda kalkulyator bilan.</p>
+    <div class="tablewrap"><table><tbody>
+      <tr><td class="num">0–3 s</td><td><b>Ilgak.</b> «Bir yilda 2 millionni behuda to'layapsiz. Hisoblab beraman.»</td></tr>
+      <tr><td class="num">3–12 s</td><td>«CapCut Pro rasmiy — oyiga ~300 ming. Yilda 3,6 million.» Yozib boring</td></tr>
+      <tr><td class="num">12–20 s</td><td>«Mendan — oyiga 39 ming. Yilda 468 ming.»</td></tr>
+      <tr><td class="num">20–28 s</td><td>«Farqi — 3 milliondan ko'p. Bu yangi telefon emas, lekin yaxshi mikrofon va yorug'lik.»</td></tr>
+      <tr><td class="num">28–36 s</td><td>«Canva ham qo'shilsa farq yana oshadi. Shuning uchun to'plam qildim.»</td></tr>
+      <tr><td class="num">36–40 s</td><td><b>CTA.</b></td></tr>
+    </tbody></table></div>
+    <p style="font-size:13.5px;color:var(--muted)"><b>Diqqat:</b> raqamlarni o'zingizning haqiqiy narxlaringiz bilan almashtiring.</p>
+  </div></details>
+
+  <details><summary>10. Mijoz hikoyasi <span class="tag">reels_10 · 35 s</span></summary><div class="detbody">
+    <p><b>Format:</b> Hikoya yoyi. Haqiqiy buyurtma asosida — ruxsat so'rang yoki ismni aytmang.</p>
+    <div class="tablewrap"><table><tbody>
+      <tr><td class="num">0–3 s</td><td><b>Ilgak.</b> «Tungi ikkida xabar keldi: "ertaga ertalab mijozga video kerak, CapCut Pro yo'q".»</td></tr>
+      <tr><td class="num">3–12 s</td><td>«Montajchi ishni boshlagan, eksport qilmoqchi — suv belgisi chiqyapti. Mijoz esa ertalab kutyapti.»</td></tr>
+      <tr><td class="num">12–22 s</td><td>«Buyurtma berdi, to'ladi. Akkaunt 11 daqiqada keldi — hammasi avtomatik, men uxlab yotgandim.»</td></tr>
+      <tr><td class="num">22–30 s</td><td>«Ertalab video topshirildi. Hozir u doimiy mijoz.»</td></tr>
+      <tr><td class="num">30–35 s</td><td><b>CTA.</b> «Sizga ham kechasi kerak bo'lishi mumkin.»</td></tr>
+    </tbody></table></div>
+  </div></details>
+
+  <details><summary>11. To'plam <span class="tag">reels_11 · 31 s</span></summary><div class="detbody">
+    <div class="tablewrap"><table><tbody>
+      <tr><td class="num">0–3 s</td><td><b>Ilgak.</b> «Montaj CapCut'da, dizayn Canva'da. Ikkitasini alohida olish shart emas.»</td></tr>
+      <tr><td class="num">3–11 s</td><td>«Alohida olsangiz — ikkita to'lov, ikkita narx.» Ekranda ikki narx</td></tr>
+      <tr><td class="num">11–20 s</td><td>«To'plamda ikkalasi bitta narxda va arzonroq chiqadi. Ikkala akkaunt ham bitta buyurtmada keladi.»</td></tr>
+      <tr><td class="num">20–27 s</td><td>«Kontent qiladigan odam uchun bu bir oylik to'liq to'plam.»</td></tr>
+      <tr><td class="num">27–31 s</td><td><b>CTA.</b></td></tr>
+    </tbody></table></div>
+  </div></details>
+
+  <details><summary>12. Referal <span class="tag">reels_12 · 32 s</span></summary><div class="detbody">
+    <div class="tablewrap"><table><tbody>
+      <tr><td class="num">0–3 s</td><td><b>Ilgak.</b> «Obunangizni bepulga chiqarishning yo'li bor.» Ekran matni: <code>0 SO'M</code></td></tr>
+      <tr><td class="num">3–11 s</td><td>«Botda shaxsiy havolangiz bor. Do'stingizga yuborasiz.»</td></tr>
+      <tr><td class="num">11–20 s</td><td>«U raqamini tasdiqlasa — balansingizga bonus tushadi. Xarid qilsa — xaridining foizi ham sizga.»</td></tr>
+      <tr><td class="num">20–28 s</td><td>«Uch-to'rtta do'st — keyingi oyingiz o'zini qoplaydi.»</td></tr>
+      <tr><td class="num">28–32 s</td><td><b>CTA.</b></td></tr>
+    </tbody></table></div>
+  </div></details>
+
+  <h4>Har hafta yakunida — 10 daqiqa</h4>
+  <p>Dashboard → Trafik manbalari → Reels jadvali. Uchta savol:</p>
+  <ol>
+    <li><b>Qaysi video eng ko'p yangi foydalanuvchi keltirdi?</b> Shu ilgak ishlayapti — keyingi haftada shaklni takrorlang.</li>
+    <li><b>Qaysi video eng ko'p tushum keltirdi?</b> Ko'rish soni emas, shu raqam muhim. Ko'p ko'rilgan-u sotmagan video — noto'g'ri auditoriya.</li>
+    <li><b>Qaysisining konversiyasi past?</b> Odamlar kelgan, xarid qilmagan — muammo videoda emas, bot yoki narxda.</li>
+  </ol>
+</section>
+
+<!-- ============ AVTO-DM ============ -->
+<section id="dm">
+  <h2><span class="num">5</span>chatla.uz avto-DM</h2>
+  <p class="sub">Maqsad — DM da sotish emas, odamni botga olib o'tish.</p>
+
+  <p>Izohga <b>PRO</b> yozgan odam avtomatik ketma-ketlikka tushadi. Botda narx,
+  to'lov va yetkazish allaqachon avtomatik — DM ning vazifasi faqat odamni
+  o'sha yerga olib borish. Barcha havolalar
+  <code>?start=src_chatla_dm</code> bilan ketadi, shuning uchun bu kanal
+  qancha pul keltirgani admin panelda ko'rinadi.</p>
+
+  <h4>Izohga ochiq javob</h4>
+  <p>Bu javobni boshqalar ham ko'radi, shuning uchun quruq emas, qisqa isbot
+  bo'lsin. Uch-to'rt variantni almashtirib turing — bir xil javob izohlar
+  ostida sun'iy ko'rinadi.</p>
+  <ul>
+    <li>«Yubordim ✅ Shaxsiyni tekshiring»</li>
+    <li>«Ketdi 👍 Narxlar shaxsiyda»</li>
+    <li>«Tashladim ✅ Savol bo'lsa shu yerda yozing»</li>
+    <li>«Yubordim. Aytgancha, yetkazish o'rtacha 10 daqiqa ⏱»</li>
+  </ul>
+
+  <h4>1-xabar — darhol</h4>
+  <div class="msg">Salom! 👋
+
+Mana narxlar:
+
+• CapCut Pro — 1 oy: 39 000 so'm
+• Canva Pro — 1 oy: 29 000 so'm
+• CapCut + Canva to'plami: 55 000 so'm (13 000 tejaysiz)
+
+Hammasi rasmiy obuna, to'lovdan keyin 10–15 daqiqada keladi. Kafolat bor.
+
+To'liq ro'yxat va buyurtma shu yerda 👇
+https://t.me/santyxnarxbot?start=src_chatla_dm
+
+Qaysi biri kerak edi?</div>
+  <p><b>Nega shunday:</b> va'da qilingan narsa (narxlar) birinchi xabarda
+  beriladi. Odamni «avval obuna bo'ling» deb ushlab turish — eng tez blok
+  yo'li. Oxiridagi savol suhbatni ochadi: javob bersa, avtomatik xabarlar
+  to'xtaydi va siz qo'lda yozasiz.</p>
+
+  <h4>2-xabar — 2 soatdan keyin (javob bo'lmasa)</h4>
+  <div class="msg">Havolani ochishga ulgurdingizmi?
+
+Ko'pchilik shu yerda to'xtaydi: «to'lov qanday bo'ladi?» deb o'ylaydi.
+
+Oddiy: bot sizga aniq summa beradi (masalan 39 014 so'm), siz shu summani
+odatdagi kartangizdan o'tkazasiz. Tizim to'lovni o'zi taniydi — chek
+yubormaysiz, hech kim bilan yozishmaysiz.
+
+Akkaunt 10–15 daqiqada keladi.</div>
+  <p><b>Nega shunday:</b> bu bosqichdagi to'siq qiziqish emas, noaniqlik.
+  Yangi taklif emas — bitta to'siq olib tashlanadi.</p>
+
+  <h4>3-xabar — ertasi kuni</h4>
+  <div class="msg">Bitta savolga javob beray, ko'pchilik so'raydi: «ishlamay qolsa-chi?»
+
+Shart oddiy:
+• Ishlamasa — almashtiraman
+• Zaxirada bo'lmasa — pulingiz balansga to'liq qaytadi va darhol boshqa
+  obunaga ishlaydi
+• Javob 12/7, o'rtacha 10 daqiqada
+
+Shuning uchun eng arzonidan boshlab sinab ko'rsangiz ham bo'ladi 👇
+https://t.me/santyxnarxbot?start=src_chatla_dm</div>
+
+  <h4>4-xabar — 3 kundan keyin (oxirgi)</h4>
+  <div class="msg">Oxirgi xabarim, bezovta qilmayman 🙏
+
+Agar hozir kerak bo'lmasa — havolani saqlab qo'ying, kerak bo'lganda
+ochasiz: https://t.me/santyxnarxbot?start=src_chatla_dm
+
+Kerak bo'lsa yoki savol bo'lsa — shu yerga yozavering, o'zim javob beraman.</div>
+  <p><b>Beshinchi xabar bo'lmaydi.</b> Javob bermagan odamga yana yozish
+  Instagram cheklovini chaqiradi. «Oxirgi xabarim» degan gap blok va
+  shikoyatni sezilarli kamaytiradi.</p>
+
+  <h4>Javob keldi — qo'lda yoziladigan qoliplar</h4>
+  <p>To'liq matnlar: <code>docs/marketing/chatla-avto-dm.md</code>. Qisqacha:</p>
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th>Savol</th><th>Javob yo'nalishi</th></tr></thead>
+    <tbody>
+      <tr><td>«Narxi qancha?»</td><td>Narx + havola + «botda karta va summa o'zi chiqadi»</td></tr>
+      <tr><td>«Haqiqiymi?»</td><td>Halol javob: rasmiy kompaniya emasman, obunani rasmiylashtirib beraman. Kanal sharhlari. «Eng arzonidan boshlang»</td></tr>
+      <tr><td>«Arzonroq bo'ladimi?»</td><td><b>Chegirma yo'q.</b> O'rniga: to'plam yoki referal bonusi</td></tr>
+      <tr><td>«Qanday to'layman?»</td><td>Oddiy karta, aniq summa, chek shart emas, summani o'zgartirmaslik</td></tr>
+      <tr><td>«Keyin olaman»</td><td>Havolani saqlashni ayting va <b>keyin yozmang</b></td></tr>
+      <tr><td>Jamoa / bir nechta akkaunt</td><td>Qo'lda olib boring — o'rtacha cheki eng katta mijoz turi</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="note">
+    <p><b>Nega chegirma bermaysiz.</b> Chegirma so'ragan mijoz to'liq narxda
+    olganga nisbatan taxminan ikki barobar tez ketadi va sizni «arzon» deb
+    belgilaydi. Chegirma o'rniga qiymat qo'shiladi — to'plam yoki bonus.</p>
+  </div>
+
+  <h4>chatla sozlamalari</h4>
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th>Sozlama</th><th>Qiymat</th><th>Nega</th></tr></thead>
+    <tbody>
+      <tr><td>Kalit so'z</td><td><code>PRO</code></td><td>Bitta so'z, barcha Reels da bir xil</td></tr>
+      <tr><td>Qo'shimcha kalitlar</td><td><code>pro</code>, <code>PRO?</code>, <code>narx</code></td><td>Odamlar har xil yozadi</td></tr>
+      <tr><td>Javob kelsa to'xtatish</td><td><b>Yoqilgan</b></td><td>Odam yozgandan keyin robot davom etsa — ishonch ketadi</td></tr>
+      <tr><td>Xabarlar oralig'i</td><td>0 → 2 soat → 1 kun → 3 kun</td><td>Birinchisi darhol, qolgani siyraklashadi</td></tr>
+      <tr><td>Maksimal xabar</td><td>4 ta</td><td>Beshinchisi — spam shikoyati</td></tr>
+      <tr><td>Takroriy izoh</td><td>7 kunda bir marta</td><td>Har Reels ostiga yozsa, har safar yangi ketma-ketlik ketmasin</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="warnbox">
+    <p><b>Narxlarni almashtiring.</b> Yuqoridagi summalar repozitoriyadagi
+    namuna ma'lumotlardan. DM dagi narx botdagi narxdan farq qilsa, ishonch
+    darhol yo'qoladi.</p>
+  </div>
+</section>
+
+<!-- ============ KAFOLAT ============ -->
+<section id="kafolat">
+  <h2><span class="num">6</span>Kafolat sharti</h2>
+  <p class="sub">Uch variant taqqoslandi. Tavsiya — pog'onali shart.</p>
+
+  <h4>Hozirgi holatning ikkita muammosi</h4>
+  <ol>
+    <li><b>«Qoidalar» hech qayerda yozilmagan.</b> Reja kartochkasida
+    «qoidalar buzilmasa amal qiladi» deyilgan, lekin qanday qoidalar ekani
+    aytilmagan. Mijoz nimani buzmaslik kerakligini bilmaydi, siz esa nizo
+    chiqqanda nimaga tayanishni bilmaysiz.</li>
+    <li><b>«Almashtiramiz yoki qaytaramiz» — tanlov kimda ekani aytilmagan.</b>
+    Mijoz «men tanlayman» deb o'qiydi, siz «men tanlayman» deb. Har bir
+    nosozlik bahsga aylanadi.</li>
+  </ol>
+
+  <h4>Taqqoslash</h4>
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th></th><th>A. Faqat almashtirish</th><th>B. Faqat balans</th><th>C. Pog'onali</th></tr></thead>
+    <tbody>
+      <tr><td><b>Mijoz uchun</b></td><td>Aynan kerak bo'lgan narsa — ishlaydigan dastur</td><td>Muammosi hal bo'lmaydi: loyiha muzlab turibdi, qo'lida balans</td><td>Birinchi javob muammoni hal qiladi, orqada pul qaytishi ham bor</td></tr>
+      <tr><td><b>Sizga narxi</b></td><td>Bitta akkaunt tannarxi</td><td>Naqd chiqmaydi, lekin balans keyin sarflanadi va o'shanda yana tannarx</td><td>Odatdagi holatda A bilan bir xil</td></tr>
+      <tr><td><b>Tezlik</b></td><td>Eng tez — 15 daqiqa</td><td>Darhol, avtomatik</td><td>A bilan bir xil</td></tr>
+      <tr><td><b>Qachon sinadi</b></td><td><b>Zaxira tugaganda</b> va'dani bajara olmaysiz</td><td>Ishonchda: «pulni umuman qaytarmaydi» = firibgarlik belgisi</td><td>Shartlari yozilmasa</td></tr>
+      <tr><td><b>Suiiste'mol</b></td><td>Past</td><td>Eng past</td><td>O'rtacha — chegara bilan yopiladi</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="note">
+    <p><b>Balansga qaytarish bepul emas.</b> Naqd pul chiqmaydi, lekin balans
+    keyin boshqa obunaga sarflanadi va o'shanda yana tannarx to'laysiz.
+    Haqiqiy tejash — faqat sarflanmay qolgan balans.</p>
+    <p><b>Zaxira tugashi nazariy xavf emas.</b> Tizimda <code>waiting_stock</code>
+    holati bor va u ishlatiladi. Demak «faqat almashtirish» va'dasi haqiqatan
+    buziladigan paytlar bo'ladi.</p>
+  </div>
+
+  <h4>Tavsiya: C — pog'onali</h4>
+  <p>Xaridorning haqiqiy qo'rquvi «pulim yo'qoladi» emas, <b>«akkaunt bir
+  haftada o'chadi va men ishimni topshira olmayman»</b>. Shuning uchun birinchi
+  javob almashtirish bo'lishi kerak — mijoz xohlagan narsa ham, sizga eng
+  arzoni ham shu. Lekin «faqat almashtirish» zaxira tugaganda buziladi,
+  «faqat balans» esa yangi xaridorni qo'rqitadi.</p>
+
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th>Pog'ona</th><th>Qachon</th><th>Nima bo'ladi</th><th>Muddat</th></tr></thead>
+    <tbody>
+      <tr><td><b>1. Almashtirish</b></td><td>Asosiy yo'l</td><td>Yangi akkaunt</td><td>09:00–23:00 da 15 daqiqa; tungi murojaat ertalab 10:00 gacha</td></tr>
+      <tr><td><b>2. Balans</b></td><td>24 soat ichida almashtira olmasak</td><td><b>Mijoz tanlaydi:</b> kutish (+10% keshbek) yoki qolgan kunlar puli balansga</td><td>Darhol</td></tr>
+      <tr><td><b>3. Karta</b></td><td>48 soatda umuman yetkazilmasa, yoki 2 ta almashtirish ham ishlamasa</td><td>Pul kartaga</td><td>3 ish kuni</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Uchinchi pog'ona kam ishlatiladi, lekin uning <b>mavjudligi</b> sotadi:
+  «pulni umuman qaytarmaydi» degan e'tiroz yo'qoladi.</p>
+
+  <h4>Proporsional hisob</h4>
+  <pre><code>Qaytariladigan summa = to'langan summa × (qolgan kun ÷ umumiy kun)
+
+Misol: 30 kunlik obuna, 39 000 so'm, 12-kuni to'xtadi
+       39 000 × 18 ÷ 30 = 23 400 so'm</code></pre>
+  <p>Bu hisobni mijozga <b>ko'rsatib</b> ayting: «23 400 qaytardim» emas,
+  «18 kun qoldi, 39 000 dan 23 400 — mana shuning uchun». Ko'rsatilgan hisob
+  bahsni butunlay yopadi.</p>
+
+  <h4>Kafolat ishlamaydigan holatlar</h4>
+  <p>Bular mijozga <b>oldindan</b> aytiladi, nizo chiqqanda emas:</p>
+  <ul>
+    <li>Parol yoki profil emaili o'zgartirilgan</li>
+    <li>Akkaunt boshqa odamga berilgan yoki sotilgan</li>
+    <li>Ikki bosqichli tasdiq (2FA) yoqilgan</li>
+    <li>Akkaunt xizmat qoidalarini buzgani uchun bloklangan</li>
+    <li>Obuna muddati tugagan</li>
+  </ul>
+
+  <h4>Suiiste'molga qarshi chegaralar</h4>
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th>Chegara</th><th>Nega</th></tr></thead>
+    <tbody>
+      <tr><td>Bitta buyurtmaga <b>3 tagacha</b> almashtirish</td><td>Undan keyin muammo akkauntda emas — foydalanishda. 3-dan keyin to'liq balans qaytariladi va bu mijozga shu mahsulot sotilmaydi</td></tr>
+      <tr><td>Murojaat obuna muddati <b>ichida</b></td><td>Tugagandan keyin «avvalgi oyda ishlamagandi» ni tekshirib bo'lmaydi</td></tr>
+      <tr><td>Nosozlik <b>isboti</b> (skrinshot)</td><td>Og'zaki «ishlamayapti» ni tekshirib bo'lmaydi. Panelda <code>delivery_logs</code> bor — solishtiring</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h4>Tayyor matn — Sozlamalar → Umumiy qoidalar</h4>
+  <pre><code>KAFOLAT SHARTLARI
+
+Obuna muddati davomida akkaunt ishlamay qolsa, quyidagi tartibda hal qilamiz.
+
+1. ALMASHTIRISH
+   Yangi akkaunt beramiz. 09:00–23:00 oralig'ida odatda 15 daqiqada,
+   tungi murojaat ertalab 10:00 gacha hal bo'ladi.
+
+2. BALANSGA QAYTARISH
+   24 soat ichida almashtira olmasak, siz tanlaysiz:
+   • kutasiz — kutganingiz uchun +10% keshbek balansingizga qo'shiladi;
+   • yoki qolgan kunlar puli balansga qaytadi.
+   Hisob: to'langan summa × (qolgan kun ÷ umumiy kun).
+   Balansni istalgan obunaga to'liq ishlatasiz.
+
+3. KARTAGA QAYTARISH
+   Ikki holatda pulni kartangizga qaytaramiz (3 ish kuni ichida):
+   • to'lovdan keyin 48 soat ichida obuna umuman yetkazilmagan bo'lsa;
+   • bitta buyurtma bo'yicha ketma-ket 2 ta almashtirish ham ishlamasa.
+
+KAFOLAT QUYIDAGI HOLATLARDA ISHLAMAYDI
+   • parol yoki profil emaili o'zgartirilgan;
+   • akkaunt boshqa odamga berilgan yoki sotilgan;
+   • ikki bosqichli tasdiq (2FA) yoqilgan;
+   • akkaunt xizmat qoidalarini buzgani uchun bloklangan;
+   • obuna muddati tugagan.
+
+CHEGARA
+   Bitta buyurtma bo'yicha 3 tagacha almashtirish. Undan keyin to'langan
+   summa to'liq balansga qaytariladi.
+
+MUROJAAT
+   Bot → «Admin bilan yozishish». Nosozlik skrinshotini ilova qiling.
+   Javob 12/7.</code></pre>
+
+  <h4>Reja kartochkasi uchun (qisqa)</h4>
+  <pre><code>Obuna muddati davomida kafolat. Ishlamay qolsa — almashtiramiz
+(odatda 15 daqiqada). Zaxirada bo'lmasa — qolgan kunlar puli balansga
+qaytadi. Shart: parolni o'zgartirmaslik va akkauntni boshqaga bermaslik.</code></pre>
+
+  <h4>Nimani kutish mumkin</h4>
+  <p>Kafolat — taklifning uchta eng kuchli qismidan biri (narx va yetkazish
+  tezligi bilan birga). Aniq shartli kafolat odatda konversiyani <b>10–25%</b>
+  ga ko'taradi — bu o'rtacha oraliq, va'da emas.</p>
+  <p><b>Qanday tekshirasiz:</b> bugungi konversiyani yozib oling → matnni
+  uchta joyga qo'ying (reja kartochkasi, umumiy shartlar, bosh sahifa FAQ) →
+  <b>faqat shu o'zgarishni</b> kiriting → 30 kundan keyin solishtiring.
+  Qaytarish so'rovlari 100 ta xaridga 5 tadan oshsa — muammo kafolatda emas,
+  <b>zaxira sifatida</b>.</p>
+</section>
+
+<!-- ============ TO'PLAMLAR ============ -->
+<section id="toplam">
+  <h2><span class="num">7</span>To'plamlar</h2>
+  <p class="sub">Kodda to'liq ishlaydi: bitta buyurtmada 2–3 ta akkaunt.</p>
+
+  <h4>Texnik tomoni</h4>
+  <p>Yangi yetkazish oqimi yozilmadi. Savatcha mexanizmi
+  (<code>order_items</code> → <code>processApprovedOrderDelivery</code>)
+  allaqachon ko'p mahsulotli buyurtmani element-element yetkazadi va sinalgan.
+  To'plam checkout paytida tarkibiy rejalarga <b>yoyiladi</b> va o'sha oqimdan
+  o'tadi — zaxira band qilish, qayta urinish, karantin, obuna yozuvi, hammasi
+  bepul tegadi.</p>
+  <p>Element narxiga tarkibiy rejaning <b>o'z narxi</b> yoziladi, mijoz esa
+  to'plam narxini to'laydi. Dashboard sotuv qiymatini element narxlari
+  ulushiga qarab bo'lgani uchun, foyda tarkibiy rejalar kesimida to'g'ri
+  chiqadi va har birining tannarxi hisobga olinadi.</p>
+
+  <h4>Narx formulasi</h4>
+  <pre><code>1-qadam.  Alohida narxlar yig'indisi    = S
+2-qadam.  To'plam narxi (boshlang'ich)  = S × 0,80      (20% tejash)
+3-qadam.  Yaxlitlash                     → eng yaqin 1 000 ga pastga
+4-qadam.  MARJA TEKSHIRUVI
+
+To'plam marjasi (%) = (to'plam narxi − tarkibiy tannarxlar yig'indisi)
+                      ÷ to'plam narxi × 100</code></pre>
+  <p><b>To'plam marjasi alohida sotishdagi marjadan past bo'lmasligi kerak.</b>
+  Past chiqsa, tejash foizini 20% dan 15% ga, kerak bo'lsa 12% ga tushiring.
+  12% dan past tejash to'plamni sotmaydi — mijoz farqni sezmaydi. Unda yoki
+  tannarxni pasaytirasiz, yoki bu juftlikdan voz kechasiz.</p>
+
+  <h4>Taklif qilinadigan to'plamlar</h4>
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th>Nomi</th><th>Tarkibi</th><th class="num">Alohida</th><th class="num">To'plam</th><th class="num">Tejash</th><th>Kimga</th></tr></thead>
+    <tbody>
+      <tr><td><b>Kontent Starter</b></td><td>CapCut Pro + Canva Pro</td><td class="num">68 000</td><td class="num">55 000</td><td class="num">13 000 (19%)</td><td>Reels qiladiganlar, SMM</td></tr>
+      <tr><td><b>Dizayner to'plami</b></td><td>Canva Pro + Adobe</td><td class="num">178 000</td><td class="num">145 000</td><td class="num">33 000 (19%)</td><td>Dizaynerlar, studiyalar</td></tr>
+      <tr><td><b>AI to'plami</b></td><td>Gemini AI Pro + ChatGPT Plus</td><td class="num">209 000</td><td class="num">169 000</td><td class="num">40 000 (19%)</td><td>Kopirayter, marketolog</td></tr>
+      <tr><td><b>Kontent Max</b></td><td>CapCut + Canva + Gemini AI</td><td class="num">157 000</td><td class="num">125 000</td><td class="num">32 000 (20%)</td><td>Agentliklar</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="warnbox">
+    <p><b>Bu narxlar — misol.</b> Repozitoriyadagi namuna ma'lumotlardan
+    olingan, haqiqiy katalogingiz emas. O'z narxlaringizni qo'ying va har bir
+    to'plam uchun marja tekshiruvini qayta hisoblang. Adobe kabi qimmat
+    mahsulotda 19% tejash marjani yeb qo'yishi mumkin — u yerda 12–15% oling.</p>
+  </div>
+
+  <h4>Nomlash</h4>
+  <p>Nom <b>natijani</b> aytadi, tarkibni emas. «CapCut + Canva to'plami» emas,
+  «Kontent Starter». Tarkib narx taqqoslashga chaqiradi, natija esa o'zini
+  o'zi sotadi. Tarkib baribir kartochka ostida ko'rinib turadi — sayt ham,
+  Mini App ham uni o'zi chiqaradi.</p>
+
+  <h4>Admin panelda yaratish</h4>
+  <ol>
+    <li>Rejalar → Yangi reja</li>
+    <li>Nomi, narxi, tannarxi (tarkibiy tannarxlar yig'indisi), muddati</li>
+    <li><b>To'plam (bundle)</b> belgisini qo'ying</li>
+    <li>Ochilgan bo'limda obunalarni tanlang va miqdorini kiriting</li>
+    <li>Pastdagi «Alohida / To'plam / Mijoz tejaydi» qatorida tejash 15–20% oralig'ida ekanini tekshiring</li>
+  </ol>
+  <p><b>Cheklovlar:</b> to'plam ichiga boshqa to'plam qo'shib bo'lmaydi
+  (bazada ham to'siq bor), variantli rejalar kirmaydi, kamida 2 ta obuna
+  bo'lishi kerak.</p>
+
+  <h4>Zaxira tugasa nima bo'ladi</h4>
+  <p>Tarkibdagi birortasining zaxirasi tugagan bo'lsa, buyurtma «zaxira
+  kutilmoqda» holatiga tushadi va siz ogohlantirish olasiz. <b>Qolganlari
+  baribir yetkaziladi</b> — mijoz butunlay quruq qolmaydi.</p>
+
+  <h4>30 kundan keyin</h4>
+  <ol>
+    <li><b>O'rtacha chek</b> — to'plamdan oldingi bilan solishtiring. Asosiy maqsad shu raqam.</li>
+    <li><b>Rejalar bo'yicha foyda</b> — to'plam marjasi alohida mahsulotlardan past emasligini tekshiring.</li>
+    <li><b>Sotilmagan to'plam</b> — ikki oy sotilmasa o'chiring. Uchtadan ko'p to'plam tanlovni qiyinlashtiradi va umumiy sotuvni pasaytiradi.</li>
+  </ol>
+</section>
+
+<!-- ============ CHEKLOVLAR ============ -->
+<section id="cheklov">
+  <h2>Cheklovlar va keyingi qadamlar</h2>
+
+  <h4>Nima tekshirilmadi</h4>
+  <ul>
+    <li><b>Haqiqiy baza.</b> Menda Supabase'ga kirish yo'q. Kod testlardan va
+    mock ma'lumot bilan brauzer tekshiruvidan o'tdi, lekin haqiqiy ma'lumot
+    bilan ishga tushirilmadi.</li>
+    <li><b>Migratsiya qo'lda ishga tushiriladi.</b> Bu loyihaning qoidasi —
+    migratsiyalar hech qachon avtomatik qo'llanmaydi.</li>
+    <li><b>Narxlar namuna.</b> Hisobotdagi barcha summalar repozitoriyadagi
+    demo ma'lumotdan. O'z narxlaringiz bilan almashtiring.</li>
+    <li><b>Deploy qilinmadi.</b> Kod branch'da va PR'da — merge va deploy sizda.</li>
+  </ul>
+
+  <h4>Qaror sizdan kutiladi</h4>
+  <ol>
+    <li><b>Kafolat sharti.</b> Pog'onali variantni tasdiqlasangiz, matnlarni
+    admin panelga qo'yasiz (yoki ayting — men kodga joylashtiraman).</li>
+    <li><b>To'plam narxlari.</b> Haqiqiy tannarxlaringizni bilsam, marja
+    tekshiruvini men hisoblab beraman.</li>
+    <li><b>Reels jadvali.</b> Dushanba–chorshanba–juma taklif qilingan;
+    boshqa kun qulay bo'lsa ayting.</li>
+  </ol>
+
+  <h4>Fayllar</h4>
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th>Fayl</th><th>Nima</th></tr></thead>
+    <tbody>
+      <tr><td><code>migrations/2026-10-31_source-tracking-and-bundles.sql</code></td><td>Baza migratsiyasi — <b>qo'lda ishga tushiriladi</b></td></tr>
+      <tr><td><code>shared/source.js</code></td><td>Manba qoidalari (bot, sayt, admin panel uchun bitta joy)</td></tr>
+      <tr><td><code>src/utils/source.js</code></td><td>Brauzer tomonida manbani ushlash</td></tr>
+      <tr><td><code>docs/marketing/reels-ssenariylar.md</code></td><td>12 ta ssenariy</td></tr>
+      <tr><td><code>docs/marketing/chatla-avto-dm.md</code></td><td>Avto-DM ketma-ketligi va javob qoliplari</td></tr>
+      <tr><td><code>docs/marketing/kafolat-tavsiya.md</code></td><td>Kafolat tahlili va tayyor matnlar</td></tr>
+      <tr><td><code>docs/marketing/toplamlar.md</code></td><td>To'plamlar va narx formulasi</td></tr>
+      <tr><td><code>test/source.test.js</code> va 2 ta boshqa</td><td>17 ta yangi avtotest</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<footer>
+  <div><b>Santyx — 7 yo'nalish hisoboti</b> · 31-oktabr, 2026</div>
+  <div style="margin-top:6px">Branch <code>claude/happy-curie-hitc52</code> · 197 ta avtotest o'tadi · lint toza</div>
+</footer>
+
+</div>
+</body>
+</html>
