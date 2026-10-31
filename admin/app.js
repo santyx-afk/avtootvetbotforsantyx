@@ -1,7 +1,7 @@
 const state = {
   categories: [], plans: [], settings: null, orders: [], inventory: [],
   banners: [], promos: [], reviews: [], faq: [], users: [], leads: [],
-  referrals: [], referralMeta: null,
+  referrals: [], referralMeta: null, bundleItems: [],
   ordersTotal: 0,
   usersShown: 100,
 };
@@ -171,11 +171,79 @@ function renderStats(stats) {
   document.getElementById('eventLogs').innerHTML = list(stats.eventLogs, (item) => `<li><strong>${esc(item.event_type)}</strong> — ${dt(item.created_at)}</li>`);
 
   renderPlanProfit(p);
+  renderSources(stats.sources);
 
   // Revenue chart
   if (typeof Chart !== 'undefined' && stats.dailyRevenue) {
     renderRevenueChart(stats.dailyRevenue, Boolean(p));
   }
+}
+
+// Trafik manbalari jadvali.
+//
+// Nima uchun "foydalanuvchi" va "buyurtma" ustunlari alohida: oraliqda
+// ro'yxatdan o'tganlar va oraliqda buyurtma qilganlar — ikki xil to'plam.
+// Martda kelgan mijoz aprelda xarid qilsa, aprel hisobotida buyurtmasi
+// ko'rinadi, "yangi" ustunida esa yo'q. Shu sababli konversiya 100% dan
+// oshishi mumkin — bu xato emas.
+function renderSources(sources) {
+  const card = document.getElementById('sourcesCard');
+  if (!card) return;
+  const rows = Array.isArray(sources?.rows) ? sources.rows : [];
+  const hint = document.getElementById('sourcesHint');
+  if (hint) {
+    const t = sources?.totals;
+    hint.textContent = rows.length
+      ? `Manbasi aniq: ${t?.known ?? 0} / ${t?.users ?? 0} yangi foydalanuvchi. Havola generatori pastda — har bir reklamaga alohida kod bering.`
+      : 'Hali ma\'lumot yo\'q. Manba o\'lchash uchun migratsiyani ishga tushiring va reklamada ?start=src_… havolalarini ishlatishni boshlang.';
+  }
+  const table = (list, emptyText) => (list.length
+    ? `<table><thead><tr><th>Manba</th><th>Yangi</th><th>Buyurtma</th><th>To'landi</th><th>Tushum</th><th>O'rtacha chek</th><th>Konversiya</th></tr></thead><tbody>${list.map((r) => `
+      <tr>
+        <td>${esc(r.label)}${r.slug ? ` <small class="hint">${esc(r.slug)}</small>` : ''}</td>
+        <td>${esc(r.users)}</td>
+        <td>${esc(r.ordersCreated)}</td>
+        <td>${esc(r.ordersPaid)}</td>
+        <td>${money(r.revenue)}</td>
+        <td>${money(r.avgCheck)}</td>
+        <td>${r.conversion === null ? '—' : `${esc(r.conversion)}%`}</td>
+      </tr>`).join('')}</tbody></table>`
+    : `<p class="hint">${esc(emptyText)}</p>`);
+
+  document.getElementById('sourcesList').innerHTML = table(rows, 'Ma\'lumot yo\'q');
+  const reelsRoot = document.getElementById('reelsList');
+  if (reelsRoot) reelsRoot.innerHTML = table(Array.isArray(sources?.reels) ? sources.reels : [], 'Reels manbasidan hali kirish bo\'lmagan');
+}
+
+// Havola generatori: bitta manba kodidan bot va sayt havolalarini yasaydi.
+// Reels kodi bot payload'i sifatida o'zi ketadi (?start=reels_01), qolganlari
+// `src_` prefiksi bilan — aks holda bot uni ichki buyruq deb o'qishi mumkin.
+function initSourceLinkGenerator() {
+  const button = document.getElementById('srcGenButton');
+  if (!button) return;
+  const out = document.getElementById('srcGenOut');
+  const build = () => {
+    const slug = String(document.getElementById('srcGenSlug').value || '')
+      .trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40);
+    if (!slug) {
+      out.innerHTML = '<p class="hint">Manba kodini kiriting (masalan: reels_01).</p>';
+      return;
+    }
+    const bot = String(document.getElementById('srcGenBot').value || 'santyxnarxbot').replace(/^@/, '').trim();
+    const site = String(document.getElementById('srcGenSite').value || 'https://santyx.uz').replace(/\/+$/, '').trim();
+    const payload = /^reels_\d+$/.test(slug) ? slug : `src_${slug}`;
+    const links = [
+      ['Bot (Telegram)', `https://t.me/${bot}?start=${payload}`],
+      ['Mini App', `https://t.me/${bot}/app?startapp=${payload}`],
+      ['Sayt', `${site}/?src=${slug}`],
+    ];
+    out.innerHTML = `<table><tbody>${links.map(([l, u]) => `<tr><td>${esc(l)}</td><td><code>${esc(u)}</code></td></tr>`).join('')}</tbody></table>`
+      + '<p class="hint">Havolani nusxalab reklamada ishlatasiz. Kod birinchi teginish bo\'yicha yoziladi — mijoz keyin boshqa havola bilan kelsa ham manba o\'zgarmaydi.</p>';
+  };
+  button.addEventListener('click', build);
+  document.getElementById('srcGenSlug').addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') build();
+  });
 }
 
 // Rejalar kesimida foyda. Tannarxi kiritilmagan rejalar alohida belgilanadi —
@@ -315,6 +383,90 @@ function fillCategoryForm(item = {}) {
   document.getElementById('categoryFormTitle').textContent = item.id ? 'Kategoriyani tahrirlash' : 'Kategoriya qo\'shish';
 }
 
+// ---- To'plam tarkibi muharriri ----
+//
+// Qatorlar DOM da saqlanadi (alohida holat obyekti emas): forma baribir
+// saqlashda to'liq o'qiladi, qo'shimcha holat faqat ikki joyni sinxron
+// tutish muammosini tug'dirardi.
+function bundleRowsValue() {
+  return [...document.querySelectorAll('#planBundleRows .bundle-row')]
+    .map((row) => ({
+      child_plan_id: row.querySelector('.bundle-plan').value,
+      quantity: Math.max(1, Number(row.querySelector('.bundle-qty').value || 1)),
+    }))
+    .filter((row) => row.child_plan_id);
+}
+
+function updateBundleSummary() {
+  const box = document.getElementById('planBundleSummary');
+  if (!box) return;
+  const rows = bundleRowsValue();
+  if (!rows.length) {
+    box.textContent = 'Tarkib bo\'sh — kamida 2 ta obuna qo\'shing.';
+    return;
+  }
+  // Alohida-alohida sotib olinsa qancha turardi — to'plam narxini qo'yishda
+  // asosiy mo'ljal shu. Tejamkorlik 15-25% atrofida bo'lsa to'plam ishlaydi.
+  const parts = rows.reduce((sum, row) => {
+    const plan = state.plans.find((p) => p.id === row.child_plan_id);
+    return sum + Number(plan?.price || 0) * row.quantity;
+  }, 0);
+  const price = Number(document.getElementById('planPrice').value || 0);
+  const saving = parts - price;
+  const pct = parts > 0 ? Math.round((saving / parts) * 100) : 0;
+  box.textContent = price > 0
+    ? `Alohida: ${money(parts)} UZS · To'plam: ${money(price)} UZS · Mijoz tejaydi: ${money(saving)} UZS (${pct}%)`
+    : `Alohida olinganda: ${money(parts)} UZS. To'plam narxini kiriting.`;
+}
+
+function bundleRowHtml(row = {}) {
+  // To'plam ichiga to'plam qo'shib bo'lmaydi (bazada ham trigger bor) va
+  // variant (ota rejasi bor) ham ro'yxatga kirmaydi — ular mustaqil sotilmaydi.
+  const options = state.plans
+    .filter((p) => !p.is_bundle && !p.parent_plan_id)
+    .map((p) => `<option value="${esc(p.id)}"${p.id === row.child_plan_id ? ' selected' : ''}>${esc(p.name)} — ${money(p.price)} UZS</option>`)
+    .join('');
+  return `<div class="bundle-row" style="display:flex;gap:.5rem;align-items:center;margin-bottom:.4rem">
+    <select class="bundle-plan" style="flex:1"><option value="">— obunani tanlang —</option>${options}</select>
+    <input class="bundle-qty" type="number" min="1" max="10" value="${esc(row.quantity || 1)}" style="width:72px" title="Nechta" />
+    <button type="button" class="ghost bundle-remove" title="Olib tashlash">✕</button>
+  </div>`;
+}
+
+function renderBundleRows(rows = []) {
+  const root = document.getElementById('planBundleRows');
+  if (!root) return;
+  root.innerHTML = (rows.length ? rows : []).map(bundleRowHtml).join('');
+  const isBundle = document.getElementById('planIsBundle').checked;
+  document.getElementById('planBundleBox').hidden = !isBundle;
+  updateBundleSummary();
+}
+
+function initBundleEditor() {
+  const toggle = document.getElementById('planIsBundle');
+  if (!toggle) return;
+  toggle.addEventListener('change', () => {
+    const box = document.getElementById('planBundleBox');
+    box.hidden = !toggle.checked;
+    // Birinchi yoqilganda ikkita bo'sh qator — to'plam ta'rifi bo'yicha
+    // kamida ikkita mahsulot bo'ladi.
+    if (toggle.checked && !document.querySelectorAll('#planBundleRows .bundle-row').length) {
+      renderBundleRows([{}, {}]);
+    }
+  });
+  document.getElementById('planBundleAdd')?.addEventListener('click', () => {
+    document.getElementById('planBundleRows').insertAdjacentHTML('beforeend', bundleRowHtml());
+    updateBundleSummary();
+  });
+  document.getElementById('planBundleRows')?.addEventListener('click', (event) => {
+    if (!event.target.closest('.bundle-remove')) return;
+    event.target.closest('.bundle-row').remove();
+    updateBundleSummary();
+  });
+  document.getElementById('planBundleRows')?.addEventListener('change', updateBundleSummary);
+  document.getElementById('planPrice')?.addEventListener('input', updateBundleSummary);
+}
+
 function fillPlanForm(item = {}) {
   document.getElementById('planId').value = item.id || '';
   document.getElementById('planCategoryId').value = item.category_id || state.categories[0]?.id || '';
@@ -340,6 +492,13 @@ function fillPlanForm(item = {}) {
   document.getElementById('planPaymentInstructions').value = item.payment_instructions || '';
   document.getElementById('planDeliveryInstructions').value = item.delivery_instructions || '';
   document.getElementById('planIsActive').checked = item.is_active ?? true;
+  document.getElementById('planIsBundle').checked = item.is_bundle ?? false;
+  renderBundleRows(
+    (state.bundleItems || [])
+      .filter((b) => b.bundle_plan_id === item.id)
+      .sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0))
+      .map((b) => ({ child_plan_id: b.child_plan_id, quantity: Number(b.quantity || 1) })),
+  );
   document.getElementById('planFormTitle').textContent = item.id ? 'Rejani tahrirlash' : 'Reja qo\'shish';
   const preview = document.getElementById('planImagePreview');
   if (item.image_url) { preview.src = item.image_url; preview.style.display = 'block'; }
@@ -711,6 +870,7 @@ async function loadData() {
   const data = await api('admin-data');
   state.categories = data.categories;
   state.plans = data.plans;
+  state.bundleItems = Array.isArray(data.bundleItems) ? data.bundleItems : [];
   renderCategories();
   renderPlans();
   await loadOrders();
@@ -1470,7 +1630,13 @@ onSubmit('planForm', async () => {
     payment_instructions: document.getElementById('planPaymentInstructions').value,
     delivery_instructions: document.getElementById('planDeliveryInstructions').value,
     is_active: document.getElementById('planIsActive').checked,
+    is_bundle: document.getElementById('planIsBundle').checked,
+    bundle_items: bundleRowsValue(),
   };
+  if (item.is_bundle && item.bundle_items.length < 2) {
+    alert('To\'plamda kamida 2 ta obuna bo\'lishi kerak.');
+    return;
+  }
   const saved = await api('admin-data', { method: item.id ? 'PUT' : 'POST', body: JSON.stringify({ type: 'plan', item }) });
   if (saved?.warning) alert(saved.warning);
   fillPlanForm();
@@ -2610,6 +2776,8 @@ document.getElementById('helpAccordion')?.addEventListener('click', (event) => {
   header.parentElement.classList.toggle('open');
 });
 renderHelp();
+initSourceLinkGenerator();
+initBundleEditor();
 
 initApp().catch((error) => {
   document.getElementById('loginError').textContent = error.message;

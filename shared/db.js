@@ -126,6 +126,11 @@ function mapPlan(row) {
     image_url: row.image_url || null,
     isPopular: Boolean(row.is_popular),
     is_popular: Boolean(row.is_popular),
+    // To'plam (bundle) — bitta narxga 2-3 ta obuna. Yetkazishda tarkibiy
+    // rejalarga yoyiladi (fetchBundleItems), shuning uchun katalog ham,
+    // checkout ham buni bilishi kerak.
+    isBundle: Boolean(row.is_bundle),
+    is_bundle: Boolean(row.is_bundle),
     isActive: row.is_active,
     sortOrder: row.sort_order,
   };
@@ -209,6 +214,108 @@ async function upsertUser(client, telegramUser) {
   // bepul, SIM esa emas. Bonus foydalanuvchi raqamini Telegram orqali
   // tasdiqlaganda to'lanadi (telegram-webhook kontakt bo'limi).
   return result;
+}
+
+// Trafik manbasini BIRINCHI TEGINISH bo'yicha yozadi.
+//
+// `source=is.null` filtri bilan atomik PATCH — bu loyihadagi
+// welcome_bonus_at / signup_bonus_at bilan bir xil naqsh. Sababi bir xil:
+// ikki parallel /start (foydalanuvchi ikki havolani ketma-ket bossa yoki
+// Telegram update'ni takror yuborsa) manbani ustma-ust yozib ketmasligi
+// kerak. Birinchi kelgan havola g'olib — reklama budjeti kimga tegishli
+// ekanini keyin kelgan havola o'zgartirib qo'ymaydi.
+//
+// Qaytaradi: haqiqatan yozilgan manba (yangi foydalanuvchi) yoki null
+// (manba allaqachon bor — o'zgartirilmadi).
+async function stampUserSource(client, telegramId, source) {
+  if (!source) return null;
+  try {
+    const { data } = await request(client, 'users', {
+      method: 'PATCH',
+      query: toQuery({ telegram_id: `eq.${String(telegramId)}`, source: 'is.null' }),
+      headers: { Prefer: 'return=representation' },
+      body: { source: String(source), source_first_at: new Date().toISOString() },
+    });
+    return data?.[0]?.source || null;
+  } catch (error) {
+    // Ustun hali yo'q (migratsiya qo'llanmagan) yoki baza javob bermadi —
+    // manba o'lchash statistika uchun, u yo'qligi xaridni to'xtatmaydi.
+    console.warn('stampUserSource warn:', error?.message);
+    return null;
+  }
+}
+
+async function getUserSource(client, telegramId) {
+  try {
+    const { data } = await request(client, 'users', {
+      query: toQuery({ select: 'source', telegram_id: `eq.${String(telegramId)}`, limit: 1 }),
+    });
+    return data?.[0]?.source || null;
+  } catch (error) {
+    console.warn('getUserSource warn:', error?.message);
+    return null;
+  }
+}
+
+// To'plam tarkibi. `plans(*)` bilan birga olinadi — yetkazishda har bir
+// tarkibiy reja uchun alohida so'rov ketmasligi uchun.
+async function fetchBundleItems(client, bundlePlanId) {
+  if (!bundlePlanId) return [];
+  try {
+    const { data } = await request(client, 'plan_bundle_items', {
+      query: toQuery({
+        select: 'id,bundle_plan_id,child_plan_id,quantity,sort_order,plans!plan_bundle_items_child_plan_id_fkey(*)',
+        bundle_plan_id: `eq.${bundlePlanId}`,
+        order: 'sort_order.asc,created_at.asc',
+      }),
+    });
+    return (data || []).map((row) => ({
+      id: row.id,
+      bundlePlanId: row.bundle_plan_id,
+      childPlanId: row.child_plan_id,
+      quantity: Math.max(1, Number(row.quantity || 1)),
+      sortOrder: Number(row.sort_order || 1),
+      plan: row.plans ? mapPlan(row.plans) : null,
+    }));
+  } catch (error) {
+    // Jadval hali yo'q (migratsiya qo'llanmagan) — to'plam oddiy reja kabi
+    // ishlaydi, hech narsa buzilmaydi.
+    console.warn('fetchBundleItems warn:', error?.message);
+    return [];
+  }
+}
+
+// Bir nechta to'plam uchun bittada (checkout savatchasida 2 ta to'plam
+// bo'lishi mumkin — har biri uchun alohida so'rov ketmasin).
+async function fetchBundleItemsForPlans(client, bundlePlanIds = []) {
+  const ids = [...new Set(bundlePlanIds.filter(Boolean))];
+  if (!ids.length) return new Map();
+  try {
+    const { data } = await request(client, 'plan_bundle_items', {
+      query: toQuery({
+        select: 'id,bundle_plan_id,child_plan_id,quantity,sort_order,plans!plan_bundle_items_child_plan_id_fkey(*)',
+        bundle_plan_id: `in.(${ids.join(',')})`,
+        order: 'sort_order.asc,created_at.asc',
+      }),
+    });
+    const map = new Map();
+    for (const row of data || []) {
+      const list = map.get(row.bundle_plan_id) || [];
+      list.push({
+        id: row.id,
+        bundlePlanId: row.bundle_plan_id,
+        childPlanId: row.child_plan_id,
+        quantity: Math.max(1, Number(row.quantity || 1)),
+        sortOrder: Number(row.sort_order || 1),
+        plan: row.plans ? mapPlan(row.plans) : null,
+      });
+      map.set(row.bundle_plan_id, list);
+    }
+    return map;
+  } catch (error) {
+    console.warn('fetchBundleItemsForPlans warn:', error?.message);
+    return new Map();
+  }
 }
 
 async function saveUserState(client, telegramId, state) {
@@ -352,6 +459,13 @@ async function createOrder(client, order) {
   // cashback_amount ham shunga o'xshash — faqat berilganda (ustun mavjud bo'lsa)
   if (order.cashback_amount !== undefined && order.cashback_amount !== null && Number(order.cashback_amount) > 0) {
     payload.cashback_amount = Number(order.cashback_amount);
+  }
+  // Trafik manbasi — buyurtma yaratilgan paytdagi NUSXA (users.source dan).
+  // Nusxa ataylab: foydalanuvchi qatori keyin o'zgarsa yoki o'chsa ham o'tgan
+  // oyning manba hisoboti o'zgarmasligi kerak. Faqat berilganda qo'shiladi —
+  // migratsiya qo'llanmagan bazada oddiy xarid buzilmaydi.
+  if (order.source) {
+    payload.source = String(order.source);
   }
   // order_number — tasodifiy 5 xonali son, bazada UNIQUE. Ilgari to'qnashuvda
   // INSERT jimgina yiqilar va buyurtma umuman yaratilmasdi (baza to'lgani sari
@@ -741,8 +855,74 @@ async function releasePromoUse(client, order) {
   }
 }
 
-async function createCheckoutOrder(client, { user_telegram_id, items, expiresMinutes = Number(process.env.PAYMENT_EXPIRES_MINUTES || 30), promo = null, balanceUsed = 0, cashbackAmount = 0 }) {
+// To'plamni (bundle) tarkibiy rejalarga yoyadi.
+//
+// Nima uchun shunday: to'plam uchun YANGI yetkazish oqimi yozilmaydi.
+// `order_items` + processApprovedOrderDelivery allaqachon ko'p mahsulotli
+// buyurtmani element-element yetkazadi (savatcha shu orqali ishlaydi va
+// sinalgan). To'plam checkout paytida o'sha elementlarga aylanadi — demak
+// zaxira band qilish, retry, karantin, obuna yozuvi — hammasi bepul tegadi.
+//
+// Narx: element qatorlariga TARKIBIY rejalarning o'z narxi yoziladi, mijoz
+// esa to'plam narxini to'laydi (basePrice to'plamning narxidan hisoblanadi).
+// Dashboard sotuv qiymatini unit_price ULUSHIGA qarab bo'lgani uchun
+// (summarizeProfit) foyda tarkibiy rejalar kesimida to'g'ri chiqadi va har
+// birining tannarxi hisobga olinadi.
+async function expandBundleOrderItems(client, orderId, userTelegramId, items) {
+  const bundleIds = items
+    .filter((item) => item.plan?.is_bundle || item.plan?.isBundle)
+    .map((item) => item.plan_id || item.plan?.id);
+  const bundleMap = bundleIds.length ? await fetchBundleItemsForPlans(client, bundleIds) : new Map();
+
+  const rows = [];
+  for (const item of items) {
+    const planId = item.plan_id || item.plan?.id;
+    const unit = Number(item.plan?.price || item.price || 0);
+    const quantity = Number(item.quantity || 1);
+    const children = bundleMap.get(planId) || [];
+
+    for (let i = 0; i < quantity; i += 1) {
+      if (children.length) {
+        for (const child of children) {
+          for (let c = 0; c < child.quantity; c += 1) {
+            rows.push({
+              order_id: orderId,
+              user_telegram_id: String(userTelegramId),
+              plan_id: child.childPlanId,
+              quantity: 1,
+              unit_price: Number(child.plan?.price || 0),
+              total_price: Number(child.plan?.price || 0),
+              delivery_status: 'pending',
+            });
+          }
+        }
+      } else {
+        // To'plam bo'lsa-yu tarkibi bo'sh bo'lsa (admin hali to'ldirmagan yoki
+        // migratsiya qo'llanmagan) — oddiy reja kabi bitta element. Buyurtma
+        // yo'qolmaydi, admin panelda "qo'lda yetkazish" bo'lib ko'rinadi.
+        rows.push({
+          order_id: orderId,
+          user_telegram_id: String(userTelegramId),
+          plan_id: planId,
+          quantity: 1,
+          unit_price: unit,
+          total_price: unit,
+          delivery_status: 'pending',
+        });
+      }
+    }
+  }
+  return rows;
+}
+
+async function createCheckoutOrder(client, { user_telegram_id, items, expiresMinutes = Number(process.env.PAYMENT_EXPIRES_MINUTES || 30), promo = null, balanceUsed = 0, cashbackAmount = 0, source }) {
   const basePrice = items.reduce((sum, item) => sum + Number(item.plan?.price || item.price || 0) * Number(item.quantity || 1), 0);
+
+  // Manba: chaqiruvchi bermasa foydalanuvchi qatoridan olinadi (birinchi
+  // teginish). Xato bo'lsa null — manba statistika uchun, xaridni to'xtatmaydi.
+  const orderSource = source === undefined || source === null
+    ? await getUserSource(client, user_telegram_id).catch(() => null)
+    : source;
 
   // Promokod foydalanishini narx hisoblashdan OLDIN atomik band qilamiz. Band
   // qilib bo'lmasa (limit tugagan — validate bilan checkout orasida) promokodni
@@ -771,7 +951,7 @@ async function createCheckoutOrder(client, { user_telegram_id, items, expiresMin
   // va bu sikl bir marta ishlaydi (eski xatti-harakat).
   for (let attempt = 0; ; attempt += 1) {
     try {
-      order = await createOrder(client, { user_telegram_id, plan_id: items[0]?.plan_id || items[0]?.plan?.id || null, amount: uniquePrice, base_price: basePrice, unique_price: uniquePrice, expires_at: expiresAt, status: uniquePrice > 0 ? 'waiting_payment' : 'payment_detected', delivery_status: 'waiting_approval', payment_method: 'humo_card_bot', payment_source: uniquePrice > 0 ? 'humo_card_bot' : 'balance', promo_code: activePromo?.code || null, discount_amount: discount, balance_used: reservedBalance, cashback_amount: effectiveCashback });
+      order = await createOrder(client, { user_telegram_id, plan_id: items[0]?.plan_id || items[0]?.plan?.id || null, amount: uniquePrice, base_price: basePrice, unique_price: uniquePrice, expires_at: expiresAt, status: uniquePrice > 0 ? 'waiting_payment' : 'payment_detected', delivery_status: 'waiting_approval', payment_method: 'humo_card_bot', payment_source: uniquePrice > 0 ? 'humo_card_bot' : 'balance', promo_code: activePromo?.code || null, discount_amount: discount, balance_used: reservedBalance, cashback_amount: effectiveCashback, source: orderSource });
       break;
     } catch (error) {
       if (uniquePrice > 0 && attempt < 5 && isUniqueViolation(error, 'unique_price')) {
@@ -800,13 +980,8 @@ async function createCheckoutOrder(client, { user_telegram_id, items, expiresMin
   // Buyurtma elementlari BITTA so'rovda yoziladi (PostgREST massivni qabul
   // qiladi). Ilgari har bir dona uchun alohida, ketma-ket so'rov ketardi —
   // 3 ta tovar 3 ta bosqich edi. Promokod hisoblagichi ham shu bilan parallel.
-  const orderItems = [];
-  for (const item of items) {
-    const unit = Number(item.plan?.price || item.price || 0);
-    for (let i = 0; i < Number(item.quantity || 1); i += 1) {
-      orderItems.push({ order_id: order.id, user_telegram_id: String(user_telegram_id), plan_id: item.plan_id || item.plan?.id, quantity: 1, unit_price: unit, total_price: unit, delivery_status: 'pending' });
-    }
-  }
+  // To'plam bo'lsa tarkibiy rejalarga yoyiladi (expandBundleOrderItems).
+  const orderItems = await expandBundleOrderItems(client, order.id, user_telegram_id, items);
   // Eslatma: promokod used_count endi YUQORIDA, reservePromoUse orqali atomik
   // oshirilgan (bu yerda emas) — shuning uchun faqat buyurtma elementlari yoziladi.
   if (orderItems.length) {
@@ -1286,6 +1461,11 @@ module.exports = {
   fetchPlan,
   fetchCategory,
   upsertUser,
+  stampUserSource,
+  getUserSource,
+  fetchBundleItems,
+  fetchBundleItemsForPlans,
+  expandBundleOrderItems,
   saveUserState,
   fetchUserState,
   trackEvent,

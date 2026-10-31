@@ -52,6 +52,73 @@ async function saveWithoutMissingCost(save, row) {
   }
 }
 
+// To'plam (bundle) tarkibi plans jadvalida emas, alohida plan_bundle_items
+// jadvalida saqlanadi. Migratsiya hali qo'llanmagan bo'lsa (jadval yo'q),
+// reja baribir saqlanadi — faqat tarkib yozilmaydi va admin ogohlantiriladi.
+const BUNDLE_MIGRATION_HINT = 'To‘plam tarkibi saqlanmadi: migrations/2026-10-31_source-tracking-and-bundles.sql hali qo‘llanmagan. Qolgan maydonlar saqlandi.';
+
+async function listBundleItems(supabase) {
+  try {
+    const { data } = await request(supabase, 'plan_bundle_items', {
+      query: 'select=bundle_plan_id,child_plan_id,quantity,sort_order&order=sort_order.asc',
+    });
+    return data || [];
+  } catch (error) {
+    console.warn('listBundleItems warn:', error?.message);
+    return [];
+  }
+}
+
+// To'plam tarkibini TO'LIQ almashtiradi (o'chirib, qaytadan yozadi).
+// Nima uchun shunday: admin formasi butun ro'yxatni yuboradi, qaysi qator
+// qo'shilgan-u qaysisi olib tashlanganini hisoblash keraksiz murakkablik.
+// Ro'yxat kichkina (2-5 qator), shuning uchun narxi ham yo'q.
+async function replaceBundleItems(supabase, bundlePlanId, items) {
+  const rows = (Array.isArray(items) ? items : [])
+    .map((item, index) => ({
+      child_plan_id: String(item.child_plan_id || item.plan_id || '').trim(),
+      quantity: Math.max(1, Math.min(10, Math.round(Number(item.quantity || 1)) || 1)),
+      sort_order: index + 1,
+    }))
+    .filter((row) => row.child_plan_id && row.child_plan_id !== String(bundlePlanId));
+
+  // Bitta reja ikki marta kiritilgan bo'lsa (unique cheklov buzilardi) —
+  // miqdorlar qo'shiladi.
+  const merged = new Map();
+  for (const row of rows) {
+    const prev = merged.get(row.child_plan_id);
+    if (prev) prev.quantity = Math.min(10, prev.quantity + row.quantity);
+    else merged.set(row.child_plan_id, row);
+  }
+
+  await request(supabase, 'plan_bundle_items', {
+    method: 'DELETE',
+    query: `bundle_plan_id=eq.${encodeURIComponent(bundlePlanId)}`,
+  });
+  const payload = [...merged.values()].map((row) => ({ ...row, bundle_plan_id: bundlePlanId }));
+  if (payload.length) {
+    await request(supabase, 'plan_bundle_items', { method: 'POST', body: payload });
+  }
+  return payload.length;
+}
+
+// Reja saqlangandan keyin to'plam tarkibini yozadi.
+// `bundle_items` yuborilmagan bo'lsa tarkibga tegilmaydi (reja oddiy
+// tahrirlangan — masalan narx o'zgargan — tarkib yo'qolib ketmasligi kerak).
+async function saveBundle(supabase, savedPlan, rawItem = {}) {
+  if (!savedPlan?.id || rawItem.bundle_items === undefined) return null;
+  try {
+    // To'plam belgisi olib tashlangan bo'lsa tarkib ham tozalanadi, aks holda
+    // "to'plam emas"-u tarkibi bor g'alati holat qolardi.
+    const items = rawItem.is_bundle === false ? [] : rawItem.bundle_items;
+    await replaceBundleItems(supabase, savedPlan.id, items);
+    return null;
+  } catch (error) {
+    console.warn('saveBundle warn:', error?.message);
+    return BUNDLE_MIGRATION_HINT;
+  }
+}
+
 async function listPromoCodes(supabase) {
   const { data } = await request(supabase, 'promo_codes', { query: 'select=*&order=created_at.desc' });
   return data || [];
@@ -63,18 +130,19 @@ exports.handler = async (event) => {
 
   try {
     if (event.httpMethod === 'GET') {
-      const [categories, plans, promos] = await Promise.all([
+      const [categories, plans, promos, bundleItems] = await Promise.all([
         listTable(supabase, 'categories'),
         listTable(supabase, 'plans'),
         listPromoCodes(supabase).catch((error) => {
           console.warn('promo_codes list warning:', error?.message);
           return [];
         }),
+        listBundleItems(supabase),
       ]);
       // Tannarx — faqat egasi uchun (operator foyda/marjani ko'rmaydi)
       const isOwner = requireOwner(event.headers);
       const visiblePlans = isOwner ? plans : plans.map(({ cost_price: _omit, ...p }) => p);
-      return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ok: true, categories, plans: visiblePlans, promos }) };
+      return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ok: true, categories, plans: visiblePlans, promos, bundleItems }) };
     }
 
     const payload = JSON.parse(event.body || '{}');
@@ -86,13 +154,18 @@ exports.handler = async (event) => {
       if (item.delivery_type && !allowed.includes(item.delivery_type)) throw badRequest('delivery_type noto‘g‘ri');
       if (item.cost_price !== undefined && item.cost_price !== null && item.cost_price !== ''
         && !(Number(item.cost_price) >= 0)) throw badRequest('tannarx 0 yoki undan katta son bo‘lishi kerak');
+      // bundle_items plans jadvalining ustuni EMAS — u alohida jadvalga
+      // yoziladi (replaceBundleItems), shuning uchun reja qatoridan olib
+      // tashlanadi. Aks holda PostgREST "noma'lum ustun" deb rad etardi.
+      const { bundle_items: _bundleItems, ...planFields } = item;
       const out = {
-        ...item,
+        ...planFields,
         price: item.price !== undefined ? Number(item.price) : item.price,
         old_price: item.old_price === '' ? null : item.old_price === null || item.old_price === undefined ? item.old_price : Number(item.old_price),
         tags: Array.isArray(item.tags) ? item.tags : [],
       };
       if (item.cost_price !== undefined) out.cost_price = item.cost_price === '' || item.cost_price === null ? null : Number(item.cost_price);
+      if (item.is_bundle !== undefined) out.is_bundle = Boolean(item.is_bundle);
 
       // slug — ochiq sahifa manzili (/obuna/<slug>). Bo'sh bo'lsa sahifa
       // ochilmaydi. Yozilgan bo'lsa nomdan avtomatik tozalanadi, chunki
@@ -171,7 +244,8 @@ exports.handler = async (event) => {
     if (event.httpMethod === 'POST') {
       const table = resolveTable(payload.type);
       const { item, warning } = await saveWithoutMissingCost((row) => insertRow(supabase, table, row), sanitize(table, payload.item, { isCreate: true }));
-      return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ok: true, item, warning }) };
+      const bundleWarning = table === 'plans' ? await saveBundle(supabase, item, payload.item) : null;
+      return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ok: true, item, warning: warning || bundleWarning }) };
     }
 
     if (event.httpMethod === 'PUT') {
@@ -190,7 +264,8 @@ exports.handler = async (event) => {
         notifyPriceDrop(supabase, updated).catch((e) => console.warn('price drop notify warn:', e?.message));
       }
 
-      return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ok: true, item: updated, warning }) };
+      const bundleWarning = table === 'plans' ? await saveBundle(supabase, updated || { id }, item) : null;
+      return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ok: true, item: updated, warning: warning || bundleWarning }) };
     }
 
     if (event.httpMethod === 'DELETE') {

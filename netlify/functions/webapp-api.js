@@ -22,7 +22,11 @@ const {
   generateUniquePrice,
   expireOrder,
   createLead,
+  stampUserSource,
+  fetchBundleItemsForPlans,
+  countRows,
 } = require('../../shared/db');
+const { normalizeSourceSlug } = require('../../shared/source');
 const {
   processApprovedOrderDelivery,
   resolveAutoAccount,
@@ -159,7 +163,7 @@ function normalizeTags(value) {
     .filter(Boolean);
 }
 
-function productShape(row, { stock, inStock, rating }) {
+function productShape(row, { stock, inStock, rating, bundleItems = [] }) {
   return {
     id: row.id,
     category_id: row.category_id,
@@ -173,6 +177,10 @@ function productShape(row, { stock, inStock, rating }) {
     image_url: row.image_url || null,
     is_popular: Boolean(row.is_popular),
     delivery_type: row.delivery_type || 'manual',
+    // To'plam (bundle): mijoz nima kirganini KO'RISHI kerak, aks holda
+    // "CapCut Pro + Canva Pro" nomidan tashqari hech qanday kafolat yo'q.
+    is_bundle: Boolean(row.is_bundle),
+    bundle_items: bundleItems,
     stock,
     in_stock: inStock,
     rating,
@@ -256,14 +264,90 @@ async function handlePublicCatalog(supabase) {
   const ratingMap = aggregateRatings(reviewsRes.data || []);
 
   const parentIds = new Set(plans.map((p) => p.parent_plan_id).filter(Boolean));
-  const products = plans
-    .filter((p) => !parentIds.has(p.id))
-    .map((p) => productShape(p, { ...CUSTOMER_STOCK, rating: ratingMap[p.id] || { avg: 0, count: 0 } }));
+  const visible = plans.filter((p) => !parentIds.has(p.id));
+  // To'plamlar tarkibi — bittada (har bir to'plam uchun alohida so'rov emas).
+  const bundleMap = await fetchBundleItemsForPlans(
+    supabase,
+    visible.filter((p) => p.is_bundle).map((p) => p.id),
+  );
+  const products = visible.map((p) =>
+    productShape(p, {
+      ...CUSTOMER_STOCK,
+      rating: ratingMap[p.id] || { avg: 0, count: 0 },
+      bundleItems: (bundleMap.get(p.id) || []).map((b) => ({
+        name: b.plan?.name || '',
+        duration: b.plan?.duration || '',
+        quantity: b.quantity,
+        price: Number(b.plan?.price || 0),
+      })),
+    }),
+  );
 
   return json(200, {
     ok: true,
     categories: (categoriesRes.data || []).map((c) => ({ id: c.id, name: c.button_label || c.name, sort_order: c.sort_order })),
     products,
+  });
+}
+
+// Sharh matnlarini bosh sahifada ko'rsatish uchun tozalaydi.
+// Ism qisqartiriladi ("Jasur A."): to'liq ism + sharh birgalikda odamni
+// tanitib qo'yishi mumkin, bu esa ochiq sahifada keraksiz.
+function shortenName(name) {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return 'Mijoz';
+  if (parts.length === 1) return parts[0].slice(0, 20);
+  return `${parts[0].slice(0, 20)} ${parts[1][0].toUpperCase()}.`;
+}
+
+const TESTIMONIAL_MIN_LEN = 25; // "zo'r", "rahmat" kabi sharhlar isbot bo'lmaydi
+const TESTIMONIAL_LIMIT = 6;
+
+async function handlePublicStats(supabase) {
+  const [customers, delivered, reviewsRes, settings] = await Promise.all([
+    // Raqamini bergan foydalanuvchi — haqiqiy mijoz (raqamsizlar sanalmaydi:
+    // dashboard ham shu mantiqda ishlaydi).
+    countRows(supabase, 'users', 'phone=not.is.null').catch(() => 0),
+    countRows(supabase, 'orders', 'delivery_status=eq.delivered').catch(() => 0),
+    request(supabase, 'reviews', {
+      query: toQuery({
+        select: 'rating,text,user_name,created_at,plans(name)',
+        is_hidden: 'eq.false',
+        order: 'created_at.desc',
+        limit: 200,
+      }),
+    }).catch(() => ({ data: [] })),
+    // Referal shartlari — bosh sahifada aytilishi uchun. Bu ochiq ma'lumot:
+    // bot ham har kimga xuddi shu raqamlarni aytadi.
+    fetchSettings(supabase).catch(() => null),
+  ]);
+
+  const reviews = reviewsRes.data || [];
+  const ratingSum = reviews.reduce((sum, r) => sum + Number(r.rating || 0), 0);
+  const testimonials = reviews
+    .filter((r) => Number(r.rating || 0) >= 4 && String(r.text || '').trim().length >= TESTIMONIAL_MIN_LEN)
+    .slice(0, TESTIMONIAL_LIMIT)
+    .map((r) => ({
+      rating: Number(r.rating || 0),
+      text: String(r.text).trim().slice(0, 400),
+      author: shortenName(r.user_name),
+      product: r.plans?.name || '',
+      created_at: r.created_at,
+    }));
+
+  return json(200, {
+    ok: true,
+    stats: {
+      customers,
+      delivered,
+      reviews_count: reviews.length,
+      rating_avg: reviews.length ? Math.round((ratingSum / reviews.length) * 10) / 10 : null,
+      testimonials,
+      referral: {
+        percent: Number(settings?.referral_percent || 0),
+        fixed_bonus: Math.round(Number(settings?.referral_fixed_bonus || 0)),
+      },
+    },
   });
 }
 
@@ -286,6 +370,24 @@ exports.handler = async (event) => {
     } catch (error) {
       console.error('public-catalog error', error);
       return json(500, { ok: false, error: 'server_error' });
+    }
+  }
+  // Bosh sahifadagi ijtimoiy isbot: HAQIQIY raqamlar.
+  //
+  // Nima uchun bazadan: "1000+ mijoz" ni kodga yozib qo'yish mumkin edi, lekin
+  // u bir oydan keyin yolg'onga aylanadi (yoki o'sishni ko'rsatmaydi). Bu
+  // endpoint sanaydi, UI esa pastga yaxlitlab "1 200+" ko'rinishida chiqaradi —
+  // ko'rsatilgan raqam har doim haqiqatdan KICHIK yoki teng bo'ladi.
+  //
+  // Auth talab qilinmaydi (ochiq landing), shuning uchun faqat AGREGAT
+  // qiymatlar va sharh matnlari qaytadi — bironta telegram_id yoki telefon yo'q.
+  if (body.action === 'public-stats') {
+    try {
+      return await handlePublicStats(supabase);
+    } catch (error) {
+      console.error('public-stats error', error);
+      // Statistika chiqmasa landing baribir ishlashi kerak — bo'sh javob.
+      return json(200, { ok: true, stats: null });
     }
   }
   if (body.action === 'verify-web-code') {
@@ -460,6 +562,15 @@ exports.handler = async (event) => {
       if (settings?.maintenance_mode && !adminChatIds(settings).includes(telegramId)) {
         return json(503, { ok: false, error: 'maintenance', text: settings.maintenance_text || '' });
       }
+      // Trafik manbasi: sayt yoki Mini App birinchi ochilganda yuboradi
+      // (?utm_source=..., ?src=..., yoki Telegram startapp payload'i).
+      // Mijoz yuborgan qiymatga ishonmaymiz — serverda normallashtiriladi
+      // (normalizeSourceSlug: faqat [a-z0-9_-], 40 belgi). Birinchi teginish
+      // qoidasi stampUserSource ichida.
+      if (body.source) {
+        const slug = normalizeSourceSlug(body.source);
+        if (slug) await stampUserSource(supabase, telegramId, slug).catch(() => {});
+      }
       // Muddati o'tgan to'lovlar yuqorida (expireStalePendingOrders) tozalangan
       const hasPhone = Boolean(userRow?.phone);
       return json(200, {
@@ -533,9 +644,23 @@ exports.handler = async (event) => {
       // Zaxira holati mijozga ko'rsatilmaydi (CUSTOMER_STOCK) — hamma mahsulot
       // sotib olishga ochiq (yuqoridagi izohga qarang).
       const parentIds = new Set(plans.map((p) => p.parent_plan_id).filter(Boolean));
-      const products = plans
-        .filter((p) => !parentIds.has(p.id))
-        .map((p) => productShape(p, { ...CUSTOMER_STOCK, rating: ratingMap[p.id] || { avg: 0, count: 0 } }));
+      const visiblePlans = plans.filter((p) => !parentIds.has(p.id));
+      const catalogBundles = await fetchBundleItemsForPlans(
+        supabase,
+        visiblePlans.filter((p) => p.is_bundle).map((p) => p.id),
+      );
+      const products = visiblePlans.map((p) =>
+        productShape(p, {
+          ...CUSTOMER_STOCK,
+          rating: ratingMap[p.id] || { avg: 0, count: 0 },
+          bundleItems: (catalogBundles.get(p.id) || []).map((b) => ({
+            name: b.plan?.name || '',
+            duration: b.plan?.duration || '',
+            quantity: b.quantity,
+            price: Number(b.plan?.price || 0),
+          })),
+        }),
+      );
 
       return json(200, {
         ok: true,
@@ -592,10 +717,20 @@ exports.handler = async (event) => {
           }
         : { avg: 0, count: 0 };
 
+      const detailBundle = p.is_bundle ? await fetchBundleItemsForPlans(supabase, [p.id]) : new Map();
       return json(200, {
         ok: true,
         product: {
-          ...productShape(p, { ...CUSTOMER_STOCK, rating }),
+          ...productShape(p, {
+            ...CUSTOMER_STOCK,
+            rating,
+            bundleItems: (detailBundle.get(p.id) || []).map((b) => ({
+              name: b.plan?.name || '',
+              duration: b.plan?.duration || '',
+              quantity: b.quantity,
+              price: Number(b.plan?.price || 0),
+            })),
+          }),
           warranty_text: p.warranty_text || '',
           rules_text: p.rules_text || '',
           how_it_works_text: p.how_it_works_text || '',

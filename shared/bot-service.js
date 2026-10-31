@@ -18,7 +18,9 @@ const {
   setUserAwaitingReceipt,
   clearUserAwaitingReceipt,
   markOrderPaidManually,
+  stampUserSource,
 } = require('./db');
+const { parseStartPayloadSource } = require('./source');
 const { isAdminChat, markOrderNotification, userLines, formatUzs: formatUzsLabel, adminChatIds: resolveAdminChatIds } = require('./admin-notify');
 const { settlePaidOrder } = require('./humo-payment-service');
 const { escapeHtml } = require('./messages');
@@ -574,6 +576,31 @@ async function handleStart({ supabase, message }) {
   ];
 
   const startPayload = String(message.text || '').split(/\s+/)[1] || '';
+
+  // ---- Trafik manbasi ----
+  // ?start=src_instagram_bio | ?start=reels_07 | ?start=ref_<id>
+  // Birinchi teginish bo'yicha yoziladi: keyin boshqa havola bilan kelsa ham
+  // users.source o'zgarmaydi (stampUserSource ichida `source=is.null` filtri).
+  // Shuning uchun "qaysi reklama MIJOZ OLIB KELDI" degan savolga javob bor,
+  // "oxirgi marta qaysi havolani bosdi" degan foydasiz raqam emas.
+  const sourceSlug = parseStartPayloadSource(startPayload);
+  if (sourceSlug) {
+    tasks.push(
+      (async () => {
+        // upsertUser'ni KUTAMIZ: qator bo'lmasa PATCH hech qanday qatorga
+        // tushmaydi va manba jimgina yo'qoladi.
+        await userTask;
+        const applied = await stampUserSource(supabase, message.from.id, sourceSlug);
+        await trackEvent(supabase, {
+          eventType: 'source_touch',
+          telegramId: message.from.id,
+          // first_touch=false — odam allaqachon bazada, bu havola uni olib
+          // kelmagan (qayta kirish). Reklama hisobida bu farq muhim.
+          metadata: { source: sourceSlug, first_touch: Boolean(applied), payload: startPayload.slice(0, 64) },
+        }).catch(() => {});
+      })().catch((e) => console.warn('source stamp warn:', e?.message)),
+    );
+  }
 
   // Brauzer orqali login: foydalanuvchiga bir martalik tasdiqlash kodini yuboramiz
   // (uzunligi web-auth-service.js dagi CODE_LENGTH bilan belgilanadi).

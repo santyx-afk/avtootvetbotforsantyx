@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { apiCall } from '../lib/api.js';
-import { formatPrice } from '../utils/format.js';
+import { formatPrice, formatNumber } from '../utils/format.js';
+import { botLinkWithSource, captureSource } from '../utils/source.js';
 import useModalDismiss from '../hooks/useModalDismiss.js';
 import BrandLogo from '../components/BrandLogo.jsx';
 import StructuredData from '../components/StructuredData.jsx';
@@ -19,6 +20,29 @@ const INSTAGRAM_URL = 'https://instagram.com/santyx.uz';
 // Katalog sessiyaga keshlanadi — sahifaga qayta kirilganda ro'yxat
 // so'rov kutmasdan darhol chiziladi.
 const CACHE_KEY = 'santyx:landing:catalog';
+const STATS_CACHE_KEY = 'santyx:landing:stats';
+
+// Ijtimoiy isbot raqamlarini PASTGA yaxlitlaydi.
+//
+// Nima uchun pastga: "1000+ mijoz" degan yozuv haqiqatdan oshib ketmasligi
+// kerak. 1 247 mijoz bo'lsa "1 200+" ko'rsatiladi — ya'ni o'qigan odam
+// ko'rgan raqam har doim kamida shuncha mijoz borligini bildiradi.
+// 10 tadan kam bo'lsa yaxlitlash ma'nosiz, aniq son chiqadi.
+function roundedCount(raw) {
+  const value = Math.max(0, Math.floor(Number(raw || 0)));
+  if (value < 10) return { value, plus: false };
+  const step = value >= 1000 ? 100 : value >= 100 ? 50 : 10;
+  return { value: Math.floor(value / step) * step, plus: true };
+}
+
+function readStatsCache() {
+  try {
+    const raw = sessionStorage.getItem(STATS_CACHE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
 
 
 
@@ -102,11 +126,12 @@ function useReveal(deps) {
   }, deps);
 }
 
-function ProductCard({ p }) {
+function ProductCard({ p, botUrl, t }) {
   const discount =
     p.old_price && p.old_price > p.price ? Math.round((1 - p.price / p.old_price) * 100) : 0;
+  const bundleItems = Array.isArray(p.bundle_items) ? p.bundle_items : [];
   return (
-    <a className={styles.card} href={BOT_URL} target="_blank" rel="noopener noreferrer">
+    <a className={styles.card} href={botUrl} target="_blank" rel="noopener noreferrer">
       <div className={styles.cardImg}>
         {p.image_url ? (
           <img src={p.image_url} alt={p.name} loading="lazy" decoding="async" width="160" height="160" />
@@ -114,9 +139,22 @@ function ProductCard({ p }) {
           <span className={styles.cardImgFallback} aria-hidden="true" />
         )}
         {discount > 0 && <span className={styles.badge}>-{discount}%</span>}
+        {p.is_bundle && <span className={styles.bundleBadge}>{t('landing.prices.bundleBadge')}</span>}
       </div>
       <div className={styles.cardBody}>
         <div className={styles.cardName}>{p.name}</div>
+        {/* To'plam tarkibi: mijoz nima uchun to'layotganini KO'RISHI kerak,
+            aks holda nomdan boshqa hech qanday ma'lumot yo'q. */}
+        {bundleItems.length > 0 && (
+          <div className={styles.bundleList}>
+            {bundleItems.map((item) => (
+              <span key={`${item.name}-${item.duration}`}>
+                {item.name}
+                {item.quantity > 1 ? ` x${item.quantity}` : ''}
+              </span>
+            ))}
+          </div>
+        )}
         {(p.duration || p.rating?.count > 0) && (
           <div className={styles.cardMeta}>
             {p.duration}
@@ -252,13 +290,20 @@ export default function Landing() {
   const navigate = useNavigate();
   const { t } = useI18n();
   // Keshdan boshlaymiz — birinchi chizishda bo'sh joy ko'rinmaydi.
-  const [data, setData] = useState(() => readCache() || { products: [], categories: [] });
+  const [data, setData] = useState(() => readCache() || { products: [], categories: [], allProducts: [] });
   const [loaded, setLoaded] = useState(() => Boolean(readCache()));
+  const [stats, setStats] = useState(() => readStatsCache());
   const [leadOpen, setLeadOpen] = useState(false);
   const productsRef = useRef(null);
+  const pricesRef = useRef(null);
 
-  const { products, categories } = data;
-  useReveal([products.length]);
+  const { products, categories, allProducts = [] } = data;
+
+  // Botga havola trafik manbasi bilan: reklamadan kelgan odam ?start=src_...
+  // bilan botga tushadi va admin panelda qaysi havola sotuv keltirgani
+  // ko'rinadi. captureSource() birinchi teginishni localStorage'da saqlaydi,
+  // shuning uchun odam saytda bir necha sahifa aylansa ham manba yo'qolmaydi.
+  const botUrl = useMemo(() => botLinkWithSource(BOT, captureSource()), []);
 
   usePageMeta({
     title: t('landing.meta.title'),
@@ -278,11 +323,18 @@ export default function Landing() {
     apiCall('public-catalog')
       .then((res) => {
         if (!active) return;
+        const all = (res.products || []).slice();
         const next = {
-          products: (res.products || [])
+          products: all
             .slice()
             .sort((a, b) => Number(b.is_popular) - Number(a.is_popular))
             .slice(0, 8),
+          // Narxlar jadvali uchun TO'LIQ ro'yxat: kartalar faqat 8 ta mashhurini
+          // ko'rsatadi, tashrifchi esa ko'pincha "hammasi qanchadan?" deb
+          // keladi va javobni botga kirmasdan ko'rishi kerak.
+          allProducts: all
+            .slice()
+            .sort((a, b) => Number(b.is_bundle) - Number(a.is_bundle) || Number(a.price) - Number(b.price)),
           categories: (res.categories || []).slice(0, 12),
         };
         setData(next);
@@ -294,13 +346,30 @@ export default function Landing() {
       })
       .catch(() => {})
       .finally(() => active && setLoaded(true));
+
+    // Ijtimoiy isbot raqamlari alohida so'rov bilan: katalogdan mustaqil,
+    // biri ishlamasa ikkinchisi baribir chiqadi.
+    apiCall('public-stats')
+      .then((res) => {
+        if (!active || !res?.stats) return;
+        setStats(res.stats);
+        try {
+          sessionStorage.setItem(STATS_CACHE_KEY, JSON.stringify(res.stats));
+        } catch {
+          /* kesh ixtiyoriy */
+        }
+      })
+      .catch(() => {});
     return () => {
       active = false;
     };
   }, []);
 
-  // Sharhlar bo'yicha umumiy ko'rsatkich — mavjud ma'lumotdan hisoblanadi.
-  const reviewStats = products.reduce(
+  // Sharhlar bo'yicha umumiy ko'rsatkich.
+  // public-stats BARCHA sharhlarni qamraydi, katalogdan hisoblash esa faqat
+  // ko'rsatilgan 8 mahsulotni — shuning uchun ikkinchisi faqat zaxira
+  // (statistika so'rovi ishlamasa sahifa baribir reytingni ko'rsatadi).
+  const catalogReviews = products.reduce(
     (acc, p) => {
       const c = Number(p.rating?.count || 0);
       if (!c) return acc;
@@ -308,11 +377,57 @@ export default function Landing() {
     },
     { count: 0, sum: 0 },
   );
-  const avgRating = reviewStats.count ? (reviewStats.sum / reviewStats.count).toFixed(1) : null;
+  const avgRating = stats?.rating_avg
+    ? Number(stats.rating_avg).toFixed(1)
+    : catalogReviews.count
+      ? (catalogReviews.sum / catalogReviews.count).toFixed(1)
+      : null;
+  const reviewCount = Number(stats?.reviews_count || catalogReviews.count || 0);
+  const testimonials = Array.isArray(stats?.testimonials) ? stats.testimonials : [];
+
+  // Ijtimoiy isbot plitkalari — faqat HAQIQIY raqam bor bo'lganlari.
+  // Ma'lumot yo'q bo'lsa plitka umuman chizilmaydi: bo'sh yoki nol raqam
+  // ishonchni oshirmaydi, pasaytiradi.
+  const socialTiles = [];
+  if (stats?.customers > 0) {
+    const r = roundedCount(stats.customers);
+    socialTiles.push({ key: 'customers', value: `${formatNumber(r.value)}${r.plus ? '+' : ''}`, label: t('landing.social.customers') });
+  }
+  if (stats?.delivered > 0) {
+    const r = roundedCount(stats.delivered);
+    socialTiles.push({ key: 'delivered', value: `${formatNumber(r.value)}${r.plus ? '+' : ''}`, label: t('landing.social.delivered') });
+  }
+  if (avgRating) {
+    socialTiles.push({ key: 'rating', value: `${avgRating} / 5`, label: t('landing.social.rating') });
+  }
+  if (reviewCount > 0) {
+    socialTiles.push({ key: 'reviews', value: formatNumber(reviewCount), label: t('landing.social.reviews') });
+  }
+
+  // Referal shartlari sozlamalardan keladi — matn aynan hozirgi bonusni
+  // aytadi, "bonuslar bor" degan quruq gap emas.
+  const refPercent = Number(stats?.referral?.percent || 0);
+  const refBonus = Number(stats?.referral?.fixed_bonus || 0);
+  const referralText =
+    refBonus > 0 && refPercent > 0
+      ? t('landing.referral.textBoth', { bonus: formatNumber(refBonus), percent: refPercent })
+      : refBonus > 0
+        ? t('landing.referral.textFixed', { bonus: formatNumber(refBonus) })
+        : refPercent > 0
+          ? t('landing.referral.textPercent', { percent: refPercent })
+          : t('landing.referral.textPlain');
+
+  // Ko'ringanda fade-in. Bog'liqliklar ro'yxatiga YANGI bo'limlarning
+  // uzunliklari ham kiradi: statistika so'rovi katalogdan KEYIN kelsa,
+  // sharhlar/narxlar bloklari o'sha paytda paydo bo'ladi — ro'yxat
+  // yangilanmasa IntersectionObserver ularga ulanmay qoladi va bo'limlar
+  // butunlay ko'rinmas (opacity: 0) bo'lib qolardi.
+  useReveal([products.length, allProducts.length, testimonials.length, socialTiles.length]);
 
   const goToApp = useCallback(() => navigate('/login'), [navigate]);
   const scrollToProducts = useCallback(
-    () => productsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+    () => pricesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      || productsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
     [],
   );
 
@@ -356,11 +471,28 @@ export default function Landing() {
             <li>{t('landing.hero.trustFast')}</li>
             <li>{t('landing.hero.trustSupport')}</li>
             {avgRating && (
-              <li>{t('landing.hero.trustRating', { avg: avgRating, count: reviewStats.count })}</li>
+              <li>{t('landing.hero.trustRating', { avg: avgRating, count: reviewCount })}</li>
             )}
           </ul>
         </div>
       </section>
+
+      {/* Ijtimoiy isbot: hero dan keyin DARHOL, chunki tashrifchi "bu kimlar
+          umuman?" degan savolga javobni narxdan oldin izlaydi. Raqamlar
+          bazadan (public-stats), pastga yaxlitlangan. */}
+      {socialTiles.length > 0 && (
+        <section className={styles.socialBand}>
+          <h2 className={styles.socialTitle}>{t('landing.social.title')}</h2>
+          <div className={styles.socialGrid}>
+            {socialTiles.map((tile) => (
+              <div className={styles.socialTile} key={tile.key}>
+                <strong>{tile.value}</strong>
+                <span>{tile.label}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Qaysi xizmatlar borligi darhol ko'rinsin — tashrifchi qidirib yurmasin */}
       {categories.length > 0 && (
@@ -380,7 +512,7 @@ export default function Landing() {
         <h2 className={`${styles.sectionTitle} ${styles.reveal}`}>{t('landing.popular.title')}</h2>
         <div className={styles.grid}>
           {products.length
-            ? products.map((p) => <ProductCard key={p.id} p={p} />)
+            ? products.map((p) => <ProductCard key={p.id} p={p} botUrl={botUrl} t={t} />)
             : !loaded &&
               // Skeletlar — bo'sh joy o'rniga tayyor tuzilma ko'rinadi.
               Array.from({ length: 8 }, (_, i) => <div key={i} className={styles.skeleton} />)}
@@ -388,11 +520,101 @@ export default function Landing() {
         {loaded && !products.length && (
           <p className={styles.muted}>
             {t('landing.popular.emptyBefore')}
-            <a href={BOT_URL}>{t('landing.popular.emptyLink')}</a>
+            <a href={botUrl}>{t('landing.popular.emptyLink')}</a>
             {t('landing.popular.emptyAfter')}
           </p>
         )}
       </section>
+
+      {/* To'liq narx ro'yxati. Tashrifchi "qanchadan?" degan savol bilan
+          keladi — javobni botga kirmasdan, bitta jadvalda ko'rishi kerak.
+          Kartalar faqat 8 ta mashhurini ko'rsatadi, bu esa hammasini. */}
+      {allProducts.length > 0 && (
+        <section className={styles.section} ref={pricesRef}>
+          <h2 className={`${styles.sectionTitle} ${styles.reveal}`}>{t('landing.prices.title')}</h2>
+          <div className={`${styles.priceTable} ${styles.reveal}`}>
+            <div className={styles.priceHead}>
+              <span>{t('landing.prices.colName')}</span>
+              <span>{t('landing.prices.colDuration')}</span>
+              <span>{t('landing.prices.colPrice')}</span>
+            </div>
+            {allProducts.map((p) => {
+              const bundleItems = Array.isArray(p.bundle_items) ? p.bundle_items : [];
+              // To'plam tejamkorligi: tarkibiy narxlar yig'indisi minus
+              // to'plam narxi. Faqat haqiqatan tejash bo'lsa ko'rsatiladi.
+              const partsTotal = bundleItems.reduce(
+                (sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 1),
+                0,
+              );
+              const saving = partsTotal > Number(p.price || 0) ? partsTotal - Number(p.price) : 0;
+              return (
+                <a
+                  className={styles.priceRow}
+                  key={p.id}
+                  href={botUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <span className={styles.priceName}>
+                    {p.name}
+                    {p.is_bundle && <em className={styles.priceTag}>{t('landing.prices.bundleBadge')}</em>}
+                    {bundleItems.length > 0 && (
+                      <small>
+                        {t('landing.prices.bundleIncludes')}{' '}
+                        {bundleItems
+                          .map((item) => `${item.name}${item.quantity > 1 ? ` x${item.quantity}` : ''}`)
+                          .join(' + ')}
+                      </small>
+                    )}
+                  </span>
+                  <span className={styles.priceDuration}>{p.duration || '—'}</span>
+                  <span className={styles.priceValue}>
+                    <b>{formatPrice(p.price, p.currency || 'UZS')}</b>
+                    {p.old_price > p.price && (
+                      <s>{formatPrice(p.old_price, p.currency || 'UZS')}</s>
+                    )}
+                    {saving > 0 && (
+                      <em>
+                        {t('landing.prices.saveLabel')} {formatPrice(saving, p.currency || 'UZS')}
+                      </em>
+                    )}
+                  </span>
+                </a>
+              );
+            })}
+          </div>
+          <p className={styles.muted}>{t('landing.prices.note')}</p>
+        </section>
+      )}
+
+      {/* Mijoz sharhlari — raqamdan keyingi ikkinchi isbot: tirik odamlarning
+          gapi. Faqat 4-5 yulduzli va mazmunli (25+ belgi) sharhlar,
+          ismlar qisqartirilgan (server tomonida). */}
+      {testimonials.length > 0 && (
+        <section className={styles.section}>
+          <h2 className={`${styles.sectionTitle} ${styles.reveal}`}>{t('landing.testimonials.title')}</h2>
+          <div className={`${styles.reviewGrid} ${styles.reveal}`}>
+            {testimonials.map((item, i) => (
+              <figure className={styles.reviewCard} key={`${item.author}-${i}`}>
+                <div className={styles.reviewStars} aria-label={`${item.rating} / 5`}>
+                  {'★'.repeat(Math.max(1, Math.min(5, item.rating)))}
+                  <span>{'★'.repeat(5 - Math.max(1, Math.min(5, item.rating)))}</span>
+                </div>
+                <blockquote>{item.text}</blockquote>
+                <figcaption>
+                  {item.author}
+                  {item.product ? (
+                    <small>
+                      {t('landing.testimonials.productPrefix')}
+                      {item.product}
+                    </small>
+                  ) : null}
+                </figcaption>
+              </figure>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className={styles.section}>
         <h2 className={`${styles.sectionTitle} ${styles.reveal}`}>{t('landing.how.title')}</h2>
@@ -431,6 +653,27 @@ export default function Landing() {
             </div>
           ))}
         </div>
+      </section>
+
+      {/* Referal — alohida, ko'zga tashlanadigan bo'lim.
+          Ilgari referal faqat "Yana nimalar bor" ro'yxatidagi bitta satr edi
+          va hech kim ishlatmasdi. Endi: aniq bonus summasi, 3 qadam va
+          to'g'ridan-to'g'ri botga o'tuvchi tugma. */}
+      <section className={`${styles.referral} ${styles.reveal}`}>
+        <h2 className={styles.finalTitle}>{t('landing.referral.title')}</h2>
+        <p className={styles.finalText}>{referralText}</p>
+        <ol className={styles.referralSteps}>
+          {t('landing.referral.steps').map((step, i) => (
+            <li key={step}>
+              <span>{i + 1}</span>
+              {step}
+            </li>
+          ))}
+        </ol>
+        <a className={styles.cta} href={botUrl} target="_blank" rel="noopener noreferrer">
+          {t('landing.referral.cta')}
+        </a>
+        <p className={styles.referralNote}>{t('landing.referral.note')}</p>
       </section>
 
       {/* FAQ — native <details>, JS talab qilmaydi */}
